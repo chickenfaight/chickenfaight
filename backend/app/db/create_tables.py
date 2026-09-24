@@ -8,6 +8,7 @@ If updating existing tables: drop all tables and run or manually alter them
 """
 
 import asyncio
+import sys
 
 from app.db.base import Base
 from app.db.session import engine
@@ -21,4 +22,6 @@ async def create_tables() -> None:
 
 
 if __name__ == "__main__":
+    if sys.platform == "win32":
+        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
     asyncio.run(create_tables())
