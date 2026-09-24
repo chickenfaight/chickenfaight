@@ -10,8 +10,7 @@ from app.auth.dependencies import CurrentUserDependency
 from app.auth.google import oauth
 from app.config import settings
 from app.db.session import get_session
-from app.schemas import GoogleIdentity
-from app.schemas import UserRead
+from app.schemas import GoogleIdentity, UserRead
 from app.services.user import UserService
 
 
@@ -62,7 +61,7 @@ async def google_callback(
     # Starlette's cookie is signed but readable, so store only the local ID,
     # never Google's access token, refresh token, or client credentials.
     request.session.clear()
-    request.session["user_id"] = user.id
+    request.session["user_id"] = str(user.id)
 
     return RedirectResponse(settings.frontend_url)
 

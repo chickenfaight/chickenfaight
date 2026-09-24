@@ -1,6 +1,7 @@
+import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, String, Text, func, text
+from sqlalchemy import DateTime, String, Text, func, text, Uuid
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -9,7 +10,7 @@ from app.db.base import Base
 class User(Base):
     __tablename__ = "users"
 
-    id: Mapped[int] = mapped_column(primary_key=True)
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
 
     # `sub` is the unique, stable identifier for a Google account
     google_sub: Mapped[str] = mapped_column(
