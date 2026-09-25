@@ -19,7 +19,7 @@ Everything here is PLANNED unless marked **(implemented)**. Remove a PLANNED sta
 
 - **Versioning.** REST routes live under `/api/v1`. WebSockets carry an integer `protocol_version` (currently `1`) in their first message. Additive optional fields do not bump versions; anything else bumps `protocol_version` and, for REST, adds `/api/v2` next to `/api/v1`. The server supports the current and previous version. BILC also sends its semver `client_version`; the server rejects versions below `min_supported_version`.
 - **Receivers ignore unknown fields.** Unknown WebSocket `type` → reply `ERROR` `UNKNOWN_TYPE`; do not close.
-- **JSON** everywhere, `snake_case` keys, timestamps ISO 8601 UTC strings, integer IDs except `bilc_id` (UUID).
+- **JSON** everywhere, `snake_case` keys, timestamps ISO 8601 UTC strings, UUID IDs everywhere (serialized as strings).
 - **Default auth is required.** Rows marked `public` are the only exceptions.
 - **REST errors** use one envelope, compatible with FastAPI's `detail`:
   `{ "code": str, "detail": str }`. Validation failures add `errors: list`. Existing `/auth` routes still return FastAPI's default `{ "detail": str }` until a global exception handler is added.
@@ -67,8 +67,8 @@ Server-side constants; clients read deadlines from messages rather than hard-cod
 ## Shared types
 
 ```
-UserRead         { id: int, email: str|null, username: str|null, avatar_url: str|null, elo: int }   (implemented; elo is removed when Rating ships)
-UserPublic       { id: int, username: str|null, avatar_url: str|null }
+UserRead         { id: uuid, email: str|null, username: str|null, avatar_url: str|null, elo: int }   (implemented; elo is removed when Rating ships)
+UserPublic       { id: uuid, username: str|null, avatar_url: str|null }
 Rating           { ladder: str, elo: int, games_played: int, wins: int, losses: int }
 Ladder           { slug: str, display_name: str, kind: "cloud"|"byom" }
 Side             "pro" | "con"
@@ -77,8 +77,8 @@ MatchStatus      "waiting_for_players" | "awaiting_prompts" | "in_progress" | "j
                | "completed" | "forfeited" | "voided"
 EndReason        "judged" | "no_show" | "no_prompt" | "resigned" | "model_failure" | "judge_failure"
 Participant      { side: Side, user: UserPublic, elo_before: int, elo_after: int|null }
-Turn             { id: int, index: int, side: Side, phase: Phase, content: str }
-MatchSummary     { id: int, ladder: str, topic: str, status: MatchStatus, winner_side: Side|null,
+Turn             { id: uuid, index: int, side: Side, phase: Phase, content: str }
+MatchSummary     { id: uuid, ladder: str, topic: str, status: MatchStatus, winner_side: Side|null,
                    participants: [Participant], ended_at: str|null }
 MatchRead        MatchSummary + { end_reason: EndReason|null, verdict_reasoning: str|null, turns: [Turn] }
 BilcDevice       { id: uuid, name: str, platform: str, client_version: str, model_name: str|null,
@@ -97,18 +97,18 @@ Player prompts are never returned by any endpoint or message except to their aut
 | GET | `/auth/me` | session | — | `UserRead` (implemented) |
 | POST | `/auth/logout` | public | — | 204, clears session (implemented) |
 | PATCH | `/api/v1/users/me` | session | `{ username: str }` (3–24 chars, `[a-zA-Z0-9_]`, unique) | `UserRead` |
-| GET | `/api/v1/users/{id}` | session | — | `UserPublic + { ratings: [Rating] }` |
-| GET | `/api/v1/users/{id}/matches` | session | `?limit&offset` | `[MatchSummary]`, finished only |
+| GET | `/api/v1/users/{id}` | session | `{id}: uuid` | `UserPublic + { ratings: [Rating] }` |
+| GET | `/api/v1/users/{id}/matches` | session | `{id}: uuid`, `?limit&offset` | `[MatchSummary]`, finished only |
 | GET | `/api/v1/ladders` | session | — | `[Ladder]` (active only) |
 | GET | `/api/v1/ladders/{slug}/leaderboard` | session | `?limit&offset` | `[{ rank, user: UserPublic, rating: Rating }]` |
 | POST | `/api/v1/matchmaking/queue` | session | `{ ladder: str, bilc_id?: uuid }` (`bilc_id` required iff ladder is BYOM, must be caller's online idle device) | 202 `{ status: "queued" }` |
-| GET | `/api/v1/matchmaking/queue` | session | — | `{ status: "none"|"queued"|"matched", match_id?: int }` |
+| GET | `/api/v1/matchmaking/queue` | session | — | `{ status: "none"|"queued"|"matched", match_id?: uuid }` |
 | DELETE | `/api/v1/matchmaking/queue` | session | — | 204 |
-| GET | `/api/v1/matches/{id}` | session | — | `MatchRead`; live matches visible to participants only |
-| POST | `/api/v1/matches/{id}/votes` | session | `{ side: Side }` | 204; finished matches, non-participants, one vote per user (upsert) |
+| GET | `/api/v1/matches/{id}` | session | `{id}: uuid` | `MatchRead`; live matches visible to participants only |
+| POST | `/api/v1/matches/{id}/votes` | session | `{id}: uuid`, `{ side: Side }` | 204; finished matches, non-participants, one vote per user (upsert) |
 | POST | `/api/v1/bilc/pairing-codes` | session | — | `{ code: str (8 chars, A–Z 2–9), expires_at }` |
 | GET | `/api/v1/bilc/devices` | session | — | `[BilcDevice]` (caller's only) |
-| DELETE | `/api/v1/bilc/devices/{id}` | session | — | 204; revokes tokens, closes its socket 4403 |
+| DELETE | `/api/v1/bilc/devices/{id}` | session | `{id}: uuid` | 204; revokes tokens, closes its socket 4403 |
 
 `/health` and `/auth/*` stay unversioned: the OAuth redirect URI is registered with Google.
 
@@ -121,7 +121,7 @@ Player prompts are never returned by any endpoint or message except to their aut
 | GET | `/api/v1/bilc/releases/latest` | public | — | `{ version, min_supported_version, protocol_version, assets: [{ platform, arch, url, sha256 }] }` |
 | GET | `/api/v1/bilc/download` | public | `?platform=mac|win|linux&arch=amd64|arm64` | 302 to the release asset |
 
-Access JWT: HS256 with `BILC_JWT_SECRET`, claims `sub` = `bilc_id`, `uid` = user id, `aud` = `"bilc"`, `exp`. Presenting an already-rotated refresh token revokes the device.
+Access JWT: HS256 with `BILC_JWT_SECRET`, claims `sub` = `bilc_id` (uuid), `uid` = user id (uuid), `aud` = `"bilc"`, `exp`. Presenting an already-rotated refresh token revokes the device.
 
 ## WebSocket envelope
 
@@ -135,17 +135,17 @@ Heartbeat (both sockets): the server sends `HEARTBEAT { ts }` every interval; th
 
 ## WebSocket — match (web ↔ engine)
 
-`GET /api/v1/matches/{id}/ws`, session cookie. Server closes 4401 if unauthenticated, 4403 if not a participant. The client opens it when the queue poll returns `matched`, and reopens it to reconnect.
+`GET /api/v1/matches/{id}/ws` (`{id}: uuid`), session cookie. Server closes 4401 if unauthenticated, 4403 if not a participant. The client opens it when the queue poll returns `matched`, and reopens it to reconnect.
 
 | Type | Direction | Payload |
 |---|---|---|
 | `JOIN` | client → server | `{ protocol_version: int }` — must be first |
-| `MATCH_STATE` | server → client | `{ match_id, ladder, topic, status: MatchStatus, you: Side, participants: [Participant], ready: [Side], deadline: str|null, turns: [Turn] }` — sent after every `JOIN` (full snapshot for reconnects) |
+| `MATCH_STATE` | server → client | `{ match_id: uuid, ladder, topic, status: MatchStatus, you: Side, participants: [Participant], ready: [Side], deadline: str|null, turns: [Turn] }` — sent after every `JOIN` (full snapshot for reconnects) |
 | `SUBMIT_PROMPT` | client → server | `{ prompt: str }` — once per match |
 | `PLAYER_READY` | server → client | `{ side: Side }` — a player's prompt was accepted |
-| `TURN_START` | server → client | `{ turn_id, index, side, phase }` |
-| `TURN_DELTA` | server → client | `{ turn_id, delta: str }` |
-| `TURN_END` | server → client | `{ turn_id, truncated: bool }` |
+| `TURN_START` | server → client | `{ turn_id: uuid, index, side, phase }` |
+| `TURN_DELTA` | server → client | `{ turn_id: uuid, delta: str }` |
+| `TURN_END` | server → client | `{ turn_id: uuid, truncated: bool }` |
 | `JUDGING` | server → client | `{}` |
 | `MATCH_RESULT` | server → client | `{ status, winner_side: Side|null, end_reason: EndReason, verdict_reasoning: str|null, participants: [Participant] }` — server then closes 1000 |
 | `RESIGN` | client → server | `{}` |
@@ -162,12 +162,12 @@ Disconnecting after submitting a prompt does not affect the match; turns keep ru
 |---|---|---|
 | `HELLO` | BILC → server | `{ protocol_version, client_version, platform, model: { name: str, context_length: int|null, metadata: object } }` — must be first |
 | `HELLO_ACK` | server → BILC | `{ protocol_version, heartbeat_interval_s }` |
-| `MATCH_ASSIGN` | server → BILC | `{ match_id, side: Side, topic: str }` |
-| `TURN_REQUEST` | server → BILC | `{ turn_id, match_id, phase, messages: [{ role: "system"|"user"|"assistant", content: str }], max_tokens: int, deadline: str }` |
-| `MATCH_RESPONSE` | BILC → server | `{ turn_id, delta: str, done: bool, finish_reason: str|null }` — stream of chunks; last has `done: true` |
-| `MATCH_END` | server → BILC | `{ match_id, status: MatchStatus }` — cancel anything in flight |
-| `FORFEIT` | server → BILC | `{ match_id, reason: str }` — this device's side forfeited |
-| `ERROR` | both | `{ code, message, turn_id?: int }` |
+| `MATCH_ASSIGN` | server → BILC | `{ match_id: uuid, side: Side, topic: str }` |
+| `TURN_REQUEST` | server → BILC | `{ turn_id: uuid, match_id: uuid, phase, messages: [{ role: "system"|"user"|"assistant", content: str }], max_tokens: int, deadline: str }` |
+| `MATCH_RESPONSE` | BILC → server | `{ turn_id: uuid, delta: str, done: bool, finish_reason: str|null }` — stream of chunks; last has `done: true` |
+| `MATCH_END` | server → BILC | `{ match_id: uuid, status: MatchStatus }` — cancel anything in flight |
+| `FORFEIT` | server → BILC | `{ match_id: uuid, reason: str }` — this device's side forfeited |
+| `ERROR` | both | `{ code, message, turn_id?: uuid }` |
 | `HEARTBEAT` | both | `{ ts }` |
 | `DISCONNECT` | both | `{ reason: str }` — graceful teardown, then close 1000 |
 

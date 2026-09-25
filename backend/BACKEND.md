@@ -65,17 +65,17 @@ Live state (matchmaking queues, running engines, connected BILC devices) is in-m
 
 ## Database schema (target)
 
-Postgres. Integer PKs unless noted. Every table has `created_at` (`DateTime(timezone=True)`, `server_default=func.now()`). Enumerated values are Python `StrEnum`s stored with `Enum(..., native_enum=False)` (VARCHAR + CHECK) so they can change without Postgres enum migrations.
+Postgres. UUID PKs everywhere (`Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)`, matching `users.id`), except join/junction tables whose PK is a composite of other tables' UUIDs. Every table has `created_at` (`DateTime(timezone=True)`, `server_default=func.now()`). Enumerated values are Python `StrEnum`s stored with `Enum(..., native_enum=False)` (VARCHAR + CHECK) so they can change without Postgres enum migrations.
 
 | Table | Columns | Notes |
 |---|---|---|
-| `users` (implemented) | `id`, `google_sub` unique, `email?`, `username?` unique, `avatar_url?`, `updated_at` | Drop `elo` when `ratings` ships; `username` unique is PLANNED |
-| `ladders` | `id`, `slug` unique, `display_name`, `kind` (`cloud`/`byom`), `provider_model_id?`, `is_active`, `provider_metadata` JSONB | Exactly one `byom` row |
+| `users` (implemented) | `id` UUID, `google_sub` unique, `email?`, `username?` unique, `avatar_url?`, `updated_at` | Drop `elo` when `ratings` ships; `username` unique is PLANNED |
+| `ladders` | `id` UUID, `slug` unique, `display_name`, `kind` (`cloud`/`byom`), `provider_model_id?`, `is_active`, `provider_metadata` JSONB | Exactly one `byom` row |
 | `ratings` | PK(`user_id`, `ladder_id`), `elo` = 1000, `games_played`, `wins`, `losses`, `updated_at` | Created on first queue |
-| `topics` | `id`, `text`, `is_active` | |
-| `matches` | `id`, `ladder_id`, `topic_id`, `status`, `winner_side?`, `end_reason?`, `verdict_reasoning?`, `judge_metadata` JSONB, `started_at?`, `ended_at?` | |
+| `topics` | `id` UUID, `text`, `is_active` | |
+| `matches` | `id` UUID, `ladder_id`, `topic_id`, `status`, `winner_side?`, `end_reason?`, `verdict_reasoning?`, `judge_metadata` JSONB, `started_at?`, `ended_at?` | |
 | `match_participants` | PK(`match_id`, `side`), `user_id` (unique with `match_id`), `bilc_device_id?`, `prompt?`, `elo_before`, `elo_after?` | `prompt` never exposed to others |
-| `turns` | `id`, `match_id`, `index` (unique with `match_id`), `side`, `phase`, `content`, `truncated`, `usage` JSONB | Written as each turn ends |
+| `turns` | `id` UUID, `match_id`, `index` (unique with `match_id`), `side`, `phase`, `content`, `truncated`, `usage` JSONB | Written as each turn ends |
 | `votes` | PK(`match_id`, `user_id`), `side` | Community opinion; never affects Elo |
 | `bilc_devices` | `id` UUID, `user_id`, `name`, `platform`, `client_version`, `model_metadata` JSONB, `refresh_token_hash`, `last_seen_at?`, `revoked_at?` | |
 | `bilc_pairing_codes` | `code_hash` PK, `user_id`, `expires_at`, `used_at?` | |
