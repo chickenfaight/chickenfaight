@@ -1,10 +1,6 @@
-"""Development-only table bootstrap.
+"""Creates missing tables. Run with: uv run python -m app.db.create_tables
 
-Run with: uv run python -m app.db.create_tables
-
-Temporary solution to creating new tables before migration scripts.
-THIS DOES NOT UPDATE EXISTING TABLES!
-If updating existing tables: drop all tables and run or manually alter them
+THIS DOES NOT UPDATE EXISTING TABLES. See "Changing the schema" in backend/BACKEND.md.
 """
 
 import asyncio
