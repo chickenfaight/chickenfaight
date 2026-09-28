@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { backendUrl } from "../lib/auth";
 import Image from "next/image";
+import { cookies } from "next/headers";
 
 export const metadata: Metadata = {
   title: "Profile · Chickenfaight",
@@ -16,13 +17,15 @@ type User = {
 };
 
 async function getCurrentUser(): Promise<User | null> {
-	const response = await fetch(`${backendUrl}/me`, {
+	const cookieStore = await cookies();
+	const response = await fetch(`${backendUrl}/auth/me`, {
+	  headers: { cookie: cookieStore.toString() },
       cache: "no-store",
       signal: AbortSignal.timeout(3000),
     });
+
 	const responseText = await response.text();
     let data: unknown;
-	
 	
     data = JSON.parse(responseText);
 	
