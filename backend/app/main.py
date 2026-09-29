@@ -6,18 +6,23 @@ from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 
 from app.api.auth import router as auth_router
+from app.api.exception_handlers import register_exception_handlers
+from app.api.matchmaking import router as matchmaking_router
 from app.config import settings
 from app.db.session import engine
+from app.services.matchmaking import Matchmaker
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    app.state.matchmaker = Matchmaker()
     yield
-    # Close the application-wide engine's pooled connections on shutdown.
     await engine.dispose()
 
 
 app = FastAPI(lifespan=lifespan)
+
+register_exception_handlers(app)
 
 # This signed cookie temporarily carries OAuth state during the redirect and
 # later carries our local `user_id`. Use HTTPS-only cookies in production.
@@ -38,6 +43,7 @@ app.add_middleware(
 )
 
 app.include_router(auth_router)
+app.include_router(matchmaking_router)
 
 
 @app.get("/health")
