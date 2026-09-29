@@ -6,9 +6,9 @@ This Next.js version differs from most training data. Read the relevant guide in
 
 ## Visual language
 
-`app/login/page.tsx` is the canonical reference. When in doubt, copy its classes. `app/page.tsx` is create-next-app boilerplate and `app/health/page.tsx` is a dev tool; neither is a style reference.
+`app/components/lobby.tsx` is the homepage reference: a playful charcoal lobby with chicken-comb red actions, horizontal navigation, and a top-right profile dropdown (hover, click, and keyboard). Login shares the lobby palette, typography, and wordmark, with a short game introduction and Google sign-in card. `app/health/page.tsx` is a dev tool.
 
-The look is quiet, dark, and typographic: black canvas, white type, zinc greys, hairline borders, generous space. Color is rare and has meaning.
+The lobby and login use a #17181b canvas, #202124 panels, warm white type, subtle borders, and #e53848 primary actions with #f04b58 accents. Small amber/lavender card icons and a chicken wordmark add personality. Other screens retain the black/zinc palette below.
 
 | Element | Classes |
 |---|---|
@@ -38,6 +38,8 @@ Color with meaning (the only colors besides black/white/zinc):
 
 Add side colors as `--side-pro` / `--side-con` tokens in `globals.css` the first time they're used, and reference the tokens after that.
 
+Lobby and login exceptions: colored action fills, small SVG icons, and compact result badges are allowed. No hero artwork, paid features, sidebar, or hamburger menu.
+
 Do not: add light mode; use colored or gradient fills (no purple/indigo/blue "AI" gradients); add drop shadows other than the status glows; use emoji or decorative icons; add fonts other than Geist Sans/Mono; add a component library (shadcn, MUI, etc.); use `rounded-md`/`rounded-lg` (use `xl`, `3xl`, or `full`).
 
 ## Usability
@@ -56,12 +58,14 @@ Do not: add light mode; use colored or gradient fills (no purple/indigo/blue "AI
 |---|---|---|
 | `/login` | Google sign-in | implemented |
 | `/health` | Backend check (dev) | implemented |
-| `/` | Home: wordmark, session status, "Play" | PLANNED (replace boilerplate) |
+| `/` | Desktop lobby: model selector, queue preview, session/profile menu, sample stats and activity cards | implemented (UI preview) |
 | `/play` | Game selection | PLANNED |
 | `/match/[id]` | Debate view | PLANNED |
 | `/leaderboard` | Per-ladder leaderboard, ladder switcher | PLANNED |
 | `/profile/[id]` | Username, avatar, rating per ladder, match history | PLANNED |
 | `/bilc` | Pair a device (show code), device list with online dots, revoke, setup steps | PLANNED |
+
+**Homepage preview (`/`).** Fits desktop viewports of at least 1024 × 700 without scrolling; smaller/zoomed views may scroll to preserve access. Join/cancel toggles a local queue preview with elapsed time and a disabled model selector. It never registers a real queue entry or fabricates a matched event. Models and statistics are illustrative; labels identify preview data. Session identity comes from `/auth/me`, with guest/loading/error states and sign-out via `/auth/logout`. Activity cards open accessible informational dialogs until those features ship. Live matchmaking and navigation to `/match/[id]` remain planned, pending backend cancellation/status support.
 
 **Game selection (`/play`).** A card listing ladders (cloud models and the BYOM arena), each showing your Elo on it. BYOM requires choosing one of your online devices; offline devices are shown but disabled with a link to `/bilc`. One primary "Find match" button. While queued: elapsed time and a secondary "Cancel". On `matched`, navigate to `/match/[id]`.
 

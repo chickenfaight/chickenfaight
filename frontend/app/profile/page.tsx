@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import Link from "next/link";
+import { redirect } from "next/navigation";
 import { backendUrl } from "../lib/auth";
 import Image from "next/image";
 import { cookies } from "next/headers";
@@ -13,7 +13,7 @@ type User = {
   username: string;
   avatarUrl: string | null;
   email: string | null;
-  elo: int;
+  elo: number;
 };
 
 async function getCurrentUser(): Promise<User | null> {
@@ -24,17 +24,17 @@ async function getCurrentUser(): Promise<User | null> {
       signal: AbortSignal.timeout(3000),
     });
 
+	if (response.status === 401) return null;
+    if (!response.ok) throw new Error("Unable to load profile");
 	const responseText = await response.text();
-    let data: unknown;
-	
-    data = JSON.parse(responseText);
+    const data: { username: string; email: string | null; avatar_url: string | null; elo: number } = JSON.parse(responseText);
 	
 	
 	
   return {
     username: data.username,
 	email: data.email,
-    avatarUrl: data.avatarUrl,
+    avatarUrl: data.avatar_url,
 	elo: data.elo,
   };
 }
