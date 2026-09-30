@@ -30,7 +30,16 @@ export default function MatchmakingCard() {
       try {
         let data: unknown;
         try {
-          data = await api(method !== "GET" ? "/match/queue" : "/match/status", controller.signal, method);
+          if (method === "POST") {
+            // Recover an existing entry before attempting a new registration.
+            data = await api("/match/status", controller.signal);
+            if (controller.signal.aborted) return;
+            if (parseQueueStatus(data).status === "none") {
+              data = await api("/match/queue", controller.signal, "POST");
+            }
+          } else {
+            data = await api(method === "DELETE" ? "/match/queue" : "/match/status", controller.signal, method);
+          }
           if (method === "DELETE") data = { status: "none" };
         } catch (err) {
           // A previous tab/request may already have registered this user.
@@ -68,7 +77,7 @@ export default function MatchmakingCard() {
           setError("Sign in to join the queue.");
         } else {
           setPhase("error");
-          setError("Couldn’t confirm your queue status. Check again before joining; you may still be queued.");
+          setError("Couldn’t confirm your queue status. Try Join game again; we’ll check for an existing game or queue entry first.");
         }
       }
     }
@@ -114,7 +123,7 @@ export default function MatchmakingCard() {
     </div>
     {phase === "matched" ? <div className="rounded-xl border border-emerald-400/20 bg-emerald-400/5 p-3" role="status"><p className="text-xs font-semibold text-emerald-400">Debate ready</p><p className="mt-2 text-[10px] text-zinc-400">Match ID</p><p className="mt-1 break-all font-mono text-xs text-zinc-200">{matchId}</p></div>
       : phase === "signed-out" ? <Link href="/login" className={`flex h-12 items-center justify-center rounded-xl bg-[#e53848] text-sm font-bold ${focus}`}>Sign in to queue</Link>
-      : <button onClick={() => request(queued ? "DELETE" : phase === "error" ? "GET" : "POST")} disabled={waiting && !queued} className={`flex h-12 w-full items-center justify-center rounded-xl text-sm font-bold disabled:cursor-not-allowed disabled:opacity-50 ${focus} ${queued ? "border border-white/15 bg-white/5" : "bg-[#e53848] text-white enabled:hover:bg-[#c92d3c]"}`}>{queued ? "Cancel queue" : phase === "cancelling" ? "Cancelling…" : phase === "checking" ? "Checking…" : phase === "joining" ? "Joining…" : phase === "error" ? "Check status again" : "Join queue"}</button>}
+      : <button onClick={() => request(queued ? "DELETE" : "POST")} disabled={waiting && !queued} className={`flex h-12 w-full items-center justify-center rounded-xl text-sm font-bold disabled:cursor-not-allowed disabled:opacity-50 ${focus} ${queued ? "border border-white/15 bg-white/5" : "bg-[#e53848] text-white enabled:hover:bg-[#c92d3c]"}`}>{queued ? "Cancel queue" : phase === "cancelling" ? "Cancelling…" : phase === "checking" ? "Checking…" : phase === "joining" ? "Joining…" : "Join game"}</button>}
     {error && <p role="alert" className="mt-3 text-xs leading-relaxed text-red-300">{error}</p>}
     <p className="mt-3 text-center text-[10px] leading-relaxed text-zinc-500">{phase === "matched" ? "Debate play is coming next." : queued ? "You can leave the queue anytime before an opponent is found." : "Model selection is coming soon."}</p>
   </div>;
