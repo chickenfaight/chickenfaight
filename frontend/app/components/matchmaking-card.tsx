@@ -1,0 +1,121 @@
+"use client";
+
+import Link from "next/link";
+import { useEffect, useRef, useState } from "react";
+import { api, ApiError } from "../lib/api";
+import { parseQueueStatus } from "../lib/protocol";
+
+type Phase = "checking" | "idle" | "joining" | "cancelling" | "queued" | "matched" | "error" | "signed-out";
+const focus = "focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white";
+
+export default function MatchmakingCard() {
+  const [phase, setPhase] = useState<Phase>("checking");
+  const [error, setError] = useState("");
+  const [matchId, setMatchId] = useState("");
+  const [elapsed, setElapsed] = useState(0);
+  const [attempt, setAttempt] = useState(0);
+  const action = useRef<"GET" | "POST" | "DELETE">("GET");
+  const busy = useRef(false);
+  const activeController = useRef<AbortController | null>(null);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    activeController.current = controller;
+    let timer: ReturnType<typeof setTimeout>;
+    let method = action.current;
+    action.current = "GET";
+    let joining = method === "POST";
+
+    async function poll() {
+      try {
+        let data: unknown;
+        try {
+          data = await api(method !== "GET" ? "/match/queue" : "/match/status", controller.signal, method);
+          if (method === "DELETE") data = { status: "none" };
+        } catch (err) {
+          // A previous tab/request may already have registered this user.
+          if (err instanceof ApiError && err.status === 409 && ["ALREADY_QUEUED", "IN_MATCH"].includes(err.code ?? "")) {
+            data = await api("/match/status", controller.signal);
+          } else throw err;
+        }
+        if (controller.signal.aborted) return;
+        const status = parseQueueStatus(data);
+        setError("");
+        if (status.status === "matched") {
+          setMatchId(status.match_id);
+          setPhase("matched");
+          busy.current = false;
+          return;
+        }
+        if (status.status === "none") {
+          setPhase("idle");
+          if (joining) {
+            setError("The server reports no queue entry. You are not currently queued.");
+          }
+          busy.current = false;
+          return;
+        }
+        setPhase("queued");
+        busy.current = false;
+        method = "GET";
+        joining = false;
+        timer = setTimeout(poll, 1000);
+      } catch (err) {
+        if (controller.signal.aborted) return;
+        busy.current = false;
+        if (err instanceof ApiError && err.status === 401) {
+          setPhase("signed-out");
+          setError("Sign in to join the queue.");
+        } else {
+          setPhase("error");
+          setError("Couldn’t confirm your queue status. Check again before joining; you may still be queued.");
+        }
+      }
+    }
+    void poll();
+    return () => { controller.abort(); clearTimeout(timer); };
+  }, [attempt]);
+
+  useEffect(() => {
+    if (phase !== "queued") return;
+    const start = Date.now();
+    const timer = setInterval(() => setElapsed(Math.floor((Date.now() - start) / 1000)), 1000);
+    return () => clearInterval(timer);
+  }, [phase]);
+
+  function request(method: "GET" | "POST" | "DELETE") {
+    if (busy.current) return;
+    busy.current = true;
+    activeController.current?.abort();
+    action.current = method;
+    setError("");
+    setElapsed(0);
+    setPhase(method === "POST" ? "joining" : method === "DELETE" ? "cancelling" : "checking");
+    setAttempt(value => value + 1);
+  }
+
+  const queued = phase === "queued";
+  const waiting = queued || phase === "joining" || phase === "checking" || phase === "cancelling";
+  const title = {
+    checking: "Checking queue…", idle: "Ready to ruffle feathers?", joining: "Joining queue…",
+    cancelling: "Leaving queue…", queued: "Finding an opponent…", matched: "Opponent found!", error: "Queue status unavailable", "signed-out": "Join the debate",
+  }[phase];
+
+  return <div className={`min-w-0 rounded-3xl border p-4 xl:p-6 ${queued ? "border-[#f04b58]/35 bg-[#f04b58]/[0.035]" : "border-white/[0.08] bg-[#191a1d]"}`}>
+    <div className="mb-5 flex items-center gap-3" role="status">
+      {waiting && <span aria-hidden="true" className="h-8 w-8 shrink-0 rounded-full border-[3px] border-[#f04b58]/20 border-t-[#f04b58] motion-safe:animate-spin" />}
+      <h3 className={`text-sm font-bold ${queued ? "text-[#f04b58]" : "text-[#f5f3ef]"}`}>{title}</h3>
+    </div>
+    <label htmlFor="queue-model" className="mb-2 block text-[10px] font-semibold uppercase tracking-widest text-zinc-400">AI model</label>
+    <select id="queue-model" disabled className="h-12 w-full rounded-xl border border-white/10 bg-[#242529] px-3 text-sm text-zinc-400"><option>Provided model</option></select>
+    <div className="flex min-h-12 items-center justify-between gap-2 text-[11px] text-zinc-500">
+      <span>{queued ? "Time searching on this page" : "One shared queue for now"}</span>
+      {queued && <span className="font-mono text-sm tabular-nums text-[#ff7882]">{String(Math.floor(elapsed / 60)).padStart(2, "0")}:{String(elapsed % 60).padStart(2, "0")}</span>}
+    </div>
+    {phase === "matched" ? <div className="rounded-xl border border-emerald-400/20 bg-emerald-400/5 p-3" role="status"><p className="text-xs font-semibold text-emerald-400">Debate ready</p><p className="mt-2 text-[10px] text-zinc-400">Match ID</p><p className="mt-1 break-all font-mono text-xs text-zinc-200">{matchId}</p></div>
+      : phase === "signed-out" ? <Link href="/login" className={`flex h-12 items-center justify-center rounded-xl bg-[#e53848] text-sm font-bold ${focus}`}>Sign in to queue</Link>
+      : <button onClick={() => request(queued ? "DELETE" : phase === "error" ? "GET" : "POST")} disabled={waiting && !queued} className={`flex h-12 w-full items-center justify-center rounded-xl text-sm font-bold disabled:cursor-not-allowed disabled:opacity-50 ${focus} ${queued ? "border border-white/15 bg-white/5" : "bg-[#e53848] text-white enabled:hover:bg-[#c92d3c]"}`}>{queued ? "Cancel queue" : phase === "cancelling" ? "Cancelling…" : phase === "checking" ? "Checking…" : phase === "joining" ? "Joining…" : phase === "error" ? "Check status again" : "Join queue"}</button>}
+    {error && <p role="alert" className="mt-3 text-xs leading-relaxed text-red-300">{error}</p>}
+    <p className="mt-3 text-center text-[10px] leading-relaxed text-zinc-500">{phase === "matched" ? "Debate play is coming next." : queued ? "You can leave the queue anytime before an opponent is found." : "Model selection is coming soon."}</p>
+  </div>;
+}

@@ -14,4 +14,15 @@ async def queue_match(request: Request, user: CurrentUserDependency):
     matchmaker: Matchmaker = request.app.state.matchmaker
     matchmaker.register(user.id)
 
-    return {"status": "queued"}
+    return matchmaker.get_status(user.id)
+
+@router.get("/status", status_code=status.HTTP_200_OK)
+async def queue_status(request: Request, user: CurrentUserDependency):
+    """Gets user queued status"""
+    return request.app.state.matchmaker.get_status(user.id)
+
+
+@router.delete("/queue", status_code=status.HTTP_204_NO_CONTENT)
+async def cancel_queue(request: Request, user: CurrentUserDependency) -> Response:
+    request.app.state.matchmaker.cancel(user.id)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

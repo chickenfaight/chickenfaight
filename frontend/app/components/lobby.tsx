@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { backendUrl } from "../lib/auth";
+import MatchmakingCard from "./matchmaking-card";
 
 type User = { username: string | null; elo: number };
 type IconName = "arrow" | "trophy" | "bolt" | "chip" | "chevron" | "cross";
@@ -25,16 +26,12 @@ export default function Lobby() {
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<"loading" | "in" | "out" | "error">("loading");
   const [menu, setMenu] = useState(false);
-  const [model, setModel] = useState("Llama 3.3 70B");
-  const [queuedAt, setQueuedAt] = useState<number | null>(null);
-  const [elapsed, setElapsed] = useState(0);
   const [detail, setDetail] = useState("How to play");
   const [logoutError, setLogoutError] = useState("");
   const [loggingOut, setLoggingOut] = useState(false);
   const dialog = useRef<HTMLDialogElement>(null);
   const profileButton = useRef<HTMLButtonElement>(null);
   const logoutController = useRef<AbortController | null>(null);
-  const queued = queuedAt !== null;
 
   useEffect(() => {
     const controller = new AbortController();
@@ -52,12 +49,6 @@ export default function Lobby() {
     return () => { controller.abort(); logoutController.current?.abort(); };
   }, []);
 
-  useEffect(() => {
-    if (queuedAt === null) return;
-    const timer = window.setInterval(() => setElapsed(Math.floor((Date.now() - queuedAt) / 1000)), 1000);
-    return () => window.clearInterval(timer);
-  }, [queuedAt]);
-
   function showDetail(title: string) { setDetail(title); dialog.current?.showModal(); }
   async function logout() {
     setLoggingOut(true); setLogoutError("");
@@ -65,7 +56,7 @@ export default function Lobby() {
     try {
       const res = await fetch(`${backendUrl}/auth/logout`, { method: "POST", credentials: "include", signal: AbortSignal.any([controller.signal, AbortSignal.timeout(5000)]) });
       if (!res.ok) throw new Error("Logout failed");
-      setUser(null); setSession("out"); setMenu(false); setQueuedAt(null);
+      setUser(null); setSession("out"); setMenu(false);
     } catch { if (!controller.signal.aborted) setLogoutError("Couldn’t sign out. Try again."); }
     finally { if (!controller.signal.aborted) setLoggingOut(false); }
   }
@@ -79,7 +70,7 @@ export default function Lobby() {
   const content = details[detail];
 
   return (
-    <div className="flex min-h-svh flex-col bg-[#17181b] font-sans text-[#f5f3ef] min-[1024px]:h-svh min-[1024px]:min-h-[700px]">
+    <div className="flex min-h-svh flex-col bg-[#17181b] font-sans text-[#f5f3ef] min-[1024px]:h-svh min-[1024px]:min-h-[800px]">
       <header className="z-20 flex h-16 shrink-0 xl:h-[76px] items-center justify-between border-b border-white/[0.07] px-6 xl:px-10">
         <Link href="/" className={`flex items-center gap-2.5 rounded-xl ${focus}`} aria-label="Chicken fAIght home"><span className="text-[#f04b58]"></span><span className="text-xl font-extrabold tracking-[-0.06em]">chicken<span className="text-[#f04b58]">fAIght</span><span className="text-[#f04b58]">.</span></span></Link>
         <nav aria-label="Main navigation" className="flex h-full items-center gap-8 text-sm font-semibold">
@@ -101,7 +92,7 @@ export default function Lobby() {
       </header>
 
       <main className="mx-auto flex w-full max-w-[1540px] flex-1 flex-col gap-4 px-6 py-4 xl:gap-6 xl:px-10 xl:py-6 min-[1024px]:min-h-0">
-        <div className="flex shrink-0 items-end justify-between"><div><p className="mb-1 text-[10px] font-semibold uppercase tracking-[0.2em] text-[#f37981]">The debate arena</p><h1 className="text-2xl font-bold tracking-tight">Welcome to the coop.</h1></div><span className="rounded-full border border-white/10 px-3 py-1.5 text-[10px] text-zinc-400">Early preview <span className="ml-1.5 inline-block h-1.5 w-1.5 rounded-full bg-[#f04b58]" /></span></div>
+        <div className="flex shrink-0 items-end justify-between"><div><p className="mb-1 text-[10px] font-semibold uppercase tracking-[0.2em] text-[#f37981]">The debate arena</p><h1 className="text-2xl font-bold tracking-tight">Welcome to the coop.</h1></div></div>
 
         <div className="grid flex-1 grid-cols-[minmax(0,1fr)_280px] gap-5 max-[900px]:grid-cols-1 xl:grid-cols-[minmax(0,1fr)_310px] min-[1024px]:min-h-0">
           <section aria-labelledby="play-title" className={`${panel} relative flex min-h-[300px] items-center overflow-hidden p-5 xl:p-9`}>
@@ -110,19 +101,8 @@ export default function Lobby() {
               <div><span className="inline-flex items-center gap-2 rounded-full border border-[#f04b58]/20 bg-[#f04b58]/[0.07] px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-[#ff7882]"><span className="h-1.5 w-1.5 rounded-full bg-current" />1v1 · AI debates</span>
                 <h2 id="play-title" className="mt-5 text-[clamp(38px,4.5vw,68px)] font-black leading-[1.02] tracking-[-0.065em]">Small prompt.<br /><span className="text-[#f04b58]">Big fight.</span></h2>
                 <p className="mt-5 max-w-72 text-sm leading-relaxed text-zinc-400">Write your prompt. Let your AI do the talking. A battle of wits, one debate at a time.</p>
-                <div className="mt-6 flex items-center gap-3 text-[10px] font-medium text-zinc-500"><span>ONE PROMPT</span><span className="h-1 w-1 rounded-full bg-zinc-600" /><span>TWO SIDES</span><span className="h-1 w-1 rounded-full bg-zinc-600" /><span>ONE WINNER</span></div>
               </div>
-              <div className={`rounded-3xl border p-4 xl:p-6 ${queued ? "border-[#f04b58]/35 bg-[#f04b58]/[0.035]" : "border-white/[0.08] bg-[#191a1d]"}`}>
-                <div className="mb-4 flex h-12 items-center gap-3" aria-live="polite">
-                  <span className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl ${queued ? "bg-[#f04b58]/10 text-[#ff7882]" : "bg-white/5 text-zinc-300"}`}><Icon name={queued ? "cross" : "bolt"} /></span>
-                  <div><h3 className="text-sm font-bold">{queued ? "Finding an opponent…" : "Ready to ruffle feathers?"}</h3><p className="mt-1 text-xs text-zinc-500">{queued ? "Your next debate is on its way." : "Pick your model. Make your point."}</p></div>
-                </div>
-                <label htmlFor="model" className="mb-2 block text-[10px] font-semibold uppercase tracking-widest text-zinc-400">Your AI model</label>
-                <select id="model" value={model} onChange={(event) => setModel(event.target.value)} disabled={queued} className={`h-12 w-full rounded-xl border border-white/10 bg-[#242529] px-3 text-sm font-medium disabled:opacity-50 ${focus}`}><option>Llama 3.3 70B</option><option>Qwen 2.5 72B</option></select>
-                <div className="flex h-12 items-center justify-between text-[11px] text-zinc-500"><span>{queued ? "Time in queue" : "Separate Elo for every model"}</span>{queued && <span className="font-mono text-sm tabular-nums text-[#ff7882]">{String(Math.floor(elapsed / 60)).padStart(2, "0")}:{String(elapsed % 60).padStart(2, "0")}</span>}</div>
-                <button onClick={() => { setElapsed(0); setQueuedAt(queued ? null : Date.now()); }} className={`flex h-12 w-full items-center justify-center gap-3 rounded-xl text-sm font-bold ${focus} ${queued ? "border border-white/15 bg-white/5 hover:bg-white/10" : "bg-[#e53848] text-white hover:bg-[#c92d3c]"}`}>{queued ? "Cancel queue" : "Join queue"}<Icon name={queued ? "cross" : "arrow"} className="h-4 w-4" /></button>
-                <p className="mt-3 text-center text-[10px] text-zinc-500">Preview only · no live matchmaking</p>
-              </div>
+              <MatchmakingCard key={session} />
             </div>
           </section>
 

@@ -58,14 +58,14 @@ Do not: add light mode; use colored or gradient fills (no purple/indigo/blue "AI
 |---|---|---|
 | `/login` | Google sign-in | implemented |
 | `/health` | Backend check (dev) | implemented |
-| `/` | Desktop lobby: model selector, queue preview, session/profile menu, sample stats and activity cards | implemented (UI preview) |
+| `/` | Desktop lobby: queue registration/status polling, session/profile menu, sample stats and activity cards | implemented (matchmaking integration; sample stats) |
 | `/play` | Game selection | PLANNED |
 | `/match/[id]` | Debate view | PLANNED |
 | `/leaderboard` | Per-ladder leaderboard, ladder switcher | PLANNED |
 | `/profile/[id]` | Username, avatar, rating per ladder, match history | PLANNED |
 | `/bilc` | Pair a device (show code), device list with online dots, revoke, setup steps | PLANNED |
 
-**Homepage preview (`/`).** Fits desktop viewports of at least 1024 × 700 without scrolling; smaller/zoomed views may scroll to preserve access. Join/cancel toggles a local queue preview with elapsed time and a disabled model selector. It never registers a real queue entry or fabricates a matched event. Models and statistics are illustrative; labels identify preview data. Session identity comes from `/auth/me`, with guest/loading/error states and sign-out via `/auth/logout`. Activity cards open accessible informational dialogs until those features ship. Live matchmaking and navigation to `/match/[id]` remain planned, pending backend cancellation/status support.
+**Homepage (`/`).** Join queue registers through the current `POST /match/queue` route. On mount and after registration, the queue card reads `GET /match/status`; queued users are polled sequentially every second. A matched response stops polling and displays the match ID without navigation or WebSockets. Requests time out, are aborted on unmount, and failures offer a status check rather than automatically repeating registration. The model selector shows the backend's single provided model. Cancel queue stops polling and calls `DELETE /match/queue`; HTTP 204 returns to idle, while `IN_MATCH` refreshes status to show the match. Errors offer a status retry. Leaving the page does not cancel a queue entry. The elapsed timer is local to this page, not an authoritative server timestamp. Statistics are illustrative. Session identity comes from `/auth/me`, with guest/loading/error states and sign-out via `/auth/logout`. Activity cards open informational dialogs until those features ship.
 
 **Game selection (`/play`).** A card listing ladders (cloud models and the BYOM arena), each showing your Elo on it. BYOM requires choosing one of your online devices; offline devices are shown but disabled with a link to `/bilc`. One primary "Find match" button. While queued: elapsed time and a secondary "Cancel". On `matched`, navigate to `/match/[id]`.
 

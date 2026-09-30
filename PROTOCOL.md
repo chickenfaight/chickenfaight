@@ -112,6 +112,10 @@ Player prompts are never returned by any endpoint or message except to their aut
 
 `/health` and `/auth/*` stay unversioned: the OAuth redirect URI is registered with Google.
 
+### Current matchmaking integration
+
+The frontend currently uses the existing session-authenticated `POST /match/queue` (no body; HTTP 202 queue status) and `GET /match/status` (HTTP 200 queue status). Both return `{ status: "none"|"queued"|"matched", match_id?: uuid }`. These temporary routes use the single `provided` queue; model selection is not implemented. `DELETE /match/queue` (session, no body) cancels the caller’s queue entry and returns HTTP 204, including if already absent; an existing match returns HTTP 409 `IN_MATCH`. The versioned routes above remain the target contract. The lobby polls until matched and displays the ID without navigating or opening a WebSocket.
+
 ## REST — BILC
 
 | Method | Path | Auth | Request | Response |

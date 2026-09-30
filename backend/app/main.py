@@ -1,4 +1,5 @@
-from contextlib import asynccontextmanager
+import asyncio
+from contextlib import asynccontextmanager, suppress
 from collections.abc import AsyncIterator
 
 from fastapi import FastAPI
@@ -15,9 +16,20 @@ from app.services.matchmaking import Matchmaker
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-    app.state.matchmaker = Matchmaker()
-    yield
-    await engine.dispose()
+    matchmaker = Matchmaker()
+    app.state.matchmaker = matchmaker
+
+    task = asyncio.create_task(matchmaker.run())
+
+    try:
+        yield
+    finally:
+        task.cancel()
+        try:
+            with suppress(asyncio.CancelledError):
+                await task
+        finally:
+            await engine.dispose()
 
 
 app = FastAPI(lifespan=lifespan)
@@ -38,7 +50,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=[settings.frontend_url],
     allow_credentials=True,
-    allow_methods=["GET", "POST"],
+    allow_methods=["GET", "POST", "DELETE"],
     allow_headers=["*"],
 )
 
