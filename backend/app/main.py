@@ -9,6 +9,7 @@ from starlette.middleware.sessions import SessionMiddleware
 from app.api.auth import router as auth_router
 from app.api.exception_handlers import register_exception_handlers
 from app.api.matchmaking import router as matchmaking_router
+from app.api.game import router as game_router
 from app.config import settings
 from app.db.session import engine
 from app.services.matchmaking import Matchmaker
@@ -37,7 +38,8 @@ app = FastAPI(lifespan=lifespan)
 register_exception_handlers(app)
 
 # This signed cookie temporarily carries OAuth state during the redirect and
-# later carries our local `user_id`. Use HTTPS-only cookies in production.
+# later carries our local `user_id`. It restores sessions for HTTP and WebSocket
+# connections alike. Use HTTPS-only cookies in production.
 app.add_middleware(
     SessionMiddleware,
     secret_key=settings.session_secret,
@@ -46,6 +48,7 @@ app.add_middleware(
 )
 
 # Required when the browser frontend calls /auth/me or /auth/logout directly.
+# WebSocket Origin validation is handled separately in auth/dependencies.py.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[settings.frontend_url],
@@ -55,7 +58,8 @@ app.add_middleware(
 )
 
 app.include_router(auth_router)
-app.include_router(matchmaking_router)
+app.include_router(matchmaking_router, prefix="/v1")
+app.include_router(game_router, prefix="/v1")
 
 
 @app.get("/health")

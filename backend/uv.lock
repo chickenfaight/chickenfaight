@@ -68,6 +68,7 @@ dependencies = [
     { name = "psycopg-binary" },
     { name = "python-dotenv" },
     { name = "sqlalchemy", extra = ["asyncio"] },
+    { name = "websockets" },
 ]
 
 [package.metadata]
@@ -80,6 +81,7 @@ requires-dist = [
     { name = "psycopg-binary", specifier = ">=3.3.6" },
     { name = "python-dotenv", specifier = ">=1.2.3" },
     { name = "sqlalchemy", extras = ["asyncio"], specifier = ">=2.0.54" },
+    { name = "websockets", specifier = ">=17.1" },
 ]
 
 [[package]]
