@@ -4,7 +4,7 @@ FastAPI server: REST API, matchmaking, game engine, persistence. Contracts are i
 
 ## Stack
 
-Python ≥ 3.14 managed with `uv`; FastAPI; SQLAlchemy 2 async + psycopg 3; Pydantic; Authlib (Google OIDC); PostgreSQL. PLANNED additions: `openai` (inference client), `PyJWT` (BILC tokens).
+Python ≥ 3.14 managed with `uv`; FastAPI; SQLAlchemy 2 async + psycopg 3; Alembic (migrations); Pydantic; Authlib (Google OIDC); `better-profanity` (tag filter); PostgreSQL. PLANNED additions: `openai` (inference client), `PyJWT` (BILC tokens).
 
 Use a tool's current idiomatic style: `Annotated` dependencies, `Mapped[...]`/`mapped_column`, Pydantic v2 `model_validate`, `async`/`await` everywhere. Never do blocking I/O in async code.
 
@@ -22,14 +22,14 @@ app/
   schemas/        Pydantic: request/response bodies, WS messages, JSONB shapes
   engine/         PLANNED — game engine, prompt templates, verdict parsing
   inference/      PLANNED — ModelClient interface + implementations
-  db/             base.py, session.py, create_tables.py, seed.py (PLANNED)
+  db/             base.py, session.py, migrate.py, migrations/ (Alembic), seed.py (PLANNED)
 ```
 
 Dependency direction: `api → services → repositories → models`. `engine` uses `services` and `inference`; nothing imports `api`. Split `schemas/schemas.py` into per-domain files as it grows, re-exported from `schemas/__init__.py`.
 
 Rules:
 - Routers declare `response_model` (or a return type) and never return ORM objects.
-- Services open transactions with `async with self.session.begin():` (see `UserService`).
+- Services open transactions with `async with self.session.begin():` (see `UserService.sign_in_with_google`). Exception: on routes using `CurrentUserDependency`, loading the user already began the session's transaction, so the service ends it with `commit()`/`rollback()` instead (see `UserService.claim_username`).
 - New env vars go in `Settings` and `.env.example` together; missing required vars fail at startup.
 
 ## Auth
@@ -58,6 +58,13 @@ The engine never calls a provider directly. `app/inference/` exposes one `ModelC
 
 Live state (matchmaking queues, running engines, connected BILC devices) is in-memory in one server process. Running multiple processes would need a shared store; out of scope.
 
+## User tags
+
+`users.username` is the player's public tag, null until set (PROTOCOL.md: `PATCH /api/v1/users/me`). Rules live in `app/services/usernames.py`:
+- Format `[A-Za-z0-9_]{3,24}`; uniqueness ignores case (unique index `uq_users_username_lower`) but the typed casing is kept.
+- Profanity: `better-profanity` whole-word check (also split on `_`, camelCase, and letter/digit boundaries), plus a short list of severe stems matched as substrings after undoing leetspeak, because tags glue words together. Ambiguous short words stay whole-word only (`class`, `grape` pass; `Scunthorpe` is a known false positive).
+- Set once: `UPDATE ... WHERE username IS NULL` makes the write atomic, and nothing else writes the column (sign-in never touches it). Matchmaking refuses users without a tag.
+
 ## Matchmaking and Elo
 
 - One queue per ladder. Pair the two closest-rated players within ±100 Elo; the window widens by 50 every 10 s waited. BYOM players queue only with an online, idle device.
@@ -65,11 +72,11 @@ Live state (matchmaking queues, running engines, connected BILC devices) is in-m
 
 ## Database schema (target)
 
-Postgres. UUID PKs everywhere (`Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)`, matching `users.id`), except join/junction tables whose PK is a composite of other tables' UUIDs. Every table has `created_at` (`DateTime(timezone=True)`, `server_default=func.now()`). Enumerated values are Python `StrEnum`s stored with `Enum(..., native_enum=False)` (VARCHAR + CHECK) so they can change without Postgres enum migrations.
+Postgres. Constraint and index names come from the naming convention in `app/db/base.py`. UUID PKs everywhere (`Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)`, matching `users.id`), except join/junction tables whose PK is a composite of other tables' UUIDs. Every table has `created_at` (`DateTime(timezone=True)`, `server_default=func.now()`). Enumerated values are Python `StrEnum`s stored with `Enum(..., native_enum=False)` (VARCHAR + CHECK) so they can change without Postgres enum migrations.
 
 | Table | Columns | Notes |
 |---|---|---|
-| `users` (implemented) | `id` UUID, `google_sub` unique, `email?`, `username?` unique, `avatar_url?`, `updated_at` | Drop `elo` when `ratings` ships; `username` unique is PLANNED |
+| `users` (implemented) | `id` UUID, `google_sub` unique, `email?`, `username?` unique on `lower(username)`, `avatar_url?`, `updated_at` | Drop `elo` when `ratings` ships; `username` is the user's tag (see below) |
 | `ladders` | `id` UUID, `slug` unique, `display_name`, `kind` (`cloud`/`byom`), `provider_model_id?`, `is_active`, `provider_metadata` JSONB | Exactly one `byom` row |
 | `ratings` | PK(`user_id`, `ladder_id`), `elo` = 1000, `games_played`, `wins`, `losses`, `updated_at` | Created on first queue |
 | `topics` | `id` UUID, `text`, `is_active` | |
@@ -97,13 +104,32 @@ Postgres. UUID PKs everywhere (`Mapped[uuid.UUID] = mapped_column(Uuid, primary_
 
 ## Changing the schema
 
-There is no migration tool. `app/db/create_tables.py` creates missing tables and never alters existing ones.
+Alembic migrations live in `app/db/migrations/versions/` (config in `pyproject.toml`). The server applies them on every startup (`app/db/migrate.py`, all in one transaction), so after `git pull` you only restart it. Never hand-run SQL against a shared schema.
 
-1. Edit or add the model in `app/models/`, and export it from `app/models/__init__.py` (unexported models are not created).
-2. Update the schema table above.
-3. Apply it:
-   - **New table:** `uv run python -m app.db.create_tables`.
-   - **Changing an existing table:** write the `ALTER TABLE ...` SQL in the PR description under "Schema change". Everyone applies it by hand with `psql`, or resets their local DB. New columns must be nullable or have a `server_default` so existing rows survive.
-4. Reset a local DB: `dropdb chickenfaight && createdb chickenfaight && uv run python -m app.db.create_tables` (then `uv run python -m app.db.seed` once it exists).
+**Workflow**
+1. Start the server once so your local DB is current (autogenerate refuses to run against an outdated DB).
+2. Edit or add the model in `app/models/` and export it from `app/models/__init__.py` (unexported models are invisible to Alembic).
+3. `uv run alembic revision --autogenerate -m "<what changed>"`.
+4. Read the generated file and fix what autogenerate gets wrong (list below). `downgrade()` must undo `upgrade()` exactly.
+5. Restart the server (or `uv run python -m app.db.migrate`), then `uv run pytest`.
+6. Commit the model change and its migration together, and update the schema table above.
+
+**Rules**
+- Never edit or delete a migration that is on `main`; add a new one. Teammates' databases already ran the old version and would silently diverge. Editing your own unmerged migration is fine; reset your local DB afterwards.
+- New columns on existing tables are nullable or have a `server_default`, so existing rows survive.
+- Before merging a PR, merge `main` into your branch and run `uv run pytest`.
+- Autogenerate needs review for: renames (it emits drop + add, which loses data; use `op.alter_column(..., new_column_name=...)` or `op.rename_table`), changed `server_default`s, CHECK constraints from `Enum(native_enum=False)`, and data backfills (`op.execute`). It handles expression indexes such as `lower(username)`.
+
+**Protocols** — what happens on its own, and what (if anything) you do:
+
+| Situation | Automatic | You do |
+|---|---|---|
+| Someone merged a migration | Applied on your next server start | Nothing |
+| You changed a model without a migration | Startup logs "Models don't match the migrations"; `test_models_match_migrations` fails | Workflow steps 3–6 |
+| Your branch and `main` both added a migration ("multiple heads") | Dev server applies both; `test_migrations_have_a_single_head` fails | Whoever merges second: `uv run alembic merge heads -m "merge"`, commit the file |
+| Your DB has a migration this checkout lacks (you switched branches), or predates Alembic | With `APP_ENV=development`, startup wipes and rebuilds the local DB and logs it; otherwise it refuses to start and prints the reset command | Nothing; sign in again. To keep local data, run `uv run alembic downgrade <shared revision>` before switching branches |
+| A migration fails partway | The whole upgrade rolls back; the server doesn't start | Fix the migration (it isn't on `main` yet) and restart |
+| Local DB is in a strange state | — | `uv run python -m app.db.migrate --reset` (development only) |
+| Production | Migrations run on startup; never auto-reset (`APP_ENV` unset) | Run one server process; concurrent startups would race on migrations |
 
 Seed data (ladders, topics) lives in `app/db/seed.py` (PLANNED) and must be idempotent.

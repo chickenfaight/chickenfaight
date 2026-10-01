@@ -35,6 +35,11 @@ Everything here is PLANNED unless marked **(implemented)**. Remove a PLANNED sta
 | `BAD_MESSAGE` | — | — | WS message failed validation (no close) |
 | `UNKNOWN_TYPE` | — | — | Unrecognized WS `type` (no close) |
 | `ALREADY_QUEUED`, `IN_MATCH` | 409 | — | Matchmaking conflicts |
+| `USERNAME_INVALID` | 422 | — | Tag breaks the format rule (implemented) |
+| `USERNAME_NOT_ALLOWED` | 422 | — | Tag fails the profanity filter (implemented) |
+| `USERNAME_TAKEN` | 409 | — | Tag already used by someone, ignoring case (implemented) |
+| `USERNAME_ALREADY_SET` | 409 | — | Caller already has a tag; tags never change (implemented) |
+| `USERNAME_REQUIRED` | 403 | — | Caller must set a tag first (implemented) |
 | `BILC_OFFLINE`, `BILC_BUSY` | 409 | — | BYOM device can't take a match |
 | `PAIRING_CODE_INVALID` | 400 | — | Wrong, used, or expired pairing code |
 | `TOKEN_INVALID` | 401 | — | Bad/reused refresh token (reuse revokes the device) |
@@ -67,7 +72,7 @@ Server-side constants; clients read deadlines from messages rather than hard-cod
 ## Shared types
 
 ```
-UserRead         { id: uuid, email: str|null, username: str|null, avatar_url: str|null, elo: int }   (implemented; elo is removed when Rating ships)
+UserRead         { id: uuid, email: str|null, username: str|null, avatar_url: str|null, elo: int }   (implemented; elo is removed when Rating ships; username is the user's tag, null until set)
 UserPublic       { id: uuid, username: str|null, avatar_url: str|null }
 Rating           { ladder: str, elo: int, games_played: int, wins: int, losses: int }
 Ladder           { slug: str, display_name: str, kind: "cloud"|"byom" }
@@ -96,7 +101,8 @@ Player prompts are never returned by any endpoint or message except to their aut
 | GET | `/auth/google/callback` | public | OAuth params | 302 to `FRONTEND_URL`, sets session (implemented) |
 | GET | `/auth/me` | session | — | `UserRead` (implemented) |
 | POST | `/auth/logout` | public | — | 204, clears session (implemented) |
-| PATCH | `/api/v1/users/me` | session | `{ username: str }` (3–24 chars, `[a-zA-Z0-9_]`, unique) | `UserRead` |
+| PATCH | `/api/v1/users/me` | session | `{ username: str }` (3–24 chars, `[a-zA-Z0-9_]`, unique ignoring case, no profanity) | `UserRead`; sets the caller's tag once, then `USERNAME_ALREADY_SET` forever. Errors: `USERNAME_INVALID`, `USERNAME_NOT_ALLOWED`, `USERNAME_TAKEN` (implemented) |
+| GET | `/api/v1/users/username-availability` | session | `?username=` (≤ 64 chars) | `{ available: bool, code: str\|null, detail: str\|null }`; `code` is one of the `USERNAME_*` errors above when unavailable (implemented) |
 | GET | `/api/v1/users/{id}` | session | `{id}: uuid` | `UserPublic + { ratings: [Rating] }` |
 | GET | `/api/v1/users/{id}/matches` | session | `{id}: uuid`, `?limit&offset` | `[MatchSummary]`, finished only |
 | GET | `/api/v1/ladders` | session | — | `[Ladder]` (active only) |
@@ -114,7 +120,7 @@ Player prompts are never returned by any endpoint or message except to their aut
 
 ### Current matchmaking integration
 
-The frontend currently uses the existing session-authenticated `POST /match/queue` (no body; HTTP 202 queue status) and `GET /match/status` (HTTP 200 queue status). Both return `{ status: "none"|"queued"|"matched", match_id?: uuid }`. These temporary routes use the single `provided` queue; model selection is not implemented. `DELETE /match/queue` (session, no body) cancels the caller’s queue entry and returns HTTP 204, including if already absent; an existing match returns HTTP 409 `IN_MATCH`. The versioned routes above remain the target contract. The lobby polls until matched and displays the ID without navigating or opening a WebSocket.
+The frontend currently uses the existing session-authenticated `POST /match/queue` (no body; HTTP 202 queue status) and `GET /match/status` (HTTP 200 queue status). Both return `{ status: "none"|"queued"|"matched", match_id?: uuid }`. These temporary routes use the single `provided` queue; model selection is not implemented. `POST /match/queue` returns 403 `USERNAME_REQUIRED` until the caller has a tag. `DELETE /match/queue` (session, no body) cancels the caller’s queue entry and returns HTTP 204, including if already absent; an existing match returns HTTP 409 `IN_MATCH`. The versioned routes above remain the target contract. The lobby polls until matched and displays the ID without navigating or opening a WebSocket.
 
 ## REST — BILC
 

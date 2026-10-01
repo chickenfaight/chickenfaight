@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class UserRead(BaseModel):
@@ -11,6 +11,17 @@ class UserRead(BaseModel):
     username: str | None
     avatar_url: str | None
     elo: int
+
+class UsernameUpdate(BaseModel):
+    # Format rules are checked in the service so rejections use PROTOCOL error codes.
+    username: str = Field(max_length=64)
+
+
+class UsernameAvailability(BaseModel):
+    available: bool
+    code: str | None = None
+    detail: str | None = None
+
 
 class GoogleIdentity(BaseModel):
     sub: str

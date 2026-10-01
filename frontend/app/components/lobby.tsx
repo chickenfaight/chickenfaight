@@ -3,9 +3,10 @@
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { backendUrl } from "../lib/auth";
+import { parseUser, type User } from "../lib/protocol";
 import MatchmakingCard from "./matchmaking-card";
+import UsernameDialog from "./username-dialog";
 
-type User = { username: string | null; elo: number };
 type IconName = "arrow" | "trophy" | "bolt" | "chip" | "chevron" | "cross";
 const focus = "focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white";
 const panel = "rounded-3xl border border-white/[0.07] bg-[#202124]";
@@ -40,9 +41,7 @@ export default function Lobby() {
         const res = await fetch(`${backendUrl}/auth/me`, { credentials: "include", cache: "no-store", signal: AbortSignal.any([controller.signal, AbortSignal.timeout(5000)]) });
         if (res.status === 401) { setSession("out"); return; }
         if (!res.ok) throw new Error("Session unavailable");
-        const data = await res.json();
-        if (typeof data.elo !== "number" || !(data.username === null || typeof data.username === "string")) throw new Error("Invalid session");
-        setUser(data); setSession("in");
+        setUser(parseUser(await res.json())); setSession("in");
       } catch { if (!controller.signal.aborted) setSession("error"); }
     }
     void load();
@@ -125,6 +124,7 @@ export default function Lobby() {
         </section>
         <footer className="flex shrink-0 items-center justify-between text-[10px] text-zinc-500"><span>All brains. A little bit of bird.</span><span>Chicken fAIght <span className="mx-2 text-zinc-700">/</span> Made for a good argument.</span></footer>
       </main>
+      {session === "in" && user?.username === null && <UsernameDialog onCreated={setUser} onSignOut={logout} signingOut={loggingOut} signOutError={logoutError} />}
       <dialog ref={dialog} aria-labelledby="detail-title" className="fixed inset-0 m-auto w-[min(520px,90vw)] rounded-3xl border border-white/10 bg-[#202124] p-8 text-[#f5f3ef] backdrop:bg-black/70">
         <div className="flex items-center justify-between gap-4"><h2 id="detail-title" className="text-xl font-bold">{detail}</h2><button autoFocus onClick={() => dialog.current?.close()} aria-label="Close" className={`rounded-xl p-2 hover:bg-white/5 ${focus}`}><Icon name="cross" /></button></div>
         <p className="mt-3 text-sm text-[#ff7882]">{content.intro}</p><ol className="mt-6 space-y-4">{content.items.map((item, i) => <li key={item} className="flex gap-3 text-sm leading-relaxed text-zinc-300"><span className="font-mono text-zinc-500">0{i + 1}</span>{item}</li>)}</ol>

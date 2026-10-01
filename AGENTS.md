@@ -51,7 +51,7 @@ bilc/              PLANNED — BYOM Interface Layer Client (Go CLI)
 | Frontend | Next.js + React Context + Tailwind | See FRONTEND.md |
 | Backend | FastAPI, async SQLAlchemy, Pydantic | asyncio concurrency, OpenAI SDK support |
 | Database | PostgreSQL; JSONB only for provider/model metadata | Relational core data, flexible metadata |
-| Schema changes | `app/db/create_tables.py`, no migration tool | See BACKEND.md |
+| Schema changes | Alembic migrations, applied on server startup | Local DBs stay in sync without coordination; see BACKEND.md |
 | Inference | OpenAI-compatible APIs only, streamed | No self-hosting cost; no vendor lock-in |
 | Match concurrency | One asyncio task per match (the design doc's "thread") | No OS threads in an async server |
 | Live output | Provider → server via SSE; server → browser/BILC via WebSocket | Players watch the debate stream |
@@ -80,6 +80,7 @@ Use these terms exactly, in code and docs.
 - Do not log tokens, cookies, pairing codes, or full prompts.
 - Do not store tokens or codes in plaintext; store hashes.
 - Do not build SQL with string formatting; use SQLAlchemy.
+- Do not change a model without a reviewed Alembic migration in the same change, and never edit a migration that is already on `main` (BACKEND.md, "Changing the schema").
 - Do not add dependencies, frameworks, or UI libraries without a reason stated in the PR.
 - Do not call an inference provider outside `backend/app/inference/`.
 - Do not hand-edit the block between the `nextjs-agent-rules` markers in `frontend/AGENTS.md`.

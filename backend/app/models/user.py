@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, String, Text, func, text, Uuid
+from sqlalchemy import DateTime, Index, String, Text, func, text, Uuid
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -32,3 +32,7 @@ class User(Base):
         server_default=func.now(),
         onupdate=func.now(),
     )
+
+
+# Tags are unique regardless of case, so "Ryan" blocks "ryan".
+Index("uq_users_username_lower", func.lower(User.username), unique=True)

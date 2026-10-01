@@ -75,6 +75,9 @@ export default function MatchmakingCard() {
         if (err instanceof ApiError && err.status === 401) {
           setPhase("signed-out");
           setError("Sign in to join the queue.");
+        } else if (err instanceof ApiError && err.code === "USERNAME_REQUIRED") {
+          setPhase("idle");
+          setError("Create your tag to join the queue.");
         } else {
           setPhase("error");
           setError("Couldn’t confirm your queue status. Try Join game again; we’ll check for an existing game or queue entry first.");
