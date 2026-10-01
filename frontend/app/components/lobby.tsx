@@ -84,7 +84,7 @@ export default function Lobby() {
             <Icon name="chevron" className="h-4 w-4 text-zinc-400" />
           </button>
           {menu && <div id="profile-options" className="absolute right-0 top-full w-56 pt-2"><div className={`${panel} p-2 text-sm`}>
-            {session === "in" ? <><Link href="/profile" className={`block rounded-xl px-4 py-3 hover:bg-white/5 ${focus}`}>My profile</Link><button onClick={() => showDetail("Your ladder")} className={`w-full rounded-xl px-4 py-3 text-left hover:bg-white/5 ${focus}`}>My ladder</button><button disabled={loggingOut} onClick={logout} className={`w-full rounded-xl px-4 py-3 text-left text-[#ff7882] hover:bg-white/5 disabled:opacity-50 ${focus}`}>{loggingOut ? "Signing out…" : "Sign out"}</button></> : <Link href="/login" className={`block rounded-xl px-4 py-3 hover:bg-white/5 ${focus}`}>Sign in with Google</Link>}
+            {session === "in" ? <><Link href="/profile/me" className={`block rounded-xl px-4 py-3 hover:bg-white/5 ${focus}`}>My profile</Link><button onClick={() => showDetail("Your ladder")} className={`w-full rounded-xl px-4 py-3 text-left hover:bg-white/5 ${focus}`}>My ladder</button><button disabled={loggingOut} onClick={logout} className={`w-full rounded-xl px-4 py-3 text-left text-[#ff7882] hover:bg-white/5 disabled:opacity-50 ${focus}`}>{loggingOut ? "Signing out…" : "Sign out"}</button></> : <Link href="/login" className={`block rounded-xl px-4 py-3 hover:bg-white/5 ${focus}`}>Sign in with Google</Link>}
             {logoutError && <p role="alert" className="px-4 py-2 text-xs text-red-300">{logoutError}</p>}
           </div></div>}
         </div>
