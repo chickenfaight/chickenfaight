@@ -12,6 +12,7 @@ from app.config import settings
 from app.db.session import get_session
 from app.schemas import GoogleIdentity, UserRead
 from app.services.user import UserService
+from app.models.user import User
 
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -69,11 +70,12 @@ async def google_callback(
 @router.get("/me", response_model=UserRead)
 async def read_current_user(user: CurrentUserDependency) -> UserRead:
     """Demonstrate using the cookie to load the local database user."""
-    return UserRead.model_validate(user)
-
+    return UserRead.model_validate(user)    
 
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
 async def logout(request: Request) -> Response:
     """Delete the local login cookie; no Google token is persisted here."""
     request.session.clear()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+    
+

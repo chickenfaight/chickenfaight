@@ -30,3 +30,8 @@ async def set_username(
 ) -> UserRead:
     claimed = await UserService(session).claim_username(user, body.username)
     return UserRead.model_validate(claimed)
+
+@router.get("/user/{username}", response_model=UserRead)
+async def get_user(username, session: SessionDependency) -> UserRead:
+    found = await UserService(session).users.get_by_username(username)
+    return UserRead.model_validate(found)
