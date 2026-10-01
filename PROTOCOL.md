@@ -17,7 +17,8 @@ Everything here is PLANNED unless marked **(implemented)**. Remove a PLANNED sta
 
 ## Conventions
 
-- **Versioning.** REST routes live under `/api/v1`. WebSockets carry an integer `protocol_version` (currently `1`) in their first message. Additive optional fields do not bump versions; anything else bumps `protocol_version` and, for REST, adds `/api/v2` next to `/api/v1`. The server supports the current and previous version. BILC also sends its semver `client_version`; the server rejects versions below `min_supported_version`.
+- **API host.** The backend is deployed on a dedicated hostname (e.g. `https://api.domain.com`); paths below are relative to that origin and have no `/api` prefix.
+- **Versioning.** Versioned REST routes live under `/v1`; `/health` and `/auth/*` remain unversioned. WebSockets carry an integer `protocol_version` (currently `1`) in their first message. Additive optional fields do not bump versions; anything else bumps `protocol_version` and, for REST, adds `/v2` next to `/v1`. The server supports the current and previous version. BILC also sends its semver `client_version`; the server rejects versions below `min_supported_version`.
 - **Receivers ignore unknown fields.** Unknown WebSocket `type` → reply `ERROR` `UNKNOWN_TYPE`; do not close.
 - **JSON** everywhere, `snake_case` keys, timestamps ISO 8601 UTC strings, UUID IDs everywhere (serialized as strings).
 - **Default auth is required.** Rows marked `public` are the only exceptions.
@@ -101,35 +102,35 @@ Player prompts are never returned by any endpoint or message except to their aut
 | GET | `/auth/google/callback` | public | OAuth params | 302 to `FRONTEND_URL`, sets session (implemented) |
 | GET | `/auth/me` | session | — | `UserRead` (implemented) |
 | POST | `/auth/logout` | public | — | 204, clears session (implemented) |
-| PATCH | `/api/v1/users/me` | session | `{ username: str }` (3–24 chars, `[a-zA-Z0-9_]`, unique ignoring case, no profanity) | `UserRead`; sets the caller's tag once, then `USERNAME_ALREADY_SET` forever. Errors: `USERNAME_INVALID`, `USERNAME_NOT_ALLOWED`, `USERNAME_TAKEN` (implemented) |
-| GET | `/api/v1/users/username-availability` | session | `?username=` (≤ 64 chars) | `{ available: bool, code: str\|null, detail: str\|null }`; `code` is one of the `USERNAME_*` errors above when unavailable (implemented) |
-| GET | `/api/v1/users/{id}` | session | `{id}: uuid` | `UserPublic + { ratings: [Rating] }` |
-| GET | `/api/v1/users/{id}/matches` | session | `{id}: uuid`, `?limit&offset` | `[MatchSummary]`, finished only |
-| GET | `/api/v1/ladders` | session | — | `[Ladder]` (active only) |
-| GET | `/api/v1/ladders/{slug}/leaderboard` | session | `?limit&offset` | `[{ rank, user: UserPublic, rating: Rating }]` |
-| POST | `/api/v1/matchmaking/queue` | session | `{ ladder: str, bilc_id?: uuid }` (`bilc_id` required iff ladder is BYOM, must be caller's online idle device) | 202 `{ status: "queued" }` |
-| GET | `/api/v1/matchmaking/queue` | session | — | `{ status: "none"|"queued"|"matched", match_id?: uuid }` |
-| DELETE | `/api/v1/matchmaking/queue` | session | — | 204 |
-| GET | `/api/v1/matches/{id}` | session | `{id}: uuid` | `MatchRead`; live matches visible to participants only |
-| POST | `/api/v1/matches/{id}/votes` | session | `{id}: uuid`, `{ side: Side }` | 204; finished matches, non-participants, one vote per user (upsert) |
-| POST | `/api/v1/bilc/pairing-codes` | session | — | `{ code: str (8 chars, A–Z 2–9), expires_at }` |
-| GET | `/api/v1/bilc/devices` | session | — | `[BilcDevice]` (caller's only) |
-| DELETE | `/api/v1/bilc/devices/{id}` | session | `{id}: uuid` | 204; revokes tokens, closes its socket 4403 |
+| PATCH | `/v1/users/me` | session | `{ username: str }` (3–24 chars, `[a-zA-Z0-9_]`, unique) | `UserRead` |
+| GET | `/v1/users/username-availability` | session | `?username=` (≤ 64 chars) | `{ available: bool, code: str\|null, detail: str\|null }`; `code` is one of the `USERNAME_*` errors above when unavailable (implemented) |
+| GET | `/v1/users/{id}` | session | `{id}: uuid` | `UserPublic + { ratings: [Rating] }` |
+| GET | `/v1/users/{id}/matches` | session | `{id}: uuid`, `?limit&offset` | `[MatchSummary]`, finished only |
+| GET | `/v1/ladders` | session | — | `[Ladder]` (active only) |
+| GET | `/v1/ladders/{slug}/leaderboard` | session | `?limit&offset` | `[{ rank, user: UserPublic, rating: Rating }]` |
+| POST | `/v1/matchmaking/queue` | session | `{ ladder: str, bilc_id?: uuid }` (`bilc_id` required iff ladder is BYOM, must be caller's online idle device) | 202 `{ status: "queued" }` |
+| GET | `/v1/matchmaking/queue` | session | — | `{ status: "none"|"queued"|"matched", match_id?: uuid }` |
+| DELETE | `/v1/matchmaking/queue` | session | — | 204 |
+| GET | `/v1/matches/{id}` | session | `{id}: uuid` | `MatchRead`; live matches visible to participants only |
+| POST | `/v1/matches/{id}/votes` | session | `{id}: uuid`, `{ side: Side }` | 204; finished matches, non-participants, one vote per user (upsert) |
+| POST | `/v1/bilc/pairing-codes` | session | — | `{ code: str (8 chars, A–Z 2–9), expires_at }` |
+| GET | `/v1/bilc/devices` | session | — | `[BilcDevice]` (caller's only) |
+| DELETE | `/v1/bilc/devices/{id}` | session | `{id}: uuid` | 204; revokes tokens, closes its socket 4403 |
 
 `/health` and `/auth/*` stay unversioned: the OAuth redirect URI is registered with Google.
 
 ### Current matchmaking integration
 
-The frontend currently uses the existing session-authenticated `POST /match/queue` (no body; HTTP 202 queue status) and `GET /match/status` (HTTP 200 queue status). Both return `{ status: "none"|"queued"|"matched", match_id?: uuid }`. These temporary routes use the single `provided` queue; model selection is not implemented. `POST /match/queue` returns 403 `USERNAME_REQUIRED` until the caller has a tag. `DELETE /match/queue` (session, no body) cancels the caller’s queue entry and returns HTTP 204, including if already absent; an existing match returns HTTP 409 `IN_MATCH`. The versioned routes above remain the target contract. The lobby polls until matched and displays the ID without navigating or opening a WebSocket.
+The frontend currently uses the existing session-authenticated `POST /v1/match/queue` (no body; HTTP 202 queue status) and `GET /v1/match/status` (HTTP 200 queue status). Both return `{ status: "none"|"queued"|"matched", match_id?: uuid }`. These temporary routes use the single `provided` queue; model selection is not implemented. `POST /v1/match/queue` returns 403 `USERNAME_REQUIRED` until the caller has a tag. `DELETE /v1/match/queue` (session, no body) cancels the caller’s queue entry and returns HTTP 204, including if already absent; an existing match returns HTTP 409 `IN_MATCH`. The versioned routes above remain the target contract. The lobby polls until matched and displays the ID without navigating or opening a WebSocket.
 
 ## REST — BILC
 
 | Method | Path | Auth | Request | Response |
 |---|---|---|---|---|
-| POST | `/api/v1/bilc/register` | pairing code in body | `{ pairing_code, device_name, platform, client_version }` | `{ bilc_id: uuid, refresh_token: str }` |
-| POST | `/api/v1/bilc/token` | refresh token in body | `{ bilc_id, refresh_token }` | `{ access_token, expires_at, refresh_token }` |
-| GET | `/api/v1/bilc/releases/latest` | public | — | `{ version, min_supported_version, protocol_version, assets: [{ platform, arch, url, sha256 }] }` |
-| GET | `/api/v1/bilc/download` | public | `?platform=mac|win|linux&arch=amd64|arm64` | 302 to the release asset |
+| POST | `/v1/bilc/register` | pairing code in body | `{ pairing_code, device_name, platform, client_version }` | `{ bilc_id: uuid, refresh_token: str }` |
+| POST | `/v1/bilc/token` | refresh token in body | `{ bilc_id, refresh_token }` | `{ access_token, expires_at, refresh_token }` |
+| GET | `/v1/bilc/releases/latest` | public | — | `{ version, min_supported_version, protocol_version, assets: [{ platform, arch, url, sha256 }] }` |
+| GET | `/v1/bilc/download` | public | `?platform=mac|win|linux&arch=amd64|arm64` | 302 to the release asset |
 
 Access JWT: HS256 with `BILC_JWT_SECRET`, claims `sub` = `bilc_id` (uuid), `uid` = user id (uuid), `aud` = `"bilc"`, `exp`. Presenting an already-rotated refresh token revokes the device.
 
@@ -145,7 +146,7 @@ Heartbeat (both sockets): the server sends `HEARTBEAT { ts }` every interval; th
 
 ## WebSocket — match (web ↔ engine)
 
-`GET /api/v1/matches/{id}/ws` (`{id}: uuid`), session cookie. Server closes 4401 if unauthenticated, 4403 if not a participant. The client opens it when the queue poll returns `matched`, and reopens it to reconnect.
+`GET /v1/matches/{id}/ws` (`{id}: uuid`), session cookie. Server closes 4401 if unauthenticated, 4403 if not a participant. The client opens it when the queue poll returns `matched`, and reopens it to reconnect.
 
 | Type | Direction | Payload |
 |---|---|---|
@@ -166,7 +167,7 @@ Disconnecting after submitting a prompt does not affect the match; turns keep ru
 
 ## WebSocket — BILC
 
-`GET /api/v1/bilc/ws`, header `Authorization: Bearer <access_token>`. The server tracks each device as online/idle/busy from this socket.
+`GET /v1/bilc/ws`, header `Authorization: Bearer <access_token>`. The server tracks each device as online/idle/busy from this socket.
 
 | Type | Direction | Payload |
 |---|---|---|
