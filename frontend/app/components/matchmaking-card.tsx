@@ -32,19 +32,19 @@ export default function MatchmakingCard() {
         try {
           if (method === "POST") {
             // Recover an existing entry before attempting a new registration.
-            data = await api("/match/status", controller.signal);
+            data = await api("/v1/match/status", controller.signal);
             if (controller.signal.aborted) return;
             if (parseQueueStatus(data).status === "none") {
-              data = await api("/match/queue", controller.signal, "POST");
+              data = await api("/v1/match/queue", controller.signal, "POST");
             }
           } else {
-            data = await api(method === "DELETE" ? "/match/queue" : "/match/status", controller.signal, method);
+            data = await api(method === "DELETE" ? "/v1/match/queue" : "/v1/match/status", controller.signal, method);
           }
           if (method === "DELETE") data = { status: "none" };
         } catch (err) {
           // A previous tab/request may already have registered this user.
           if (err instanceof ApiError && err.status === 409 && ["ALREADY_QUEUED", "IN_MATCH"].includes(err.code ?? "")) {
-            data = await api("/match/status", controller.signal);
+            data = await api("/v1/match/status", controller.signal);
           } else throw err;
         }
         if (controller.signal.aborted) return;

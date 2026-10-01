@@ -1,6 +1,9 @@
 # Testing
 
-What each component must test and how.
+What each component must test and how. Current backend regression tests use
+`unittest`: run `.venv/bin/python -m unittest discover -s tests -v` from `backend/`.
+They include topic-file parsing checks; database-backed importer/repository coverage
+is still pending. The pytest tooling and database fixtures below are PLANNED.
 
 ## Backend (pytest)
 

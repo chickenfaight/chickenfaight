@@ -8,12 +8,12 @@ from app.services.exceptions import AlreadyMatchedError, AlreadyQueuedError
 
 class Matchmaker:
     def __init__(self):
-        self.queues: defaultdict[str, deque[UUID]] = defaultdict(deque)
+        self.queues: defaultdict[str, deque[UUID]] = defaultdict(deque) # dict[arena, user id queue]
         self.queued_users: set[UUID] = set()    # set[user_id] for quick duplicate/status checks
         self.assignments: dict[UUID, UUID] = {} # dict[user_id, match_id]
 
-        self.engines: dict[UUID, GameEngine] = {}
-        self.tasks: dict[UUID, asyncio.Task[None]] = {}
+        self.engines: dict[UUID, GameEngine] = {}       # dict[match_id, engine]
+        self.tasks: dict[UUID, asyncio.Task[None]] = {} # dict[match_id, async task]
 
     async def run(self):
         while True:
@@ -79,6 +79,3 @@ class Matchmaker:
 
         self.queues["provided"].remove(user_id) # TODO hardcoded stuff
         self.queued_users.remove(user_id)
-
-    def finish_match(self, match_id: UUID):
-        pass # TODO
