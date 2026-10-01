@@ -4,4 +4,3 @@
 Food | Does pineapple belong on pizza? | Pineapple belongs on pizza. | Pineapple does not belong on pizza.
 Work | Should remote work be the default for office jobs? | Remote work should be the default for office jobs. | Office jobs should primarily be performed in person.
 Public policy | Should public transportation in cities be free? | Cities should make public transportation free. | Cities should charge fares for public transportation.
-Education | Should school uniforms be required? | Schools should require students to wear uniforms. | Students should be free to choose their school clothing.
