@@ -121,7 +121,7 @@ Player prompts are never returned by any endpoint or message except to their aut
 
 ### Current matchmaking integration
 
-The frontend currently uses the existing session-authenticated `POST /match/queue` (no body; HTTP 202 queue status) and `GET /match/status` (HTTP 200 queue status). Both return `{ status: "none"|"queued"|"matched", match_id?: uuid }`. These temporary routes use the single `provided` queue; model selection is not implemented. `POST /match/queue` returns 403 `USERNAME_REQUIRED` until the caller has a tag. `DELETE /match/queue` (session, no body) cancels the caller’s queue entry and returns HTTP 204, including if already absent; an existing match returns HTTP 409 `IN_MATCH`. The versioned routes above remain the target contract. The lobby polls until matched and displays the ID without navigating or opening a WebSocket.
+The frontend currently uses the existing session-authenticated `POST /v1/match/queue` (no body; HTTP 202 queue status) and `GET /v1/match/status` (HTTP 200 queue status). Both return `{ status: "none"|"queued"|"matched", match_id?: uuid }`. These temporary routes use the single `provided` queue; model selection is not implemented. `POST /v1/match/queue` returns 403 `USERNAME_REQUIRED` until the caller has a tag. `DELETE /v1/match/queue` (session, no body) cancels the caller’s queue entry and returns HTTP 204, including if already absent; an existing match returns HTTP 409 `IN_MATCH`. The versioned routes above remain the target contract. The lobby polls until matched and displays the ID without navigating or opening a WebSocket.
 
 ## REST — BILC
 
