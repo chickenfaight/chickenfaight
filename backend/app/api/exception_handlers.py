@@ -1,7 +1,7 @@
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
-from app.services.exceptions import AlreadyQueuedError, AlreadyMatchedError
+from app.services.exceptions import AlreadyQueuedError, AlreadyMatchedError, UsernameError
 
 
 async def handle_already_queued(
@@ -29,9 +29,20 @@ async def handle_already_matched(
     )
 
 
+async def handle_username_error(
+        request: Request,
+        error: UsernameError,
+) -> JSONResponse:
+    return JSONResponse(
+        status_code=error.status_code,
+        content={"code": error.code, "detail": error.detail},
+    )
+
+
 EXCEPTION_HANDLERS = {
     AlreadyQueuedError: handle_already_queued,
     AlreadyMatchedError: handle_already_matched,
+    UsernameError: handle_username_error,
 }
 
 def register_exception_handlers(app: FastAPI) -> None:

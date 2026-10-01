@@ -1,23 +1,23 @@
 # Testing
 
-What each component must test and how. No test suite exists yet (PLANNED). The first PR that adds tests sets up the tooling below exactly as described.
+What each component must test and how.
 
 ## Backend (pytest)
 
-Tooling: `pytest`, `pytest-asyncio`, `respx`, added with `uv add --dev pytest pytest-asyncio respx`. Run with `uv run pytest` from `backend/`.
+Tooling: `pytest`, `pytest-asyncio`, `respx` (dev dependencies; config in `pyproject.toml`, `asyncio_mode = "auto"`, session-scoped event loop). Run with `uv run pytest` from `backend/`.
 
 ```
 backend/tests/
-  conftest.py       fixtures: db session, app client, logged-in client, fake models
+  conftest.py       fixtures: db_session, make_user, client, log_in (fake models PLANNED)
   unit/             pure logic — no DB, no network
   integration/      HTTP/WS endpoints against a real test database
 ```
 
-Files are `test_<module>.py`, mirroring `app/`.
+Files are `test_<module>.py`, mirroring `app/`, with unique basenames across folders. Older `unittest`-style files in `tests/` still run under pytest.
 
-**Database.** Use real Postgres, not mocks or SQLite: a separate `chickenfaight_test` database set by `TEST_POSTGRES_URL`. Create tables once per session with `Base.metadata.create_all`. Each test runs inside an outer transaction that is rolled back, with the session bound using `join_transaction_mode="create_savepoint"` so services' own `session.begin()` still works.
+**Database.** Use real Postgres, not mocks or SQLite: a separate `chickenfaight_test` database set by `TEST_POSTGRES_URL` (integration tests skip without it). Once per session the database is wiped and built by running the Alembic migrations (`app.db.migrate`), never `create_all`, so every run tests the migrations. Each test runs inside an outer transaction that is rolled back, with the session bound using `join_transaction_mode="create_savepoint"` so services' own `session.begin()`/`commit()` still work. `make_user` commits its rows so a service's rollback can't undo them.
 
-**HTTP.** Use `httpx.AsyncClient` with `ASGITransport(app=app)`. Override `get_session` with the test session. Give the logged-in client fixture a valid session cookie for a seeded user.
+**HTTP.** Use `httpx.AsyncClient` with `ASGITransport(app=app)` (the `client` fixture overrides `get_session` with the test session). `log_in(user)` overrides `get_current_user`; the cookie itself is tested in `test_auth_session.py`.
 
 **Mocking models.** Engine and service tests never touch the network. They use `FakeModelClient`, a test implementation of the `ModelClient` interface in `app/inference/`, built from a script:
 
@@ -40,6 +40,8 @@ Every backend feature ships with tests for both behavior and security:
 - **Engine** (with `FakeModelClient`): turn order and phases; one prompt per player; deadlines → forfeit; both miss → void; every row of the failure table in PROTOCOL.md; judge output parsing (valid, invalid, invalid-then-retry); `report_game` runs once.
 - **Prompt safety:** `format_game` strips delimiter strings from player prompts; player prompts never appear in judge messages or in other users' responses; over-length output is truncated.
 - **Elo and matchmaking:** Elo math against hand-computed values; per-ladder isolation; queue pairing window; forfeit vs. void rating effects.
+- **Migrations** (`test_migrations.py`, `test_migration_history.py`, already written): one head; models match migrations; full downgrade/upgrade round trip; startup keeps data on a current DB, resets only unrecoverable DBs and only when allowed; drift warning. New migrations need no new tests unless they move data.
+- **User tags:** format and profanity rules (including innocent words that contain short profanity); taken ignoring case; set once, never changed (including by sign-in); matchmaking refuses users without a tag.
 - **BILC auth:** pairing codes are single-use and expire; refresh tokens rotate; reusing an old refresh token revokes the device; revoked devices are rejected; only hashes are stored.
 
 ## Frontend

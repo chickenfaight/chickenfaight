@@ -2,6 +2,7 @@ from fastapi import APIRouter, Request, Response, status
 
 from app.auth.dependencies import CurrentUserDependency
 from app.services.matchmaking import Matchmaker
+from app.services.user import require_username
 
 router = APIRouter(prefix="/match", tags=["match"])
 
@@ -9,6 +10,7 @@ router = APIRouter(prefix="/match", tags=["match"])
 @router.post("/queue", status_code=status.HTTP_202_ACCEPTED)
 async def queue_match(request: Request, user: CurrentUserDependency):
     """Registers user to the matchmaking queue."""
+    require_username(user)
     matchmaker: Matchmaker = request.app.state.matchmaker
     matchmaker.register(user.id)
 

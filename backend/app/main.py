@@ -10,13 +10,21 @@ from app.api.auth import router as auth_router
 from app.api.exception_handlers import register_exception_handlers
 from app.api.matchmaking import router as matchmaking_router
 from app.api.game import router as game_router
+from app.api.users import router as users_router
 from app.config import settings
+from app.db.migrate import migrate
 from app.db.session import engine
 from app.services.matchmaking import Matchmaker
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    await asyncio.to_thread(
+        migrate,
+        settings.database_url,
+        allow_reset=settings.app_env == "development",
+    )
+
     matchmaker = Matchmaker()
     app.state.matchmaker = matchmaker
 
@@ -53,13 +61,14 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=[settings.frontend_url],
     allow_credentials=True,
-    allow_methods=["GET", "POST", "DELETE"],
+    allow_methods=["GET", "POST", "PATCH", "DELETE"],
     allow_headers=["*"],
 )
 
 app.include_router(auth_router)
 app.include_router(matchmaking_router, prefix="/v1")
 app.include_router(game_router, prefix="/v1")
+app.include_router(users_router)
 
 
 @app.get("/health")

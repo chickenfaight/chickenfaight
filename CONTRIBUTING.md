@@ -10,6 +10,7 @@ Prerequisites: Python ≥ 3.14, [uv](https://docs.astral.sh/uv/), Node.js LTS, p
 
 ```bash
 createdb chickenfaight
+createdb chickenfaight_test   # for `uv run pytest`; tables are created by the tests
 ```
 
 **Backend** (http://localhost:8000)
@@ -17,10 +18,10 @@ createdb chickenfaight
 ```bash
 cd backend
 cp .env.example .env        # fill in Postgres credentials, Google OAuth, SESSION_SECRET
-uv sync
-uv run python -m app.db.create_tables
 uv run fastapi dev app/main.py
 ```
+
+`uv run` installs dependencies from `uv.lock`, and startup applies database migrations, so this one command is also how you catch up after every `git pull`. If startup reports a reset or a schema problem, see "Changing the schema" in [backend/BACKEND.md](backend/BACKEND.md).
 
 Google OAuth: create an OAuth 2.0 Web client in Google Cloud Console with redirect URI `http://localhost:8000/auth/google/callback`. Generate `SESSION_SECRET` with `openssl rand -hex 32`.
 
@@ -43,6 +44,7 @@ Check the connection at http://localhost:3000/health.
   - The change follows AGENTS.md guardrails and the doc for each area touched.
   - Any doc made wrong by the change is updated in the same PR: contracts in PROTOCOL.md, schema in BACKEND.md, structure/style in FRONTEND.md or BILC.md.
   - PLANNED tags are removed for anything the PR implements.
-  - Schema changes to existing tables include their SQL (see BACKEND.md).
+  - Model changes include a reviewed Alembic migration; no merged migration was edited (see BACKEND.md).
+  - `main` is merged into the branch and `uv run pytest` passes (it fails on missing or unmerged migrations).
   - Tests per TESTING.md pass, and UI changes were used in a browser.
   - No secrets, `.env` files, or generated files (`.next/`, `.venv/`, `__pycache__/`) are committed.
