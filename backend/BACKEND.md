@@ -22,7 +22,7 @@ app/
   schemas/        Pydantic: request/response bodies, WS messages, JSONB shapes
   engine/         PLANNED — game engine, prompt templates, verdict parsing
   inference/      PLANNED — ModelClient interface + implementations
-  db/             base.py, session.py, migrate.py, migrations/ (Alembic), seed.py (PLANNED)
+  db/             base.py, session.py, migrate.py, migrations/ (Alembic), seed.py (temporary topic importer)
 ```
 
 Dependency direction: `api → services → repositories → models`. `engine` uses `services` and `inference`; nothing imports `api`. Split `schemas/schemas.py` into per-domain files as it grows, re-exported from `schemas/__init__.py`.
@@ -79,7 +79,7 @@ Postgres. Constraint and index names come from the naming convention in `app/db/
 | `users` (implemented) | `id` UUID, `google_sub` unique, `email?`, `username?` unique on `lower(username)`, `avatar_url?`, `updated_at` | Drop `elo` when `ratings` ships; `username` is the user's tag (see below) |
 | `ladders` | `id` UUID, `slug` unique, `display_name`, `kind` (`cloud`/`byom`), `provider_model_id?`, `is_active`, `provider_metadata` JSONB | Exactly one `byom` row |
 | `ratings` | PK(`user_id`, `ladder_id`), `elo` = 1000, `games_played`, `wins`, `losses`, `updated_at` | Created on first queue |
-| `topics` | `id` UUID, `text`, `is_active` | |
+| `topics` (implemented) | `id` UUID, `category`, `topic`, `pro_position`, `con_position`, `is_active` | Text fields are limited to 255 characters; category defaults to `General`; active by default |
 | `matches` | `id` UUID, `ladder_id`, `topic_id`, `status`, `winner_side?`, `end_reason?`, `verdict_reasoning?`, `judge_metadata` JSONB, `started_at?`, `ended_at?` | |
 | `match_participants` | PK(`match_id`, `side`), `user_id` (unique with `match_id`), `bilc_device_id?`, `prompt?`, `elo_before`, `elo_after?` | `prompt` never exposed to others |
 | `turns` | `id` UUID, `match_id`, `index` (unique with `match_id`), `side`, `phase`, `content`, `truncated`, `usage` JSONB | Written as each turn ends |
@@ -132,4 +132,21 @@ Alembic migrations live in `app/db/migrations/versions/` (config in `pyproject.t
 | Local DB is in a strange state | — | `uv run python -m app.db.migrate --reset` (development only) |
 | Production | Migrations run on startup; never auto-reset (`APP_ENV` unset) | Run one server process; concurrent startups would race on migrations |
 
-Seed data (ladders, topics) lives in `app/db/seed.py` (PLANNED) and must be idempotent.
+The temporary topic importer lives in `app/db/seed.py`; ladder seeding is PLANNED.
+From `backend/`, run `uv run python -m app.db.create_tables`, then
+`uv run python -m app.db.seed topics.example.txt`.
+New topics are active by default; pass `--inactive` to add inactive topics. Each UTF-8 line is
+`category | topic | pro position | con position` (no embedded pipes); blank lines and `#` comments are ignored.
+All fields must contain 1–255 characters. The whole file is validated before writing,
+and imported in one transaction. Identical category/topic/position entries are skipped, including duplicates
+within the file; existing rows are unchanged. Run one importer at a time, since the
+model has no uniqueness constraint on topic content.
+Code can call `await import_topics(session, path, is_active=True)` with a fresh session
+and a `pathlib.Path`. `TopicRepository` provides add, ID/content lookup, and random
+active-topic selection (returns `None` when none are active); callers own transactions.
+
+For an existing `topics` table, apply this schema change before importing:
+
+```sql
+ALTER TABLE topics ADD COLUMN category VARCHAR(255) NOT NULL DEFAULT 'General';
+```
