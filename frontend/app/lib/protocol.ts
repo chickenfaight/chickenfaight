@@ -41,3 +41,44 @@ export function parseQueueStatus(data: unknown): QueueStatus {
   }
   throw new Error("Invalid queue status");
 }
+
+export type UserPublic = { id: string; username: string; avatar_url: string | null };
+
+function isObject(data: unknown): data is Record<string, unknown> {
+  return typeof data === "object" && data !== null;
+}
+
+// Search and profiles only ever return tagged users, so `username` is required here.
+export function parseUserPublic(data: unknown): UserPublic {
+  if (!isObject(data) || typeof data.id !== "string" || typeof data.username !== "string"
+    || !(data.avatar_url === null || typeof data.avatar_url === "string")) {
+    throw new Error("Invalid user");
+  }
+  return { id: data.id, username: data.username, avatar_url: data.avatar_url };
+}
+
+export type UserSearchPage = { items: UserPublic[]; next_offset: number | null };
+
+export function parseUserSearchPage(data: unknown): UserSearchPage {
+  if (!isObject(data) || !Array.isArray(data.items)
+    || !(data.next_offset === null || typeof data.next_offset === "number")) {
+    throw new Error("Invalid search page");
+  }
+  return { items: data.items.map(parseUserPublic), next_offset: data.next_offset };
+}
+
+export type Rating = { ladder: string; elo: number; games_played: number; wins: number; losses: number };
+export type UserProfile = UserPublic & { ratings: Rating[] };
+
+function parseRating(data: unknown): Rating {
+  if (!isObject(data) || typeof data.ladder !== "string"
+    || [data.elo, data.games_played, data.wins, data.losses].some((value) => typeof value !== "number")) {
+    throw new Error("Invalid rating");
+  }
+  return data as Rating;
+}
+
+export function parseUserProfile(data: unknown): UserProfile {
+  if (!isObject(data) || !Array.isArray(data.ratings)) throw new Error("Invalid profile");
+  return { ...parseUserPublic(data), ratings: data.ratings.map(parseRating) };
+}

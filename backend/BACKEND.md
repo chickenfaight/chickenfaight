@@ -63,6 +63,7 @@ Live state (matchmaking queues, running engines, connected BILC devices) is in-m
 `users.username` is the player's public tag, null until set (PROTOCOL.md: `PATCH /api/v1/users/me`). Rules live in `app/services/usernames.py`:
 - Format `[A-Za-z0-9_]{3,24}`; uniqueness ignores case (unique index `uq_users_username_lower`) but the typed casing is kept.
 - Profanity: `better-profanity` whole-word check (also split on `_`, camelCase, and letter/digit boundaries), plus a short list of severe stems matched as substrings after undoing leetspeak, because tags glue words together. Ambiguous short words stay whole-word only (`class`, `grape` pass; `Scunthorpe` is a known false positive).
+- Search (`UserRepository.search_by_username`): tagged users whose lowercased tag contains the query (LIKE wildcards escaped) or is trigram-similar to it (`%>`, pg_trgm's word similarity ≥ 0.6). Ordered exact, prefix, contains, then word similarity, tag length, tag, and `id`, so offset pages are stable.
 - Set once: `UPDATE ... WHERE username IS NULL` makes the write atomic, and nothing else writes the column (sign-in never touches it). Matchmaking refuses users without a tag.
 
 ## Matchmaking and Elo
@@ -76,7 +77,7 @@ Postgres. Constraint and index names come from the naming convention in `app/db/
 
 | Table | Columns | Notes |
 |---|---|---|
-| `users` (implemented) | `id` UUID, `google_sub` unique, `email?`, `username?` unique on `lower(username)`, `avatar_url?`, `updated_at` | Drop `elo` when `ratings` ships; `username` is the user's tag (see below) |
+| `users` (implemented) | `id` UUID, `google_sub` unique, `email?`, `username?` unique on `lower(username)` plus a `pg_trgm` GIN index on `lower(username)` for search, `avatar_url?`, `updated_at` | Drop `elo` when `ratings` ships; `username` is the user's tag (see below) |
 | `ladders` | `id` UUID, `slug` unique, `display_name`, `kind` (`cloud`/`byom`), `provider_model_id?`, `is_active`, `provider_metadata` JSONB | Exactly one `byom` row |
 | `ratings` | PK(`user_id`, `ladder_id`), `elo` = 1000, `games_played`, `wins`, `losses`, `updated_at` | Created on first queue |
 | `topics` (implemented) | `id` UUID, `category`, `topic`, `pro_position`, `con_position`, `is_active` | Text fields are limited to 255 characters; category defaults to `General`; active by default |
@@ -133,7 +134,7 @@ Alembic migrations live in `app/db/migrations/versions/` (config in `pyproject.t
 | Production | Migrations run on startup; never auto-reset (`APP_ENV` unset) | Run one server process; concurrent startups would race on migrations |
 
 The temporary topic importer lives in `app/db/seed.py`; ladder seeding is PLANNED.
-From `backend/`, run `uv run python -m app.db.create_tables`, then
+Migrations create the `topics` table; from `backend/`, run
 `uv run python -m app.db.seed topics.example.txt`.
 New topics are active by default; pass `--inactive` to add inactive topics. Each UTF-8 line is
 `category | topic | pro position | con position` (no embedded pipes); blank lines and `#` comments are ignored.
@@ -144,9 +145,3 @@ model has no uniqueness constraint on topic content.
 Code can call `await import_topics(session, path, is_active=True)` with a fresh session
 and a `pathlib.Path`. `TopicRepository` provides add, ID/content lookup, and random
 active-topic selection (returns `None` when none are active); callers own transactions.
-
-For an existing `topics` table, apply this schema change before importing:
-
-```sql
-ALTER TABLE topics ADD COLUMN category VARCHAR(255) NOT NULL DEFAULT 'General';
-```

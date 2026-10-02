@@ -1,8 +1,21 @@
-from .schemas import GoogleIdentity, UserRead, UsernameAvailability, UsernameUpdate
+from .schemas import (
+    GoogleIdentity,
+    Rating,
+    UserProfile,
+    UserPublic,
+    UserRead,
+    UsernameAvailability,
+    UsernameUpdate,
+    UserSearchPage,
+)
 
 __all__ = [
     "GoogleIdentity",
+    "Rating",
+    "UserProfile",
+    "UserPublic",
     "UserRead",
     "UsernameAvailability",
     "UsernameUpdate",
+    "UserSearchPage",
 ]

@@ -157,15 +157,15 @@ async def test_availability_rejects_oversized_query(client, log_in, make_user):
 async def test_queue_requires_tag(client, log_in, make_user):
     user = await make_user()
     log_in(user)
-    response = await client.post("/match/queue")
+    response = await client.post("/v1/match/queue")
     assert response.status_code == 403
     assert response.json()["code"] == "USERNAME_REQUIRED"
-    assert (await client.get("/match/status")).json() == {"status": "none"}
+    assert (await client.get("/v1/match/status")).json() == {"status": "none"}
 
 
 async def test_queue_allowed_with_tag(client, log_in, make_user):
     log_in(await make_user("queuer"))
-    response = await client.post("/match/queue")
+    response = await client.post("/v1/match/queue")
     assert response.status_code == 202
     assert response.json() == {"status": "queued"}
 
@@ -177,3 +177,118 @@ async def test_patch_is_allowed_by_cors(client):
     })
     assert response.status_code == 200
     assert "PATCH" in response.headers["access-control-allow-methods"]
+
+
+# GET /api/v1/users/by-username/{username}
+
+PROFILE = "/api/v1/users/by-username/"
+SEARCH = "/api/v1/users/search"
+
+
+async def test_profile_by_tag(client, log_in, make_user, db_session):
+    target = await make_user("Rooster_42")
+    target.email = "secret@example.com"
+    target.avatar_url = "https://lh3.googleusercontent.com/a/pic"
+    await db_session.commit()
+    log_in(await make_user("viewer"))
+    response = await client.get(PROFILE + "rooster_42")
+    assert response.status_code == 200
+    assert response.json() == {
+        "id": str(target.id),
+        "username": "Rooster_42",
+        "avatar_url": "https://lh3.googleusercontent.com/a/pic",
+        "ratings": [],
+    }
+    assert "secret@example.com" not in response.text
+
+
+async def test_profile_requires_auth(client, make_user):
+    await make_user("Rooster_42")
+    response = await client.get(PROFILE + "Rooster_42")
+    assert response.status_code == 401
+
+
+async def test_profile_of_unknown_tag_is_not_found(client, log_in, make_user):
+    log_in(await make_user("viewer"))
+    response = await client.get(PROFILE + "nobody_here")
+    assert response.status_code == 404
+    assert response.json() == {"code": "NOT_FOUND", "detail": "No player has that tag."}
+
+
+async def test_profile_tag_too_long_is_rejected(client, log_in, make_user):
+    log_in(await make_user("viewer"))
+    response = await client.get(PROFILE + "x" * 65)
+    assert response.status_code == 422
+
+
+# GET /api/v1/users/search
+
+async def search_tags(client, **params) -> list[str]:
+    response = await client.get(SEARCH, params=params)
+    assert response.status_code == 200
+    return [item["username"] for item in response.json()["items"]]
+
+
+async def test_search_ranks_exact_then_prefix_then_contains_then_fuzzy(client, log_in, make_user):
+    for tag in ["the_rooster", "roosterking", "Rooster", "roostre_99", "unrelated"]:
+        await make_user(tag)
+    log_in(await make_user("viewer"))
+    assert await search_tags(client, q="ROOSTER") == ["Rooster", "roosterking", "the_rooster", "roostre_99"]
+
+
+async def test_search_tolerates_typos(client, log_in, make_user):
+    await make_user("Rooster_42")
+    log_in(await make_user("viewer"))
+    assert await search_tags(client, q="roostr") == ["Rooster_42"]
+
+
+async def test_search_returns_only_public_fields(client, log_in, make_user, db_session):
+    target = await make_user("Rooster_42")
+    target.email = "secret@example.com"
+    await db_session.commit()
+    log_in(await make_user("viewer"))
+    response = await client.get(SEARCH, params={"q": "rooster"})
+    assert response.json() == {
+        "items": [{"id": str(target.id), "username": "Rooster_42", "avatar_url": None}],
+        "next_offset": None,
+    }
+
+
+async def test_search_skips_users_without_a_tag(client, log_in, make_user):
+    await make_user()
+    log_in(await make_user("viewer"))
+    assert await search_tags(client, q="a") == []
+
+
+@pytest.mark.parametrize("query", ["nobody_matches_this", "   ", "%", "_"])
+async def test_search_without_matches_is_empty(client, log_in, make_user, query):
+    await make_user("Rooster")
+    log_in(await make_user("viewer"))
+    response = await client.get(SEARCH, params={"q": query})
+    assert response.status_code == 200
+    assert response.json() == {"items": [], "next_offset": None}
+
+
+async def test_search_paginates(client, log_in, make_user):
+    for i in range(5):
+        await make_user(f"hen_{i}")
+    log_in(await make_user("viewer"))
+    first = (await client.get(SEARCH, params={"q": "hen_", "limit": 2})).json()
+    assert [item["username"] for item in first["items"]] == ["hen_0", "hen_1"]
+    assert first["next_offset"] == 2
+    last = (await client.get(SEARCH, params={"q": "hen_", "limit": 2, "offset": 4})).json()
+    assert [item["username"] for item in last["items"]] == ["hen_4"]
+    assert last["next_offset"] is None
+
+
+async def test_search_requires_auth(client):
+    response = await client.get(SEARCH, params={"q": "rooster"})
+    assert response.status_code == 401
+
+
+@pytest.mark.parametrize("params", [{}, {"q": ""}, {"q": "x" * 65}, {"q": "a", "limit": 0},
+                                    {"q": "a", "limit": 51}, {"q": "a", "offset": -1}])
+async def test_search_rejects_invalid_params(client, log_in, make_user, params):
+    log_in(await make_user("viewer"))
+    response = await client.get(SEARCH, params=params)
+    assert response.status_code == 422
