@@ -36,3 +36,12 @@ class User(Base):
 
 # Tags are unique regardless of case, so "Ryan" blocks "ryan".
 Index("uq_users_username_lower", func.lower(User.username), unique=True)
+
+# Trigram index for player search: serves `LIKE '%q%'` and the fuzzy `%>` operator.
+# Needs the pg_trgm extension, which the migration creates.
+Index(
+    "ix_users_username_lower_trgm",
+    func.lower(User.username).label("username_lower"),
+    postgresql_using="gin",
+    postgresql_ops={"username_lower": "gin_trgm_ops"},
+)

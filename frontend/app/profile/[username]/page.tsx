@@ -1,131 +1,120 @@
 import type { Metadata } from "next";
-import { redirect } from "next/navigation";
-import { backendUrl } from "../../lib/auth";
-import Image from "next/image";
 import { cookies } from "next/headers";
+import { redirect } from "next/navigation";
+import Avatar from "../../components/avatar";
+import SiteHeader from "../../components/site-header";
+import { backendUrl } from "../../lib/auth";
+import { parseUser, parseUserProfile, usernameFormatError, type UserProfile } from "../../lib/protocol";
+import { profileHref } from "../../lib/routes";
 
 export const metadata: Metadata = {
-  title: "Profile · Chickenfaight",
-  description: "View a Chickenfaight profile.",
+  title: "Profile · Chicken fAIght",
+  description: "View a Chicken fAIght player's profile.",
 };
 
-type User = {
-  username: string;
-  avatarUrl: string | null;
-  email: string | null;
-  elo: number;
-};
+const panel = "rounded-3xl border border-white/[0.07] bg-[#202124]";
 
-async function getCurrentUser(): Promise<User | null> {
-	const cookieStore = await cookies();
-	const response = await fetch(`${backendUrl}/auth/me`, {
-	  headers: { cookie: cookieStore.toString() },
-      cache: "no-store",
-      signal: AbortSignal.timeout(3000),
-    });
+type Lookup = { status: "found"; profile: UserProfile } | { status: "missing" | "error" };
 
-	if (!response.ok){
-		console.log(`getUser got response: ${response.status}`);
-		return null;
-	}
-	const responseText = await response.text();
-    const data: { username: string; email: string | null; avatar_url: string | null; elo: number } = JSON.parse(responseText);
-	
-	
-	
-  return {
-    username: data.username,
-	email: data.email,
-    avatarUrl: data.avatar_url,
-	elo: data.elo,
-  };
+// Server-side fetches forward the browser's session cookie to the backend.
+async function backendGet(path: string): Promise<Response> {
+  const cookieStore = await cookies();
+  return fetch(`${backendUrl}${path}`, {
+    headers: { cookie: cookieStore.toString() },
+    cache: "no-store",
+    signal: AbortSignal.timeout(5000),
+  });
 }
 
-async function getUser(username): Promise<User | null> {
-	const cookieStore = await cookies();
-	const response = await fetch(`${backendUrl}/api/v1/users/user/${username}`, {
-	  headers: { cookie: cookieStore.toString() },
-      cache: "no-store",
-      signal: AbortSignal.timeout(3000),
-    });
-
-    if (!response.ok){
-		console.log(`getUser got response: ${response.status}`);
-		return null;
-	}
-	const responseText = await response.text();
-    const data: { username: string; email: string | null; avatar_url: string | null; elo: number } = JSON.parse(responseText);
-	
-	
-	
-  return {
-    username: data.username,
-	email: null,
-    avatarUrl: data.avatar_url,
-	elo: data.elo,
-  };
+// `/profile/me` resolves the signed-in user's tag and redirects to their canonical profile URL.
+async function redirectToOwnProfile(): Promise<never> {
+  let target = "/";
+  try {
+    const response = await backendGet("/auth/me");
+    if (response.status === 401) target = "/login";
+    else if (response.ok) {
+      const { username } = parseUser(await response.json());
+      if (username) target = profileHref(username);
+    }
+  } catch {
+    // Fall through to the lobby, which shows its own session error.
+  }
+  redirect(target);
 }
 
-export default async function Page(props: PageProps<'/profile/[username]'>) {
-  //const user = await getCurrentUser();
-  var user = null;
-  const {username} = await props.params;
-  const query = await props.searchParams;
-  console.log(username);
-  if (username == "me"){
-	 user = await getCurrentUser();
+async function lookUp(username: string): Promise<Lookup> {
+  // A tag that breaks the format rule can't exist, so skip the request.
+  if (usernameFormatError(username)) return { status: "missing" };
+  let response: Response;
+  try {
+    response = await backendGet(`/api/v1/users/by-username/${encodeURIComponent(username)}`);
+  } catch {
+    return { status: "error" };
   }
-  else {
-	 user = await getUser(username);
+  if (response.status === 401) redirect("/login");
+  if (response.status === 404) return { status: "missing" };
+  if (!response.ok) return { status: "error" };
+  try {
+    return { status: "found", profile: parseUserProfile(await response.json()) };
+  } catch {
+    return { status: "error" };
   }
+}
 
-  if (!user && username == "me") {
-    redirect("/login");
-  }
+function Stat({ label, value }: { label: string; value: string }) {
+  return <div><p className="text-[10px] text-zinc-400">{label}</p><p className="mt-1 text-2xl font-bold tracking-tight">{value}</p></div>;
+}
+
+function Profile({ profile }: { profile: UserProfile }) {
+  const games = profile.ratings.reduce((sum, rating) => sum + rating.games_played, 0);
+  const wins = profile.ratings.reduce((sum, rating) => sum + rating.wins, 0);
+  const losses = profile.ratings.reduce((sum, rating) => sum + rating.losses, 0);
 
   return (
-	<main className="flex min-h-screen items-center justify-center bg-zinc-950 px-6 text-zinc-100">
-      <section className="w-full max-w-md rounded-2xl border border-zinc-800 bg-zinc-900 p-8 shadow-2xl shadow-black/30">
-        <p className="mb-2 text-sm font-medium uppercase tracking-[0.2em] text-zinc-500">
-          Chickenfaight
-        </p>
-        <h1 className="text-3xl font-semibold tracking-tight">
-          Profile
-        </h1>
-
-		{
-			user != null ?
-			<div className="mt-8 flex items-center gap-4 rounded-xl border border-zinc-800 bg-zinc-950/70 p-5">
-				<Image
-				src={user.avatarUrl ?? "/next.svg"}
-				alt={`${user.username}'s profile picture`}
-				width={128}
-				height={128}
-				className="h-32 w-32 rounded-full object-cover"
-				priority
-				/>
-			  <div>
-				<span className="font-large">
-				  {`Username: ${user.username}`}
-				</span>
-				{ user.email != null &&
-				<p className="font-large">
-				  {`Email: ${user.email}`}
-				</p>
-				}
-				<p className="font-large">
-				  {`ELO: ${user.elo}`}
-				</p>
-			  </div>
-			</div>
-			:
-			<div className="mt-8 flex items-center gap-4 rounded-xl border border-zinc-800 bg-zinc-950/70 p-5">
-				<span className="font-large">
-				  {"Profile failed to load or user does not exist"}
-				</span>
-			</div>
-		}
+    <div className="grid grid-cols-[minmax(0,1fr)_320px] gap-5">
+      <section aria-labelledby="profile-title" className={`${panel} flex items-center gap-7 p-9`}>
+        <Avatar username={profile.username} url={profile.avatar_url} size={112} />
+        <div className="min-w-0">
+          <p className="mb-1 text-[10px] font-semibold uppercase tracking-[0.2em] text-[#f37981]">Player</p>
+          <h1 id="profile-title" className="truncate text-4xl font-black tracking-[-0.045em]">{profile.username}</h1>
+        </div>
       </section>
-    </main>
+      <section aria-labelledby="record-title" className={`${panel} p-6`}>
+        <h2 id="record-title" className="mb-5 text-sm font-bold">Record</h2>
+        {games === 0 ? (
+          <p className="text-sm text-zinc-500">No debates yet.</p>
+        ) : (
+          <div className="grid grid-cols-2 gap-y-5">
+            <Stat label="Win rate" value={`${Math.round((wins / games) * 100)}%`} />
+            <Stat label="Debates played" value={games.toLocaleString()} />
+            <Stat label="Wins" value={wins.toLocaleString()} />
+            <Stat label="Losses" value={losses.toLocaleString()} />
+          </div>
+        )}
+      </section>
+    </div>
+  );
+}
+
+export default async function ProfilePage({ params }: PageProps<"/profile/[username]">) {
+  // Tags are plain ASCII, so anything still percent-encoded fails the format check as a missing player.
+  const { username: tag } = await params;
+  if (tag === "me") await redirectToOwnProfile();
+  const result = await lookUp(tag);
+
+  return (
+    <div className="flex min-h-svh flex-col bg-[#17181b] font-sans text-[#f5f3ef]">
+      <SiteHeader />
+      <main className="mx-auto w-full max-w-[1100px] flex-1 px-6 py-10 xl:px-10">
+        {result.status === "found" ? <Profile profile={result.profile} /> : (
+          <section aria-labelledby="profile-title" className={`${panel} p-9`}>
+            <h1 id="profile-title" className="text-xl font-bold">{result.status === "missing" ? "Player not found" : "Profile unavailable"}</h1>
+            <p className="mt-2 truncate text-sm text-zinc-500">
+              {result.status === "missing" ? `No player goes by “${tag}”. Check the tag or search for them above.` : "Couldn’t load this profile. Try again in a moment."}
+            </p>
+          </section>
+        )}
+      </main>
+    </div>
   );
 }

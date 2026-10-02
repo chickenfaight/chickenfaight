@@ -3,8 +3,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.user import User
 from app.repositories.user import UserRepository
-from app.schemas import GoogleIdentity, UsernameAvailability
+from app.schemas import GoogleIdentity, UserPublic, UsernameAvailability, UserSearchPage
 from app.services.exceptions import (
+    UserNotFoundError,
     UsernameAlreadySetError,
     UsernameError,
     UsernameRequiredError,
@@ -48,6 +49,23 @@ class UserService:
         except UsernameError as error:
             return UsernameAvailability(available=False, code=error.code, detail=error.detail)
         return UsernameAvailability(available=True)
+
+    async def get_by_username(self, username: str) -> User:
+        user = await self.users.get_by_username(username)
+        if user is None:
+            raise UserNotFoundError()
+        return user
+
+    async def search(self, query: str, limit: int, offset: int) -> UserSearchPage:
+        query = query.strip()
+        if not query:
+            return UserSearchPage(items=[], next_offset=None)
+        # Fetch one extra row to learn whether another page exists.
+        found = await self.users.search_by_username(query, limit + 1, offset)
+        return UserSearchPage(
+            items=[UserPublic.model_validate(user) for user in found[:limit]],
+            next_offset=offset + limit if len(found) > limit else None,
+        )
 
     async def claim_username(self, user: User, username: str) -> User:
         """Set the caller's permanent tag. Raises if invalid, taken, or already set."""

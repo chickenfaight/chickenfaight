@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from sqlalchemy import func, select, update
+from sqlalchemy import func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.user import User
@@ -19,6 +19,33 @@ class UserRepository:
         statement = select(User).where(func.lower(User.username) == username.lower())
         result = await self.session.execute(statement)
         return result.scalar_one_or_none()
+
+    async def search_by_username(self, query: str, limit: int, offset: int) -> list[User]:
+        """Tagged users matching `query`, best first: exact, prefix, contains, then fuzzy."""
+        tag = func.lower(User.username)
+        needle = query.lower()
+        exact = tag == needle
+        prefix = tag.startswith(needle, autoescape=True)
+        contains = tag.contains(needle, autoescape=True)
+        # `%>`: some part of the tag is trigram-similar to the query (pg_trgm word similarity).
+        fuzzy = tag.op("%>")(needle)
+        statement = (
+            select(User)
+            .where(User.username.is_not(None), or_(contains, fuzzy))
+            .order_by(
+                exact.desc(),
+                prefix.desc(),
+                contains.desc(),
+                func.word_similarity(needle, tag).desc(),
+                func.length(User.username),
+                tag,
+                User.id,
+            )
+            .limit(limit)
+            .offset(offset)
+        )
+        result = await self.session.execute(statement)
+        return list(result.scalars())
 
     async def set_username_if_unset(self, user_id: UUID, username: str) -> User | None:
         """Atomically set a tag only if none exists; returns None if one already did."""

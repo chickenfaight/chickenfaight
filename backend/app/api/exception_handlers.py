@@ -1,7 +1,12 @@
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
-from app.services.exceptions import AlreadyQueuedError, AlreadyMatchedError, UsernameError
+from app.services.exceptions import (
+    AlreadyMatchedError,
+    AlreadyQueuedError,
+    UsernameError,
+    UserNotFoundError,
+)
 
 
 async def handle_already_queued(
@@ -39,10 +44,21 @@ async def handle_username_error(
     )
 
 
+async def handle_user_not_found(
+        request: Request,
+        error: UserNotFoundError,
+) -> JSONResponse:
+    return JSONResponse(
+        status_code=404,
+        content={"code": "NOT_FOUND", "detail": "No player has that tag."},
+    )
+
+
 EXCEPTION_HANDLERS = {
     AlreadyQueuedError: handle_already_queued,
     AlreadyMatchedError: handle_already_matched,
     UsernameError: handle_username_error,
+    UserNotFoundError: handle_user_not_found,
 }
 
 def register_exception_handlers(app: FastAPI) -> None:

@@ -23,6 +23,9 @@ class AlreadyMatchedError(ServiceError):
 class MatchNotFoundError(ServiceError):
     pass
 
+class UserNotFoundError(ServiceError):
+    pass
+
 
 class UsernameError(ServiceError):
     """A user tag was rejected; `code`/`status_code`/`detail` map to PROTOCOL.md."""

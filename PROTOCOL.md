@@ -74,7 +74,8 @@ Server-side constants; clients read deadlines from messages rather than hard-cod
 
 ```
 UserRead         { id: uuid, email: str|null, username: str|null, avatar_url: str|null, elo: int }   (implemented; elo is removed when Rating ships; username is the user's tag, null until set)
-UserPublic       { id: uuid, username: str|null, avatar_url: str|null }
+UserPublic       { id: uuid, username: str|null, avatar_url: str|null }   (implemented)
+UserProfile      UserPublic + { ratings: [Rating] }   (implemented; `ratings` is empty until ratings ship)
 Rating           { ladder: str, elo: int, games_played: int, wins: int, losses: int }
 Ladder           { slug: str, display_name: str, kind: "cloud"|"byom" }
 Side             "pro" | "con"
@@ -104,7 +105,9 @@ Player prompts are never returned by any endpoint or message except to their aut
 | POST | `/auth/logout` | public | — | 204, clears session (implemented) |
 | PATCH | `/v1/users/me` | session | `{ username: str }` (3–24 chars, `[a-zA-Z0-9_]`, unique) | `UserRead` |
 | GET | `/v1/users/username-availability` | session | `?username=` (≤ 64 chars) | `{ available: bool, code: str\|null, detail: str\|null }`; `code` is one of the `USERNAME_*` errors above when unavailable (implemented) |
-| GET | `/v1/users/{id}` | session | `{id}: uuid` | `UserPublic + { ratings: [Rating] }` |
+| GET | `/v1/users/search` | session | `?q=` (1–64 chars), `?limit=` (1–50, default 20), `?offset=` (≥ 0, default 0) | `{ items: [UserPublic], next_offset: int\|null }`; only users with a tag; ranked exact tag, then prefix, then contains, then fuzzy (trigram word similarity), all ignoring case; `next_offset` is null on the last page; a blank `q` returns no items (implemented) |
+| GET | `/v1/users/by-username/{username}` | session | `{username}`: tag, ignoring case | `UserProfile`; 404 `NOT_FOUND` if no user has that tag (implemented) |
+| GET | `/v1/users/{id}` | session | `{id}: uuid` | `UserProfile` |
 | GET | `/v1/users/{id}/matches` | session | `{id}: uuid`, `?limit&offset` | `[MatchSummary]`, finished only |
 | GET | `/v1/ladders` | session | — | `[Ladder]` (active only) |
 | GET | `/v1/ladders/{slug}/leaderboard` | session | `?limit&offset` | `[{ rank, user: UserPublic, rating: Rating }]` |
