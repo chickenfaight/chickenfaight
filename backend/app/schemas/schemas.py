@@ -40,4 +40,4 @@ class TopicRead(BaseModel):
     con_position: str
 
 class PromptSubmission(BaseModel):
-    prompt: str = Field(min_length=1)
+    prompt: str = Field(min_length=1, max_length=2000)

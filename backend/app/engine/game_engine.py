@@ -4,6 +4,7 @@ from typing import Literal
 from uuid import UUID
 
 from fastapi import WebSocket
+from pydantic import ValidationError
 
 from app.db.session import SessionFactory
 from app.models import Topic
@@ -56,7 +57,7 @@ class GameEngine:
         topic = TopicRead.model_validate(self.topic).model_dump(mode="json")
 
         participants = [
-            {"user_id": user_id, "side": side}
+            {"user_id": str(user_id), "side": side}
             for user_id, side in self.sides.items()
         ]
 
@@ -92,7 +93,17 @@ class GameEngine:
                 # TODO dispatch heartbeats, resign, etc.
                 continue
 
-            submission = PromptSubmission.model_validate(message.get("payload"))
+            try:
+                submission = PromptSubmission.model_validate(message.get("payload"))
+            except ValidationError:
+                await socket.send_json({
+                    "type": "ERROR",
+                    "payload": {
+                        "code": "BAD_MESSAGE",
+                        "message": "Prompt must be a string between 1 and 2000 characters.",
+                    },
+                })
+                continue
 
             if not submission.prompt.strip():
                 # TODO send ERROR, invalid prompt string
@@ -115,4 +126,3 @@ class GameEngine:
         finally:
             if self.connections.get(user_id) is websocket:
                 del self.connections[user_id]
-
