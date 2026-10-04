@@ -1,9 +1,13 @@
 import asyncio
 import random
+import time
+from contextlib import suppress
+from dataclasses import dataclass, field
+from json import JSONDecodeError
 from typing import Literal
 from uuid import UUID
 
-from fastapi import WebSocket
+from fastapi import WebSocket, WebSocketDisconnect
 from pydantic import ValidationError
 
 from app.db.session import SessionFactory
@@ -13,7 +17,15 @@ from app.schemas.schemas import TopicRead, PromptSubmission
 
 Side = Literal["pro", "con"]
 
+@dataclass
+class ConnectionActivity:
+    last_received: float = field(default_factory=time.monotonic)
+
+
 class GameEngine:
+    HEARTBEAT_INTERVAL = 15
+    HEARTBEAT_TIMEOUT = 45
+
     def __init__(self, match_id: UUID, players: tuple[UUID, UUID], model: str):
         # TODO figure out LLM identifier strategy
         self.players = players
@@ -28,6 +40,9 @@ class GameEngine:
         }
 
         self.connections: dict[UUID, WebSocket] = {} # dict[user_id, WebSocket]
+
+        self.prompts: dict[UUID, str] = {}
+        self.prompt_received = {player: asyncio.Event() for player in players}
 
         self.both_connected = asyncio.Event()
         self.finished = asyncio.Event()
@@ -73,24 +88,61 @@ class GameEngine:
             })
 
     async def receive_prompts(self):
-        async with asyncio.TaskGroup() as group:
-            tasks = {
-                player: group.create_task(
-                    self.receive_player_prompt(self.connections[player])
-                )
-                for player in self.players
-            }
+        await asyncio.gather(*(event.wait() for event in self.prompt_received.values()))
+        return dict(self.prompts)
 
-        return {
-            player: task.result() for player, task in tasks.items()
-        }
-
-    async def receive_player_prompt(self, socket: WebSocket) -> str:
+    async def receive_messages(self, player: UUID, socket: WebSocket, activity: ConnectionActivity) -> None:
         while True:
-            message = await socket.receive_json()
+            try:
+                message = await socket.receive_json()
+                activity.last_received = time.monotonic()
+            except JSONDecodeError:
+                activity.last_received = time.monotonic()
+                await socket.send_json({
+                    "type": "ERROR",
+                    "payload": {
+                        "code": "BAD_MESSAGE",
+                        "message": "Malformed JSON",
+                    },
+                })
+                continue
+
+            if not isinstance(message, dict) or not isinstance(message.get("type"), str):
+                await socket.send_json({
+                    "type": "ERROR",
+                    "payload": {
+                        "code": "BAD_MESSAGE",
+                        "message": "Malformed message",
+                    },
+                })
+                continue
 
             if message["type"] != "SUBMIT_PROMPT":
-                # TODO dispatch heartbeats, resign, etc.
+                match message["type"]:
+                    case "HEARTBEAT":
+                        # The browser echoed our heartbeat; activity was updated above.
+                        continue
+                    case "RESIGN":
+                        # TODO
+                        continue
+                    case _:
+                        await socket.send_json({
+                            "type": "ERROR",
+                            "payload": {
+                                "code": "UNKNOWN_TYPE",
+                                "message": "Unknown message type",
+                            },
+                        })
+                        continue
+
+            if player in self.prompts:
+                await socket.send_json({
+                    "type": "ERROR",
+                    "payload": {
+                        "code": "PROMPT_ALREADY_SUBMITTED",
+                        "message": "Prompt already accepted",
+                    },
+                })
                 continue
 
             try:
@@ -99,30 +151,68 @@ class GameEngine:
                 await socket.send_json({
                     "type": "ERROR",
                     "payload": {
-                        "code": "BAD_MESSAGE",
+                        "code": "PROMPT_TOO_LONG",
                         "message": "Prompt must be a string between 1 and 2000 characters.",
                     },
                 })
                 continue
 
             if not submission.prompt.strip():
-                # TODO send ERROR, invalid prompt string
+                await socket.send_json({
+                    "type": "ERROR",
+                    "payload": {
+                        "code": "BAD_MESSAGE",
+                        "message": "Invalid prompt string",
+                    },
+                })
                 continue
 
-            return submission.prompt
+            self.prompts[player] = submission.prompt
+            self.prompt_received[player].set()
+            # Keep reading heartbeat replies after accepting the prompt.
 
-    async def handle_connection(
-            self,
-            user_id: UUID,
-            websocket: WebSocket
-    ) -> None:
+    async def heartbeat(self, socket: WebSocket, activity: ConnectionActivity) -> None:
+        next_heartbeat = time.monotonic() + self.HEARTBEAT_INTERVAL
+        while True:
+            deadline = activity.last_received + self.HEARTBEAT_TIMEOUT
+            await asyncio.sleep(max(0, min(next_heartbeat, deadline) - time.monotonic()))
+            now = time.monotonic()
+            if now - activity.last_received >= self.HEARTBEAT_TIMEOUT:
+                await socket.close(code=4408, reason="Heartbeat timeout")
+                return
+            if now >= next_heartbeat:
+                # A stalled send must not prevent the silence timeout check.
+                try:
+                    async with asyncio.timeout(activity.last_received + self.HEARTBEAT_TIMEOUT - now):
+                        await socket.send_json({
+                            "type": "HEARTBEAT",
+                            "payload": {"ts": time.time()},
+                        })
+                except TimeoutError:
+                    continue
+                next_heartbeat = time.monotonic() + self.HEARTBEAT_INTERVAL
+
+    async def handle_connection(self, user_id: UUID, websocket: WebSocket) -> None:
         self.connections[user_id] = websocket
-
+        activity = ConnectionActivity()
         if all(player in self.connections for player in self.players):
             self.both_connected.set()
 
+        reader = asyncio.create_task(self.receive_messages(user_id, websocket, activity))
+        heartbeat = asyncio.create_task(self.heartbeat(websocket, activity))
+        finished = asyncio.create_task(self.finished.wait())
+        tasks = (reader, heartbeat, finished)
         try:
-            await self.finished.wait()
+            done, _ = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
+            for task in done:
+                task.result()
+        except (WebSocketDisconnect, OSError):
+            pass
         finally:
+            for task in tasks:
+                task.cancel()
+            await asyncio.gather(*tasks, return_exceptions=True)
             if self.connections.get(user_id) is websocket:
                 del self.connections[user_id]
+            with suppress(WebSocketDisconnect, OSError, RuntimeError):
+                await websocket.close()
