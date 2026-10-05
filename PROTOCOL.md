@@ -146,14 +146,14 @@ Heartbeat (both sockets): the server sends `HEARTBEAT { ts }` every interval; th
 
 ## WebSocket — match (web ↔ engine)
 
-`GET /v1/matches/{id}/ws` (`{id}: uuid`), session cookie. Server closes 4401 if unauthenticated, 4403 if not a participant. The client opens it when the queue poll returns `matched`, and reopens it to reconnect.
+`GET /v1/game/{match_id}/ws` (`{match_id}: uuid`), session cookie (implemented). Server closes 4401 if unauthenticated, 4403 if not a participant. Opening the socket from the frontend on `matched` and reconnecting remain planned.
 
 | Type | Direction | Payload |
 |---|---|---|
 | `JOIN` | client → server | `{ protocol_version: int }` — must be first |
 | `MATCH_STATE` | server → client | `{ match_id: uuid, ladder, topic, status: MatchStatus, you: Side, participants: [Participant], ready: [Side], deadline: str|null, turns: [Turn] }` — sent after every `JOIN` (full snapshot for reconnects) |
 | `SUBMIT_PROMPT` | client → server | `{ prompt: str }` — once per match |
-| `PLAYER_READY` | server → client | `{ side: Side }` — a player's prompt was accepted |
+| `PLAYER_READY` | server → client | `{ side: Side }` — a player's prompt was accepted (PLANNED; the current engine does not emit a readiness notification) |
 | `TURN_START` | server → client | `{ turn_id: uuid, index, side, phase }` |
 | `TURN_DELTA` | server → client | `{ turn_id: uuid, delta: str }` |
 | `TURN_END` | server → client | `{ turn_id: uuid, truncated: bool }` |
@@ -162,6 +162,8 @@ Heartbeat (both sockets): the server sends `HEARTBEAT { ts }` every interval; th
 | `RESIGN` | client → server | `{}` |
 | `HEARTBEAT` | both | `{ ts }` |
 | `ERROR` | server → client | `{ code, message }` |
+
+Current prompt readiness and generation (implemented): after both player sockets are connected, the engine sends its initial state and runs one generation task per side. Each task waits only for its own player's accepted `SUBMIT_PROMPT`, then immediately generates that side's opening argument without waiting for the opponent's prompt. The two generations can overlap. Judging waits until both arguments finish. The current engine does not require a `JOIN` message; the handshake and full snapshot above remain planned.
 
 Disconnecting after submitting a prompt does not affect the match; turns keep running.
 
@@ -198,8 +200,8 @@ Current argument generation uses the engine's `format_game(player)` wrapper (imp
 
 1. Matchmaking pairs two queued players on the same ladder, creates the match, assigns sides randomly, and starts an engine task.
 2. Both players `JOIN` (and, for BYOM, the server sends `MATCH_ASSIGN` to each device).
-3. Both players `SUBMIT_PROMPT`.
-4. Six turns: `opening` pro, con → `rebuttal` pro, con → `closing` pro, con. Each turn's `messages` = fixed server system prompt (topic, side, phase, length limit) with the side's player prompt inside delimiters, then prior turns as the transcript.
+3. Each player `SUBMIT_PROMPT`s independently; their opening generation starts as soon as their own prompt is accepted, without waiting for the other player's submission.
+4. Currently, each side generates one opening argument, potentially concurrently. The planned six-turn flow adds `rebuttal` pro, con → `closing` pro, con after both openings finish. Each turn's `messages` = fixed server system prompt (topic, side, phase, length limit) with the side's player prompt inside delimiters; later phases also include prior turns as the transcript.
 5. Judge: fixed system prompt plus the transcript only (never player prompts). It must return JSON `{ "winner": "pro"|"con", "reasoning": str }`. Anything else is a failure.
 6. `MATCH_RESULT`, Elo update, persist, close sockets.
 

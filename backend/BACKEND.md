@@ -50,7 +50,8 @@ The current engine keeps one receiver and one heartbeat task per browser connect
 | Method | Responsibility |
 |---|---|
 | `link_user(user_id)` | Wait for the player's socket to `JOIN` (join deadline); send `MATCH_STATE` |
-| `get_user_prompt(socket)` | Receive and validate `SUBMIT_PROMPT`; both required before turns start |
+| `receive_messages(player, socket, activity)` | Receive and validate `SUBMIT_PROMPT`; store the accepted prompt and signal that player's generation task, then keep reading heartbeat replies. No `PLAYER_READY` notification is currently emitted |
+| `generate_arguments(player)` | After both sockets connect, wait only for this player's accepted prompt and immediately stream their opening argument; the opponent's prompt is not required. Both arguments must finish before judging |
 | `format_game(prompt)` | Build the fixed-template `messages` for a turn; player prompt goes only inside delimiters, with delimiter strings stripped from it |
 | `call_model(messages)` | Stream a turn from a `ModelClient`, forwarding `TURN_DELTA`s; also used for the judge |
 | `unlink_user(socket)` | Send `MATCH_RESULT` and close the socket |
