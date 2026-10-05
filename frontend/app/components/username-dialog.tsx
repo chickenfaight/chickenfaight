@@ -33,7 +33,7 @@ export default function UsernameDialog({ onCreated, onSignOut, signingOut, signO
     const controller = new AbortController();
     const timer = setTimeout(async () => {
       try {
-        const data = await api(`/api/v1/users/username-availability?username=${encodeURIComponent(value)}`, controller.signal);
+        const data = await api(`/v1/users/username-availability?username=${encodeURIComponent(value)}`, controller.signal);
         setChecked({ value, check: parseUsernameAvailability(data) });
       } catch {
         if (!controller.signal.aborted) setChecked({ value, check: "error" });
@@ -62,7 +62,7 @@ export default function UsernameDialog({ onCreated, onSignOut, signingOut, signO
     const controller = new AbortController();
     submitController.current = controller;
     try {
-      const user = parseUser(await api("/api/v1/users/me", controller.signal, "PATCH", { username: value }));
+      const user = parseUser(await api("/v1/users/me", controller.signal, "PATCH", { username: value }));
       created.current = true;
       dialog.current?.close();
       onCreated(user);

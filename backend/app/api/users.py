@@ -9,7 +9,7 @@ from app.schemas import UserRead, UsernameAvailability, UsernameUpdate
 from app.services.user import UserService
 
 
-router = APIRouter(prefix="/api/v1/users", tags=["users"])
+router = APIRouter(prefix="/users", tags=["users"])
 SessionDependency = Annotated[AsyncSession, Depends(get_session)]
 
 

@@ -68,7 +68,7 @@ app.add_middleware(
 app.include_router(auth_router)
 app.include_router(matchmaking_router, prefix="/v1")
 app.include_router(game_router, prefix="/v1")
-app.include_router(users_router)
+app.include_router(users_router, prefix="/v1")
 
 
 @app.get("/health")

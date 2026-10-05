@@ -43,7 +43,7 @@ async function getCurrentUser(): Promise<User | null> {
 
 async function getUser(username): Promise<User | null> {
 	const cookieStore = await cookies();
-	const response = await fetch(`${backendUrl}/api/v1/users/user/${username}`, {
+	const response = await fetch(`${backendUrl}/v1/users/user/${username}`, {
 	  headers: { cookie: cookieStore.toString() },
       cache: "no-store",
       signal: AbortSignal.timeout(3000),
