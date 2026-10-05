@@ -1,3 +1,4 @@
+from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -41,3 +42,7 @@ class TopicRead(BaseModel):
 
 class PromptSubmission(BaseModel):
     prompt: str = Field(min_length=1, max_length=2000)
+
+class Verdict(BaseModel):
+    winner: Literal["pro", "con"]
+    reason: str

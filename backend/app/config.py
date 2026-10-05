@@ -32,6 +32,8 @@ class Settings:
     secure_cookies: bool
     # "development" lets startup reset an unrecoverable local database.
     app_env: str
+    inference_base_url: str
+    inference_api_key: str
 
     @classmethod
     def from_environment(cls) -> Settings:
@@ -46,6 +48,8 @@ class Settings:
             frontend_url=os.getenv("FRONTEND_URL", "http://localhost:3000"),
             secure_cookies=os.getenv("SECURE_COOKIES", "false").lower() == "true",
             app_env=os.getenv("APP_ENV", "production"),
+            inference_base_url=required_environment_variable("INFERENCE_BASE_URL"),
+            inference_api_key=required_environment_variable("INFERENCE_API_KEY"),
         )
 
 
