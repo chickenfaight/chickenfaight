@@ -157,7 +157,7 @@ Heartbeat (both sockets): the server sends `HEARTBEAT { ts }` every interval; th
 | `TURN_START` | server → client | `{ turn_id: uuid, index, side, phase }` |
 | `TURN_DELTA` | server → client | `{ turn_id: uuid, delta: str }` |
 | `TURN_END` | server → client | `{ turn_id: uuid, truncated: bool }` |
-| `JUDGING` | server → client | `{}` |
+| `JUDGING` | server → client | `{}` — sent to both connected players after argument generation finishes, immediately before the judge call (implemented) |
 | `MATCH_RESULT` | server → client | `{ status, winner_side: Side|null, end_reason: EndReason, verdict_reasoning: str|null, participants: [Participant] }` — server then closes 1000 |
 | `RESIGN` | client → server | `{}` |
 | `HEARTBEAT` | both | `{ ts }` |

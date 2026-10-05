@@ -84,6 +84,12 @@ class GameEngine:
                 for player in self.players:
                     group.create_task(self.generate_arguments(player))
 
+            for socket in list(self.connections.values()):
+                try:
+                    await socket.send_json({"type": "JUDGING", "payload": {}})
+                except (WebSocketDisconnect, OSError, RuntimeError):
+                    pass
+
             self.verdict: Verdict = await self.judge_clients.judge(
                 self.topic,
                 self.arguments["pro"],
