@@ -38,7 +38,7 @@ bilc/              PLANNED — BYOM Interface Layer Client (Go CLI)
 - **Game engine** (`backend/app/engine/`, PLANNED): runs one match — connects both players, collects prompts, alternates model turns, streams output, calls the judge, extracts the verdict, reports the result. Lives in the server process but is kept separate from general platform code.
 - **BILC** (`bilc/`, PLANNED): Go CLI on the user's machine. Holds a persistent WebSocket to the server and forwards turn requests to the user's local OpenAI-compatible model.
 - **Database**: PostgreSQL, accessed only through the backend.
-- **External services**: Google OAuth; OpenAI-compatible inference providers (Purdue GenAI Studio in development; OpenRouter etc. later).
+- **External services**: Google OAuth; OpenRouter for cloud inference, providing access to various models, including free models, through a single platform with OpenAI-compatible endpoints.
 
 ## Design decisions
 
@@ -52,7 +52,7 @@ bilc/              PLANNED — BYOM Interface Layer Client (Go CLI)
 | Backend | FastAPI, async SQLAlchemy, Pydantic | asyncio concurrency, OpenAI SDK support |
 | Database | PostgreSQL; JSONB only for provider/model metadata | Relational core data, flexible metadata |
 | Schema changes | Alembic migrations, applied on server startup | Local DBs stay in sync without coordination; see BACKEND.md |
-| Inference | OpenAI-compatible APIs only, streamed | No self-hosting cost; no vendor lock-in |
+| Inference | OpenRouter via OpenAI-compatible APIs, streamed | One platform for various models, including free models; no self-hosting required |
 | Match concurrency | One asyncio task per match (the design doc's "thread") | No OS threads in an async server |
 | Live output | Provider → server via SSE; server → browser/BILC via WebSocket | Players watch the debate stream |
 | BILC language | Go, static binaries | Goroutines/timeouts, cross-platform |

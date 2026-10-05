@@ -188,6 +188,8 @@ Disconnecting after submitting a prompt does not affect the match; turns keep ru
 
 ## Inference
 
+Cloud inference uses OpenRouter to access various models, including free models, through one platform with OpenAI-compatible endpoints. Its base URL is `https://openrouter.ai/api/v1`; authenticate with the server's `INFERENCE_API_KEY`.
+
 Both the server (cloud models) and BILC (local model) speak the OpenAI Chat Completions API: `POST {base_url}/chat/completions` with `stream: true`, consuming SSE `choices[0].delta.content` chunks. Nothing else about a provider may be assumed.
 
 Server config (env): `INFERENCE_BASE_URL`, `INFERENCE_API_KEY`, `JUDGE_MODEL`. Ladder models name their provider model ID in the `models` table.

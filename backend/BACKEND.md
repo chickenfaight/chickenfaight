@@ -59,6 +59,8 @@ The current engine keeps one receiver and one heartbeat task per browser connect
 
 The engine never calls a provider directly. `app/inference/` exposes one `ModelClient` interface (`stream(messages, max_tokens) -> AsyncIterator[str]`) with `OpenAIModelClient` (cloud, `AsyncOpenAI` with `base_url`) and `BilcModelClient` (sends `TURN_REQUEST` to a device, yields `MATCH_RESPONSE` deltas). Tests use a fake implementation.
 
+OpenRouter is the selected cloud inference provider: it offers a single platform for accessing various models, including free models, through OpenAI-compatible endpoints. Configure `INFERENCE_BASE_URL=https://openrouter.ai/api/v1` and an OpenRouter `INFERENCE_API_KEY`; BILC continues to use the user's local OpenAI-compatible endpoint.
+
 Live state (matchmaking queues, running engines, connected BILC devices) is in-memory in one server process. Running multiple processes would need a shared store; out of scope.
 
 ## User tags
