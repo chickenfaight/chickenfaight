@@ -1,3 +1,4 @@
+from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -29,3 +30,19 @@ class GoogleIdentity(BaseModel):
     email_verified: bool = False
     name: str | None = None
     picture: str | None = None
+
+
+class TopicRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    category: str
+    topic: str
+    pro_position: str
+    con_position: str
+
+class PromptSubmission(BaseModel):
+    prompt: str = Field(min_length=1, max_length=2000)
+
+class Verdict(BaseModel):
+    winner: Literal["pro", "con"]
+    reason: str

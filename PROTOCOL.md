@@ -190,6 +190,10 @@ Both the server (cloud models) and BILC (local model) speak the OpenAI Chat Comp
 
 Server config (env): `INFERENCE_BASE_URL`, `INFERENCE_API_KEY`, `JUDGE_MODEL`. Ladder models name their provider model ID in the `models` table.
 
+Current judge client: `judge(topic, pro, con)` accepts a topic and the two sides' generated transcripts (never player prompts). It sends a fixed system instruction and a JSON user message containing `topic`, `pro_position`, `con_position`, `pro`, and `con`. This non-streaming call requests structured output using the current `Verdict` schema (`winner`, `reason`); the engine integration and target `reasoning` field below remain pending.
+
+Current argument generation uses the engine's `format_game(player)` wrapper (implemented): a fixed system message supplies the topic, assigned side and position, opening phase, and current token budget. Only that player's strategy is included, inside `<player_strategy>` delimiters after stripping those delimiter strings from the strategy. The strategy is explicitly subordinate to the server rules. The current engine generates one opening argument per side; the six-turn flow below remains planned.
+
 ### Match flow
 
 1. Matchmaking pairs two queued players on the same ladder, creates the match, assigns sides randomly, and starts an engine task.

@@ -45,6 +45,8 @@ State the auth of every endpoint explicitly; PROTOCOL.md lists which are public.
 
 `app/engine/` — one `GameEngine` instance per match, run as its own asyncio task started by the matchmaker. It owns the match's in-memory state and both player sockets, and follows the match flow and failure table in PROTOCOL.md.
 
+The current engine keeps one receiver and one heartbeat task per browser connection. Accepted prompts are stored separately so the receiver continues reading heartbeat replies. Heartbeats are sent every 15 seconds; 45 seconds without incoming activity closes that socket with 4408. These tasks stop on disconnect or engine completion. Browser echo handling and the rest of the match lifecycle remain pending.
+
 | Method | Responsibility |
 |---|---|
 | `link_user(user_id)` | Wait for the player's socket to `JOIN` (join deadline); send `MATCH_STATE` |
