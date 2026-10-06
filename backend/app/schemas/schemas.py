@@ -46,3 +46,11 @@ class PromptSubmission(BaseModel):
 class Verdict(BaseModel):
     winner: Literal["pro", "con"]
     reason: str
+
+class FriendsRead(BaseModel):
+    id: UUID
+    friend_ids: List[UUID]
+    
+class FriendAdd(BaseModel):
+    id: UUID
+    other_id: UUID

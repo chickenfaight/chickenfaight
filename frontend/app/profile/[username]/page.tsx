@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { backendUrl } from "../../lib/auth";
 import Image from "next/image";
 import { cookies } from "next/headers";
+import AddFriendButton from "../../components/add-friend"
 
 export const metadata: Metadata = {
   title: "Profile · Chickenfaight",
@@ -10,6 +11,7 @@ export const metadata: Metadata = {
 };
 
 type User = {
+  id: string;
   username: string;
   avatarUrl: string | null;
   email: string | null;
@@ -29,11 +31,12 @@ async function getCurrentUser(): Promise<User | null> {
 		return null;
 	}
 	const responseText = await response.text();
-    const data: { username: string; email: string | null; avatar_url: string | null; elo: number } = JSON.parse(responseText);
+    const data: { id: string; username: string; email: string | null; avatar_url: string | null; elo: number } = JSON.parse(responseText);
 	
 	
 	
   return {
+	id: data.id,
     username: data.username,
 	email: data.email,
     avatarUrl: data.avatar_url,
@@ -54,11 +57,12 @@ async function getUser(username: string): Promise<User | null> {
 		return null;
 	}
 	const responseText = await response.text();
-    const data: { username: string; email: string | null; avatar_url: string | null; elo: number } = JSON.parse(responseText);
+    const data: { id: string; username: string; email: string | null; avatar_url: string | null; elo: number } = JSON.parse(responseText);
 	
 	
 	
   return {
+	id: data.id,
     username: data.username,
 	email: null,
     avatarUrl: data.avatar_url,
@@ -69,13 +73,16 @@ async function getUser(username: string): Promise<User | null> {
 export default async function Page(props: PageProps<'/profile/[username]'>) {
   //const user = await getCurrentUser();
   let user = null;
+  let meUser = null;
   const {username} = await props.params;
   console.log(username);
   if (username == "me"){
 	 user = await getCurrentUser();
+	 meUser = user;
   }
   else {
 	 user = await getUser(username);
+	 meUser = await getCurrentUser();
   }
 
   if (!user && username == "me") {
@@ -115,6 +122,9 @@ export default async function Page(props: PageProps<'/profile/[username]'>) {
 				<p className="font-large">
 				  {`ELO: ${user.elo}`}
 				</p>
+				{ username != "me" && meUser.id != user.id &&
+					<AddFriendButton meId={meUser.id} otherId={user.id} />
+				}
 			  </div>
 			</div>
 			:
