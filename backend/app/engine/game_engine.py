@@ -3,6 +3,7 @@ import random
 import time
 from contextlib import suppress
 from dataclasses import dataclass, field
+from datetime import datetime, timedelta, timezone
 from json import JSONDecodeError
 from typing import Literal
 from uuid import UUID
@@ -18,6 +19,10 @@ from app.schemas.schemas import TopicRead, PromptSubmission
 
 Side = Literal["pro", "con"]
 
+
+class PromptDeadlineExpired(Exception):
+    pass
+
 @dataclass
 class ConnectionActivity:
     last_received: float = field(default_factory=time.monotonic)
@@ -26,6 +31,7 @@ class ConnectionActivity:
 class GameEngine:
     HEARTBEAT_INTERVAL = 15
     HEARTBEAT_TIMEOUT = 45
+    PROMPT_WINDOW_SECONDS = 120
     MAX_TOKENS = 2000
     JUDGE_MODEL = "nvidia/nemotron-3-super-120b-a12b:free" # free via OpenRouter, supports response schema enforcement
 
@@ -53,6 +59,7 @@ class GameEngine:
             "pro": "",
             "con": ""
         }
+        self.prompt_deadline: datetime | None = None
         self.verdict: Verdict
 
         self.both_connected = asyncio.Event()
@@ -70,6 +77,7 @@ class GameEngine:
 
             await self.both_connected.wait() # wait until both players' WebSocket is accepted
 
+            self.prompt_deadline = datetime.now(timezone.utc) + timedelta(seconds=self.PROMPT_WINDOW_SECONDS)
             await self.broadcast_initial_game_state()
 
             if self.model == "byom":
@@ -80,9 +88,23 @@ class GameEngine:
                 for player in self.players:
                     self.model_clients[player] = client
 
-            async with asyncio.TaskGroup() as group:
-                for player in self.players:
-                    group.create_task(self.generate_arguments(player))
+            prompt_expired = False
+            try:
+                async with asyncio.TaskGroup() as group:
+                    for player in self.players:
+                        group.create_task(self.generate_arguments(player))
+            except* PromptDeadlineExpired:
+                prompt_expired = True
+            if prompt_expired:
+                submitted = [player for player in self.players if player in self.prompts]
+                winner = self.sides[submitted[0]] if len(submitted) == 1 else None
+                await self.broadcast_result({
+                    "winner": winner,
+                    "reason": f"The {winner.upper()} side submitted a prompt before the deadline; the other side did not." if winner else "Neither player submitted a prompt in time.",
+                    "status": "forfeited" if winner else "voided",
+                    "end_reason": "no_prompt",
+                })
+                return
 
             for socket in list(self.connections.values()):
                 try:
@@ -126,14 +148,22 @@ class GameEngine:
                     "match_id": str(self.match_id),
                     "topic": topic,
                     "you": self.sides[player],
-                    "participants": participants
+                    "participants": participants,
+                    "deadline": self.prompt_deadline.isoformat() if self.prompt_deadline else None
                 }
             })
 
     async def broadcast_verdict(self):
+        await self.broadcast_result({
+            **self.verdict.model_dump(mode="json"),
+            "status": "completed",
+            "end_reason": "judged",
+        })
+
+    async def broadcast_result(self, result: dict) -> None:
         message = {
             "type": "MATCH_RESULT",
-            "payload": self.verdict.model_dump(mode="json")
+            "payload": {**result, "arguments": dict(self.arguments)},
         }
         for socket in list(self.connections.values()):
             try:
@@ -171,7 +201,13 @@ class GameEngine:
         }]
 
     async def generate_arguments(self, player: UUID):
-        await self.prompt_received[player].wait()
+        remaining = ((self.prompt_deadline - datetime.now(timezone.utc)).total_seconds()
+                     if self.prompt_deadline else None)
+        try:
+            async with asyncio.timeout(max(0, remaining) if remaining is not None else None):
+                await self.prompt_received[player].wait()
+        except TimeoutError as exc:
+            raise PromptDeadlineExpired from exc
 
         client = self.model_clients[player]
 
@@ -193,6 +229,12 @@ class GameEngine:
                 except (WebSocketDisconnect, OSError, RuntimeError):
                     pass
 
+        socket = self.connections.get(player)
+        if socket is not None:
+            try:
+                await socket.send_json({"type": "TURN_END", "payload": {}})
+            except (WebSocketDisconnect, OSError, RuntimeError):
+                pass
 
     async def receive_messages(self, player: UUID, socket: WebSocket, activity: ConnectionActivity) -> None:
         while True:
@@ -245,6 +287,13 @@ class GameEngine:
                         "code": "PROMPT_ALREADY_SUBMITTED",
                         "message": "Prompt already accepted",
                     },
+                })
+                continue
+
+            if self.prompt_deadline and datetime.now(timezone.utc) >= self.prompt_deadline:
+                await socket.send_json({
+                    "type": "ERROR",
+                    "payload": {"code": "PROMPT_DEADLINE_PASSED", "message": "The prompt window has closed."},
                 })
                 continue
 
