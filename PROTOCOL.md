@@ -121,7 +121,7 @@ Player prompts are never returned by any endpoint or message except to their aut
 
 ### Current matchmaking integration
 
-The frontend currently uses the existing session-authenticated `POST /v1/match/queue` (no body; HTTP 202 queue status) and `GET /v1/match/status` (HTTP 200 queue status). Both return `{ status: "none"|"queued"|"matched", match_id?: uuid }`. These temporary routes use the single `provided` queue; model selection is not implemented. `POST /v1/match/queue` returns 403 `USERNAME_REQUIRED` until the caller has a tag. `DELETE /v1/match/queue` (session, no body) cancels the caller’s queue entry and returns HTTP 204, including if already absent; an existing match returns HTTP 409 `IN_MATCH`. The versioned routes above remain the target contract. The lobby polls until matched and displays the ID without navigating or opening a WebSocket.
+The frontend currently uses the existing session-authenticated `POST /v1/match/queue` (no body; HTTP 202 queue status) and `GET /v1/match/status` (HTTP 200 queue status). Both return `{ status: "none"|"queued"|"matched", match_id?: uuid }`. These temporary routes use the single `provided` queue; model selection is not implemented. `POST /v1/match/queue` returns 403 `USERNAME_REQUIRED` until the caller has a tag. `DELETE /v1/match/queue` (session, no body) cancels the caller’s queue entry and returns HTTP 204, including if already absent; an existing match returns HTTP 409 `IN_MATCH`. The versioned routes above remain the target contract. The lobby polls until matched, then navigates to `/match/[match_id]`, where the arena opens the match WebSocket.
 
 ## REST — BILC
 
@@ -146,7 +146,7 @@ Heartbeat (both sockets): the server sends `HEARTBEAT { ts }` every interval; th
 
 ## WebSocket — match (web ↔ engine)
 
-`GET /v1/game/{match_id}/ws` (`{match_id}: uuid`), session cookie (implemented). Server closes 4401 if unauthenticated, 4403 if not a participant. Opening the socket from the frontend on `matched` and reconnecting remain planned.
+`GET /v1/game/{match_id}/ws` (`{match_id}: uuid`), session cookie (implemented). Server closes 4401 if unauthenticated, 4403 if not a participant. The arena opens the socket after navigation on `matched`; reconnect snapshots remain planned.
 
 | Type | Direction | Payload |
 |---|---|---|
@@ -164,6 +164,18 @@ Heartbeat (both sockets): the server sends `HEARTBEAT { ts }` every interval; th
 | `ERROR` | server → client | `{ code, message }` |
 
 Current prompt readiness and generation (implemented): after both player sockets are connected, the engine sends its initial state and runs one generation task per side. Each task waits only for its own player's accepted `SUBMIT_PROMPT`, then immediately generates that side's opening argument without waiting for the opponent's prompt. The two generations can overlap. Judging waits until both arguments finish. The current engine does not require a `JOIN` message; the handshake and full snapshot above remain planned.
+
+### Current arena wire format (implemented)
+
+Until the full snapshot/turn contract above ships, the arena uses these payloads:
+
+- `MATCH_STATE`: `{ match_id, topic: { category, topic, pro_position, con_position }, you, participants: [{ user_id, side }], deadline }`. `deadline` is an ISO UTC timestamp, established once both players connect using the server's 120-second prompt window.
+- `TURN_DELTA`: `{ delta }`, sent only to the author of the generating side.
+- `TURN_END`: `{}`, sent to that same player once their opening argument finishes.
+- `MATCH_RESULT`: `{ winner: "pro"|"con"|null, reason, status: "completed"|"forfeited"|"voided", end_reason: "judged"|"no_prompt", arguments: { pro, con } }`. Only generated arguments are shared; player prompts remain private. A missed prompt deadline forfeits to the side that submitted; if neither submitted, the match is void. These outcomes do not yet persist results or update Elo.
+- `ERROR` also includes `PROMPT_DEADLINE_PASSED` when a submission arrives after the server deadline.
+
+The browser echoes heartbeats, retains its submitted prompt in page memory, marks its argument complete on `TURN_END`, and changes the waiting message on `JUDGING`. Reload/reconnect recovery remains planned.
 
 Disconnecting after submitting a prompt does not affect the match; turns keep running.
 

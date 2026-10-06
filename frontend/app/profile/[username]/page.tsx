@@ -41,7 +41,7 @@ async function getCurrentUser(): Promise<User | null> {
   };
 }
 
-async function getUser(username): Promise<User | null> {
+async function getUser(username: string): Promise<User | null> {
 	const cookieStore = await cookies();
 	const response = await fetch(`${backendUrl}/v1/users/user/${username}`, {
 	  headers: { cookie: cookieStore.toString() },
@@ -68,9 +68,8 @@ async function getUser(username): Promise<User | null> {
 
 export default async function Page(props: PageProps<'/profile/[username]'>) {
   //const user = await getCurrentUser();
-  var user = null;
+  let user = null;
   const {username} = await props.params;
-  const query = await props.searchParams;
   console.log(username);
   if (username == "me"){
 	 user = await getCurrentUser();

@@ -6,6 +6,8 @@
   color-scheme: dark;
   --background: #000000;
   --foreground: #ededed;
+  --side-pro: #28b6f6;
+  --side-con: #ffbd45;
 }
 
 @theme inline {
