@@ -40,17 +40,21 @@ class TopicRead(BaseModel):
     pro_position: str
     con_position: str
 
+
 class PromptSubmission(BaseModel):
     prompt: str = Field(min_length=1, max_length=2000)
+
 
 class Verdict(BaseModel):
     winner: Literal["pro", "con"]
     reason: str
 
+
 class FriendsRead(BaseModel):
     id: UUID
     friend_ids: List[UUID]
-    
+
+
 class FriendAdd(BaseModel):
     id: UUID
     other_id: UUID

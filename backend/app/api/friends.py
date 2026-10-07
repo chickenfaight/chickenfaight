@@ -8,8 +8,9 @@ from app.db.session import get_session
 from app.schemas import FriendsRead, FriendAdd
 from app.services.friend import FriendService
 
-router = APIRouter(prefix="/api/v1/friends", tags=["friends"])
+router = APIRouter(prefix="/friends", tags=["friends"])
 SessionDependency = Annotated[AsyncSession, Depends(get_session)]
+
 
 @router.get("/get/{id}", response_model=FriendsRead)
 async def get_friends(id, session: SessionDependency) -> FriendsRead:
