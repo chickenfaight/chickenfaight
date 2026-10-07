@@ -130,6 +130,8 @@ Player prompts are never returned by any endpoint or message except to their aut
 
 `/health` and `/auth/*` stay unversioned: the OAuth redirect URI is registered with Google.
 
+The four `public` rows above are the only routes reachable without a session; `tests/integration/test_route_auth.py` enforces this for every route. FastAPI's `/docs`, `/redoc`, and `/openapi.json` exist only when `APP_ENV=development` (implemented).
+
 ### Current matchmaking integration
 
 The frontend currently uses the existing session-authenticated `POST /v1/match/queue` (no body; HTTP 202 queue status) and `GET /v1/match/status` (HTTP 200 queue status). Both return `{ status: "none"|"queued"|"matched", match_id?: uuid }`. These temporary routes use the single `provided` queue; model selection is not implemented. `POST /v1/match/queue` returns 403 `USERNAME_REQUIRED` until the caller has a tag. `DELETE /v1/match/queue` (session, no body) cancels the caller’s queue entry and returns HTTP 204, including if already absent; an existing match returns HTTP 409 `IN_MATCH`. The versioned routes above remain the target contract. The lobby polls until matched, then navigates to `/match/[match_id]`, where the arena opens the match WebSocket.

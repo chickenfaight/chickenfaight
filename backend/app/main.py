@@ -43,7 +43,14 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             await engine.dispose()
 
 
-app = FastAPI(lifespan=lifespan)
+# Interactive API docs and the OpenAPI schema map every route, so serve them only in development.
+docs_enabled = settings.app_env == "development"
+app = FastAPI(
+    lifespan=lifespan,
+    docs_url="/docs" if docs_enabled else None,
+    redoc_url="/redoc" if docs_enabled else None,
+    openapi_url="/openapi.json" if docs_enabled else None,
+)
 
 register_exception_handlers(app)
 
