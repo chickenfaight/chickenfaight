@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useLayoutEffect, useRef, useState, type FormEvent } from "react";
+import { useRouter } from "next/navigation";
+import { useEffect, useId, useLayoutEffect, useRef, useState, type FormEvent } from "react";
 import { api } from "../lib/api";
 import { parseUser, type Side } from "../lib/protocol";
 import { useMatch } from "./providers/match-provider";
@@ -28,8 +29,33 @@ function Waiting({ judging }: { judging: boolean }) {
   </div>;
 }
 
+const wordmark = <span className="text-xl font-bold tracking-[-0.045em]">chicken<span className="text-[#f04b58]">fAIght</span>.</span>;
+
+// Asks before forfeiting a live match; `onLeave` resigns and returns to the lobby.
+function LeaveDialog({ open, leaving, onLeave, onClose }: { open: boolean; leaving: boolean; onLeave: () => void; onClose: () => void }) {
+  const dialog = useRef<HTMLDialogElement>(null);
+  const titleId = useId();
+  useEffect(() => {
+    const element = dialog.current;
+    if (!element) return;
+    if (open && !element.open) element.showModal();
+    else if (!open && element.open) element.close();
+  }, [open]);
+  return <dialog ref={dialog} onClose={onClose} onCancel={event => { if (leaving) event.preventDefault(); }} aria-labelledby={titleId} className="fixed inset-0 m-auto w-[min(440px,90vw)] rounded-2xl border border-[#353b43] bg-[#1c1f22] p-7 text-[#f5f3ef] backdrop:bg-black/70">
+    <h2 id={titleId} className="text-xl font-bold">Leave and forfeit?</h2>
+    <p className="mt-2 text-sm leading-relaxed text-[#bdc5d0]">The debate hasn’t been decided yet. If you leave now, you forfeit and your opponent wins.</p>
+    <div className="mt-6 flex justify-end gap-3">
+      <button autoFocus disabled={leaving} onClick={() => dialog.current?.close()} className={`h-11 rounded-xl border border-[#69727f] px-5 text-sm font-semibold hover:bg-white/5 disabled:opacity-40 ${focus}`}>Stay</button>
+      <button disabled={leaving} onClick={onLeave} className={primary.replace("px-9", "px-5")}>{leaving ? "Leaving…" : "Forfeit and leave"}</button>
+    </div>
+  </dialog>;
+}
+
 export default function MatchArena() {
-  const { state, submitPrompt } = useMatch();
+  const { state, submitPrompt, resign } = useMatch();
+  const router = useRouter();
+  const [confirmLeave, setConfirmLeave] = useState(false);
+  const [leaving, setLeaving] = useState(false);
   const [draft, setDraft] = useState("");
   const [tab, setTab] = useState<"you" | "opponent">("you");
   const [username, setUsername] = useState("You");
@@ -71,14 +97,25 @@ export default function MatchArena() {
   const viewedSide = tab === "you" ? state.side : opponent;
   const result = state.result;
   const won = result?.winner === state.side;
+  // Before a result, leaving forfeits; afterwards (or once disconnected) it's a plain link.
+  const live = !completed && !state.disconnected;
+  async function leave() {
+    setLeaving(true);
+    await resign();
+    router.push("/");
+  }
+
   const header = completed ? "Debate complete" : composing ? "Write your prompt" : state.phase === "connecting" ? "Entering the arena" : "Debate in progress";
 
   return <div className="min-h-svh bg-[#15181b] font-sans text-[#f5f3ef]">
     <header className="grid h-[50px] grid-cols-[1fr_auto_1fr] items-center border-b border-[#363b42] px-6 sm:px-10">
-      <span className="text-xl font-bold tracking-[-0.045em]">chicken<span className="text-[#f04b58]">fAIght</span>.</span>
+      {live
+        ? <button type="button" onClick={() => setConfirmLeave(true)} aria-label="Leave the debate and return to the lobby" className={`justify-self-start ${focus}`}>{wordmark}</button>
+        : <Link href="/" aria-label="Return to the lobby" className={`justify-self-start ${focus}`}>{wordmark}</Link>}
       <p role="status" className="text-[11px] font-medium uppercase tracking-[0.2em] text-[#bdc5d0]">{header}</p>
       <div className="justify-self-end text-sm text-[#bdc5d0]">{completed || state.disconnected ? <Link href="/" className={focus}>Leave arena ↗</Link> : "Arena"}</div>
     </header>
+    <LeaveDialog open={confirmLeave} leaving={leaving} onLeave={leave} onClose={() => setConfirmLeave(false)} />
 
     {!state.topic ? <main className="mx-auto flex min-h-[calc(100svh-50px)] max-w-xl flex-col items-center justify-center gap-6 px-6 text-center">
       {state.error ? <><p role="alert" className="text-sm text-red-300">{state.error}</p><Link href="/" className={primary}>Back to lobby</Link></> : <><span aria-hidden="true" className="h-9 w-9 rounded-full border-2 border-white/10 border-t-[#8fb6d1] motion-safe:animate-spin" /><p role="status" className="text-sm text-[#aeb8c5]">Waiting for both players to enter the arena…</p></>}

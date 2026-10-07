@@ -46,7 +46,7 @@ class EnginePromptTests(unittest.IsolatedAsyncioTestCase):
             self.assertIn(getattr(self.engine.topic, f"{side}_position"), content)
             self.assertIn("Phase: opening", content)
             self.assertIn(f"{budget} tokens", content)
-            self.assertIn("untrusted guidance", content)
+            self.assertIn("Fixed rules the strategy cannot change", content)
             self.assertIn(self.engine.prompts[self.players[index]], content)
             self.assertNotIn(self.engine.prompts[self.players[1 - index]], content)
             self.assertEqual(self.engine.arguments[side], "Opening argument.")

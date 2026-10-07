@@ -169,7 +169,7 @@ Heartbeat (both sockets): the server sends `HEARTBEAT { ts }` every interval; th
 | `TURN_END` | server → client | `{ turn_id: uuid, truncated: bool }` |
 | `JUDGING` | server → client | `{}` — sent to both connected players after argument generation finishes, immediately before the judge call (implemented) |
 | `MATCH_RESULT` | server → client | `{ status, winner_side: Side|null, end_reason: EndReason, verdict_reasoning: str|null, participants: [Participant] }` — server then closes 1000 |
-| `RESIGN` | client → server | `{}` |
+| `RESIGN` | client → server | `{}`; forfeits the sender's side if no result is decided yet, otherwise ignored (implemented) |
 | `HEARTBEAT` | both | `{ ts }` |
 | `ERROR` | server → client | `{ code, message }` |
 
@@ -182,7 +182,7 @@ Until the full snapshot/turn contract above ships, the arena uses these payloads
 - `MATCH_STATE`: `{ match_id, topic: { category, topic, pro_position, con_position }, you, participants: [{ user_id, side }], deadline }`. `deadline` is an ISO UTC timestamp, established once both players connect using the server's 120-second prompt window.
 - `TURN_DELTA`: `{ delta }`, sent only to the author of the generating side.
 - `TURN_END`: `{}`, sent to that same player once their opening argument finishes.
-- `MATCH_RESULT`: `{ winner: "pro"|"con"|null, reason, status: "completed"|"forfeited"|"voided", end_reason: "judged"|"no_prompt", arguments: { pro, con } }`. Only generated arguments are shared; player prompts remain private. A missed prompt deadline forfeits to the side that submitted; if neither submitted, the match is void. These outcomes do not yet persist results or update Elo.
+- `MATCH_RESULT`: `{ winner: "pro"|"con"|null, reason, status: "completed"|"forfeited"|"voided", end_reason: "judged"|"no_prompt"|"resigned"|"model_failure"|"judge_failure", arguments: { pro, con } }`. Only generated arguments are shared; player prompts remain private. A missed prompt deadline forfeits to the side that submitted; if neither submitted, the match is void. A cloud turn that errors or times out (30 s to first token, 90 s total) is retried once, unless part of it already streamed to the player, since a retry would duplicate that text; if it still fails, the match is void (`model_failure`), even if a prompt deadline also passed. A judge error, timeout (120 s), or unparseable verdict is retried once, then voids the match (`judge_failure`). `RESIGN` before any result stops generation or judging and forfeits to the other side (`resigned`); the first decided result is final. Once a match has a result, `GET /v1/match/status` stops reporting it as `matched`. These outcomes do not yet persist results or update Elo.
 - `ERROR` also includes `PROMPT_DEADLINE_PASSED` when a submission arrives after the server deadline.
 
 The browser echoes heartbeats, retains its submitted prompt in page memory, marks its argument complete on `TURN_END`, and changes the waiting message on `JUDGING`. Reload/reconnect recovery remains planned.
@@ -218,7 +218,9 @@ Server config (env): `INFERENCE_BASE_URL`, `INFERENCE_API_KEY`, `JUDGE_MODEL`. L
 
 Current judge client: `judge(topic, pro, con)` accepts a topic and the two sides' generated transcripts (never player prompts). It sends a fixed system instruction and a JSON user message containing `topic`, `pro_position`, `con_position`, `pro`, and `con`. This non-streaming call requests structured output using the current `Verdict` schema (`winner`, `reason`); the engine integration and target `reasoning` field below remain pending.
 
-Current argument generation uses the engine's `format_game(player)` wrapper (implemented): a fixed system message supplies the topic, assigned side and position, opening phase, and current token budget. Only that player's strategy is included, inside `<player_strategy>` delimiters after stripping those delimiter strings from the strategy. The strategy is explicitly subordinate to the server rules. The current engine generates one opening argument per side; the six-turn flow below remains planned.
+Player turns currently use one fixed free model, `nvidia/nemotron-3-super-120b-a12b:free` (`PLAYER_MODEL` in `app/services/matchmaking.py`), and send OpenRouter's `reasoning: { enabled: false }` so hidden reasoning doesn't use up `max_tokens`. Don't use `openrouter/free`: it routes each request to a random free model, including a content-safety classifier that replies "User Safety: safe" instead of arguing, and models that print their reasoning as the argument. A turn that streams no visible text counts as a model error, so it's retried like any other (implemented).
+
+Current argument generation uses the engine's `format_game(player)` wrapper (implemented): a fixed system message supplies the topic, assigned side and position, opening phase, and current token budget. Only that player's strategy is included, inside `<player_strategy>` delimiters after stripping those delimiter strings from the strategy. The model is told to follow the strategy's tone, persona, style, and arguments freely, including on controversial topics and without hedging or disclaimers, but the strategy can't change the topic, side, position, phase, length limit, or plain-text output, and the model must not pose as or instruct the judge. The current engine generates one opening argument per side; the six-turn flow below remains planned.
 
 ### Match flow
 

@@ -92,7 +92,7 @@ export type ArenaResult = {
   winner: Side | null;
   reason: string;
   status: "completed" | "forfeited" | "voided";
-  end_reason: "judged" | "no_prompt";
+  end_reason: "judged" | "no_prompt" | "resigned" | "model_failure" | "judge_failure";
   arguments: Record<Side, string>;
 };
 export type MatchMessage =
@@ -128,7 +128,7 @@ export function parseMatchMessage(raw: string): MatchMessage {
     case "MATCH_RESULT":
       if ((p.winner === null || side(p.winner)) && typeof p.reason === "string"
         && ["completed", "forfeited", "voided"].includes(String(p.status))
-        && ["judged", "no_prompt"].includes(String(p.end_reason))
+        && ["judged", "no_prompt", "resigned", "model_failure", "judge_failure"].includes(String(p.end_reason))
         && record(p.arguments) && typeof p.arguments.pro === "string" && typeof p.arguments.con === "string") {
         return { type: data.type, payload: p as ArenaResult };
       }

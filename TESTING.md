@@ -32,7 +32,7 @@ FakeModelClient([
 ])
 ```
 
-Pass it to the engine through its constructor. Only `OpenAIModelClient`'s own tests use `respx` to fake the provider's SSE responses. `BilcModelClient` tests use an in-memory fake device socket.
+Pass it to the engine through its constructor. Only `OpenAIModelClient`'s own tests touch the SDK, by replacing `client.chat.completions` with a fake (`respx` can't intercept the SDK's HTTP client). `BilcModelClient` tests use an in-memory fake device socket.
 
 ### Required coverage
 

@@ -45,6 +45,9 @@ class OpenAIModelClient(ModelClient):
             model=self.model,
             max_completion_tokens=max_tokens,
             stream=True,
+            # Hidden reasoning counts against `max_tokens` and can leave no room for the argument.
+            # OpenRouter setting; providers without reasoning ignore it.
+            extra_body={"reasoning": {"enabled": False}},
         )
 
         async with completion:
