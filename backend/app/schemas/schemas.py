@@ -13,6 +13,7 @@ class UserRead(BaseModel):
     avatar_url: str | None
     elo: int
 
+
 class UsernameUpdate(BaseModel):
     # Format rules are checked in the service so rejections use PROTOCOL error codes.
     username: str = Field(max_length=64)
