@@ -124,7 +124,7 @@ Player prompts are never returned by any endpoint or message except to their aut
 
 ### Current matchmaking integration
 
-The frontend currently uses the existing session-authenticated `POST /v1/match/queue` (no body; HTTP 202 queue status) and `GET /v1/match/status` (HTTP 200 queue status). Both return `{ status: "none"|"queued"|"matched", match_id?: uuid }`. These temporary routes use the single `provided` queue; model selection is not implemented. `POST /v1/match/queue` returns 403 `USERNAME_REQUIRED` until the caller has a tag. `DELETE /v1/match/queue` (session, no body) cancels the caller’s queue entry and returns HTTP 204, including if already absent; an existing match returns HTTP 409 `IN_MATCH`. The versioned routes above remain the target contract. The lobby polls until matched and displays the ID without navigating or opening a WebSocket.
+The frontend currently uses the existing session-authenticated `POST /v1/match/queue` (no body; HTTP 202 queue status) and `GET /v1/match/status` (HTTP 200 queue status). Both return `{ status: "none"|"queued"|"matched", match_id?: uuid }`. These temporary routes use the single `provided` queue; model selection is not implemented. `POST /v1/match/queue` returns 403 `USERNAME_REQUIRED` until the caller has a tag. `DELETE /v1/match/queue` (session, no body) cancels the caller’s queue entry and returns HTTP 204, including if already absent; an existing match returns HTTP 409 `IN_MATCH`. The versioned routes above remain the target contract. The lobby polls until matched, then navigates to `/match/[match_id]`, where the arena opens the match WebSocket.
 
 ## REST — BILC
 
@@ -149,22 +149,36 @@ Heartbeat (both sockets): the server sends `HEARTBEAT { ts }` every interval; th
 
 ## WebSocket — match (web ↔ engine)
 
-`GET /v1/matches/{id}/ws` (`{id}: uuid`), session cookie. Server closes 4401 if unauthenticated, 4403 if not a participant. The client opens it when the queue poll returns `matched`, and reopens it to reconnect.
+`GET /v1/game/{match_id}/ws` (`{match_id}: uuid`), session cookie (implemented). Server closes 4401 if unauthenticated, 4403 if not a participant. The arena opens the socket after navigation on `matched`; reconnect snapshots remain planned.
 
 | Type | Direction | Payload |
 |---|---|---|
 | `JOIN` | client → server | `{ protocol_version: int }` — must be first |
 | `MATCH_STATE` | server → client | `{ match_id: uuid, ladder, topic, status: MatchStatus, you: Side, participants: [Participant], ready: [Side], deadline: str|null, turns: [Turn] }` — sent after every `JOIN` (full snapshot for reconnects) |
 | `SUBMIT_PROMPT` | client → server | `{ prompt: str }` — once per match |
-| `PLAYER_READY` | server → client | `{ side: Side }` — a player's prompt was accepted |
+| `PLAYER_READY` | server → client | `{ side: Side }` — a player's prompt was accepted (PLANNED; the current engine does not emit a readiness notification) |
 | `TURN_START` | server → client | `{ turn_id: uuid, index, side, phase }` |
 | `TURN_DELTA` | server → client | `{ turn_id: uuid, delta: str }` |
 | `TURN_END` | server → client | `{ turn_id: uuid, truncated: bool }` |
-| `JUDGING` | server → client | `{}` |
+| `JUDGING` | server → client | `{}` — sent to both connected players after argument generation finishes, immediately before the judge call (implemented) |
 | `MATCH_RESULT` | server → client | `{ status, winner_side: Side|null, end_reason: EndReason, verdict_reasoning: str|null, participants: [Participant] }` — server then closes 1000 |
 | `RESIGN` | client → server | `{}` |
 | `HEARTBEAT` | both | `{ ts }` |
 | `ERROR` | server → client | `{ code, message }` |
+
+Current prompt readiness and generation (implemented): after both player sockets are connected, the engine sends its initial state and runs one generation task per side. Each task waits only for its own player's accepted `SUBMIT_PROMPT`, then immediately generates that side's opening argument without waiting for the opponent's prompt. The two generations can overlap. Judging waits until both arguments finish. The current engine does not require a `JOIN` message; the handshake and full snapshot above remain planned.
+
+### Current arena wire format (implemented)
+
+Until the full snapshot/turn contract above ships, the arena uses these payloads:
+
+- `MATCH_STATE`: `{ match_id, topic: { category, topic, pro_position, con_position }, you, participants: [{ user_id, side }], deadline }`. `deadline` is an ISO UTC timestamp, established once both players connect using the server's 120-second prompt window.
+- `TURN_DELTA`: `{ delta }`, sent only to the author of the generating side.
+- `TURN_END`: `{}`, sent to that same player once their opening argument finishes.
+- `MATCH_RESULT`: `{ winner: "pro"|"con"|null, reason, status: "completed"|"forfeited"|"voided", end_reason: "judged"|"no_prompt", arguments: { pro, con } }`. Only generated arguments are shared; player prompts remain private. A missed prompt deadline forfeits to the side that submitted; if neither submitted, the match is void. These outcomes do not yet persist results or update Elo.
+- `ERROR` also includes `PROMPT_DEADLINE_PASSED` when a submission arrives after the server deadline.
+
+The browser echoes heartbeats, retains its submitted prompt in page memory, marks its argument complete on `TURN_END`, and changes the waiting message on `JUDGING`. Reload/reconnect recovery remains planned.
 
 Disconnecting after submitting a prompt does not affect the match; turns keep running.
 
@@ -189,16 +203,22 @@ Disconnecting after submitting a prompt does not affect the match; turns keep ru
 
 ## Inference
 
+Cloud inference uses OpenRouter to access various models, including free models, through one platform with OpenAI-compatible endpoints. Its base URL is `https://openrouter.ai/api/v1`; authenticate with the server's `INFERENCE_API_KEY`.
+
 Both the server (cloud models) and BILC (local model) speak the OpenAI Chat Completions API: `POST {base_url}/chat/completions` with `stream: true`, consuming SSE `choices[0].delta.content` chunks. Nothing else about a provider may be assumed.
 
 Server config (env): `INFERENCE_BASE_URL`, `INFERENCE_API_KEY`, `JUDGE_MODEL`. Ladder models name their provider model ID in the `models` table.
+
+Current judge client: `judge(topic, pro, con)` accepts a topic and the two sides' generated transcripts (never player prompts). It sends a fixed system instruction and a JSON user message containing `topic`, `pro_position`, `con_position`, `pro`, and `con`. This non-streaming call requests structured output using the current `Verdict` schema (`winner`, `reason`); the engine integration and target `reasoning` field below remain pending.
+
+Current argument generation uses the engine's `format_game(player)` wrapper (implemented): a fixed system message supplies the topic, assigned side and position, opening phase, and current token budget. Only that player's strategy is included, inside `<player_strategy>` delimiters after stripping those delimiter strings from the strategy. The strategy is explicitly subordinate to the server rules. The current engine generates one opening argument per side; the six-turn flow below remains planned.
 
 ### Match flow
 
 1. Matchmaking pairs two queued players on the same ladder, creates the match, assigns sides randomly, and starts an engine task.
 2. Both players `JOIN` (and, for BYOM, the server sends `MATCH_ASSIGN` to each device).
-3. Both players `SUBMIT_PROMPT`.
-4. Six turns: `opening` pro, con → `rebuttal` pro, con → `closing` pro, con. Each turn's `messages` = fixed server system prompt (topic, side, phase, length limit) with the side's player prompt inside delimiters, then prior turns as the transcript.
+3. Each player `SUBMIT_PROMPT`s independently; their opening generation starts as soon as their own prompt is accepted, without waiting for the other player's submission.
+4. Currently, each side generates one opening argument, potentially concurrently. The planned six-turn flow adds `rebuttal` pro, con → `closing` pro, con after both openings finish. Each turn's `messages` = fixed server system prompt (topic, side, phase, length limit) with the side's player prompt inside delimiters; later phases also include prior turns as the transcript.
 5. Judge: fixed system prompt plus the transcript only (never player prompts). It must return JSON `{ "winner": "pro"|"con", "reasoning": str }`. Anything else is a failure.
 6. `MATCH_RESULT`, Elo update, persist, close sockets.
 

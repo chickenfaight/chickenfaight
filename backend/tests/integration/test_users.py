@@ -9,8 +9,8 @@ from app.schemas import GoogleIdentity
 from app.services.exceptions import UsernameAlreadySetError
 from app.services.user import UserService
 
-PATCH_ME = "/api/v1/users/me"
-AVAILABILITY = "/api/v1/users/username-availability"
+PATCH_ME = "/v1/users/me"
+AVAILABILITY = "/v1/users/username-availability"
 
 
 async def count_with_username(db_session, username: str) -> int:
@@ -18,7 +18,7 @@ async def count_with_username(db_session, username: str) -> int:
     return await db_session.scalar(statement)
 
 
-# PATCH /api/v1/users/me
+# PATCH /v1/users/me
 
 async def test_new_user_has_no_tag(client, log_in, make_user):
     user = await make_user()
@@ -123,7 +123,7 @@ async def test_database_enforces_case_insensitive_uniqueness(db_session, make_us
         await make_user("unique_tag")
 
 
-# GET /api/v1/users/username-availability
+# GET /v1/users/username-availability
 
 async def test_availability_requires_auth(client):
     response = await client.get(AVAILABILITY, params={"username": "anything"})
@@ -179,10 +179,10 @@ async def test_patch_is_allowed_by_cors(client):
     assert "PATCH" in response.headers["access-control-allow-methods"]
 
 
-# GET /api/v1/users/by-username/{username}
+# GET /v1/users/by-username/{username}
 
-PROFILE = "/api/v1/users/by-username/"
-SEARCH = "/api/v1/users/search"
+PROFILE = "/v1/users/by-username/"
+SEARCH = "/v1/users/search"
 
 
 async def test_profile_by_tag(client, log_in, make_user, db_session):
@@ -221,7 +221,7 @@ async def test_profile_tag_too_long_is_rejected(client, log_in, make_user):
     assert response.status_code == 422
 
 
-# GET /api/v1/users/search
+# GET /v1/users/search
 
 async def search_tags(client, **params) -> list[str]:
     response = await client.get(SEARCH, params=params)

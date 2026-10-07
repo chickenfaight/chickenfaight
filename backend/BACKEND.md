@@ -45,10 +45,13 @@ State the auth of every endpoint explicitly; PROTOCOL.md lists which are public.
 
 `app/engine/` — one `GameEngine` instance per match, run as its own asyncio task started by the matchmaker. It owns the match's in-memory state and both player sockets, and follows the match flow and failure table in PROTOCOL.md.
 
+The current engine keeps one receiver and one heartbeat task per browser connection. Accepted prompts are stored separately so the receiver continues reading heartbeat replies. Heartbeats are sent every 15 seconds; 45 seconds without incoming activity closes that socket with 4408. These tasks stop on disconnect or engine completion. The browser echoes heartbeats. The engine supplies and enforces a shared 120-second prompt deadline after both players connect, sends `TURN_END` to the author, and includes both generated arguments (never private prompts) in `MATCH_RESULT`. Missing prompts produce a forfeit or void; result persistence/Elo, join deadlines, and reconnect snapshots remain pending.
+
 | Method | Responsibility |
 |---|---|
 | `link_user(user_id)` | Wait for the player's socket to `JOIN` (join deadline); send `MATCH_STATE` |
-| `get_user_prompt(socket)` | Receive and validate `SUBMIT_PROMPT`; both required before turns start |
+| `receive_messages(player, socket, activity)` | Receive and validate `SUBMIT_PROMPT`; store the accepted prompt and signal that player's generation task, then keep reading heartbeat replies. No `PLAYER_READY` notification is currently emitted |
+| `generate_arguments(player)` | After both sockets connect, wait only for this player's accepted prompt and immediately stream their opening argument; the opponent's prompt is not required. Both arguments must finish before judging |
 | `format_game(prompt)` | Build the fixed-template `messages` for a turn; player prompt goes only inside delimiters, with delimiter strings stripped from it |
 | `call_model(messages)` | Stream a turn from a `ModelClient`, forwarding `TURN_DELTA`s; also used for the judge |
 | `unlink_user(socket)` | Send `MATCH_RESULT` and close the socket |
@@ -56,11 +59,13 @@ State the auth of every endpoint explicitly; PROTOCOL.md lists which are public.
 
 The engine never calls a provider directly. `app/inference/` exposes one `ModelClient` interface (`stream(messages, max_tokens) -> AsyncIterator[str]`) with `OpenAIModelClient` (cloud, `AsyncOpenAI` with `base_url`) and `BilcModelClient` (sends `TURN_REQUEST` to a device, yields `MATCH_RESPONSE` deltas). Tests use a fake implementation.
 
+OpenRouter is the selected cloud inference provider: it offers a single platform for accessing various models, including free models, through OpenAI-compatible endpoints. Configure `INFERENCE_BASE_URL=https://openrouter.ai/api/v1` and an OpenRouter `INFERENCE_API_KEY`; BILC continues to use the user's local OpenAI-compatible endpoint.
+
 Live state (matchmaking queues, running engines, connected BILC devices) is in-memory in one server process. Running multiple processes would need a shared store; out of scope.
 
 ## User tags
 
-`users.username` is the player's public tag, null until set (PROTOCOL.md: `PATCH /api/v1/users/me`). Rules live in `app/services/usernames.py`:
+`users.username` is the player's public tag, null until set (PROTOCOL.md: `PATCH /v1/users/me`). Rules live in `app/services/usernames.py`:
 - Format `[A-Za-z0-9_]{3,24}`; uniqueness ignores case (unique index `uq_users_username_lower`) but the typed casing is kept.
 - Profanity: `better-profanity` whole-word check (also split on `_`, camelCase, and letter/digit boundaries), plus a short list of severe stems matched as substrings after undoing leetspeak, because tags glue words together. Ambiguous short words stay whole-word only (`class`, `grape` pass; `Scunthorpe` is a known false positive).
 - Search (`UserRepository.search_by_username`): tagged users whose lowercased tag contains the query (LIKE wildcards escaped) or is trigram-similar to it (`%>`, pg_trgm's word similarity ≥ 0.6). Ordered exact, prefix, contains, then word similarity, tag length, tag, and `id`, so offset pages are stable.

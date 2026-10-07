@@ -31,7 +31,7 @@ export default function SearchResults({ query }: { query: string }) {
     controller.current = current;
     try {
       const params = new URLSearchParams({ q: query, limit: String(PAGE_SIZE), offset: String(offset) });
-      const page = parseUserSearchPage(await api(`/api/v1/users/search?${params}`, current.signal));
+      const page = parseUserSearchPage(await api(`/v1/users/search?${params}`, current.signal));
       setState((previous) => ({
         // Skip anyone already listed in case a new signup shifted the pages.
         items: [...previous.items, ...page.items.filter((user) => !previous.items.some((seen) => seen.id === user.id))],

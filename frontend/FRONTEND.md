@@ -8,7 +8,7 @@ This Next.js version differs from most training data. Read the relevant guide in
 
 `app/components/lobby.tsx` is the homepage reference: a playful charcoal lobby with chicken-comb red actions, horizontal navigation, and a top-right profile dropdown (hover, click, and keyboard). Login shares the lobby palette, typography, and wordmark, with a short game introduction and Google sign-in card. `app/health/page.tsx` is a dev tool.
 
-The lobby, login, search, and profile screens use a #17181b canvas, #202124 panels, warm white type, subtle borders, and #e53848 primary actions with #f04b58 accents. Small amber/lavender card icons and a chicken wordmark add personality. Other screens retain the black/zinc palette below.
+The lobby, login, search, and profile screens use a #17181b canvas, #202124 panels, warm white type, subtle borders, and #e53848 primary actions with #f04b58 accents. Small amber/lavender card icons and a chicken wordmark add personality. The match arena uses a #15181b canvas, #1c1f22 verdict panels, the same warm white type and red actions, and sky/amber side labels. Other screens retain the black/zinc palette below.
 
 | Element | Classes |
 |---|---|
@@ -38,7 +38,7 @@ Color with meaning (the only colors besides black/white/zinc):
 
 Add side colors as `--side-pro` / `--side-con` tokens in `globals.css` the first time they're used, and reference the tokens after that.
 
-Lobby and login exceptions: colored action fills, small SVG icons, and compact result badges are allowed. No hero artwork, paid features, sidebar, or hamburger menu.
+Lobby, login, and match arena exceptions: colored action fills, small SVG icons, and compact result badges are allowed. No hero artwork, paid features, sidebar, or hamburger menu. The arena follows the supplied visual references with 12–16px panel corners; its submission transition animates layout and prompt position for 650–700ms, respecting reduced motion.
 
 Do not: add light mode; use colored or gradient fills (no purple/indigo/blue "AI" gradients); add drop shadows other than the status glows; use emoji or decorative icons; add fonts other than Geist Sans/Mono; add a component library (shadcn, MUI, etc.); use `rounded-md`/`rounded-lg` (use `xl`, `3xl`, or `full`).
 
@@ -60,25 +60,25 @@ Do not: add light mode; use colored or gradient fills (no purple/indigo/blue "AI
 | `/health` | Backend check (dev) | implemented |
 | `/` | Desktop lobby: queue registration/status polling, session/profile menu, sample stats and activity cards | implemented (matchmaking integration; sample stats) |
 | `/play` | Game selection | PLANNED |
-| `/match/[id]` | Debate view | PLANNED |
+| `/match/[match_id]` | Debate arena | implemented |
 | `/leaderboard` | Per-ladder leaderboard, ladder switcher | PLANNED |
 | `/search` | Player search results by tag, infinite scroll | implemented |
 | `/profile/[username]` | Tag, avatar, win rate; `/profile/me` redirects to your own. Rating per ladder and match history PLANNED | implemented |
 | `/bilc` | Pair a device (show code), device list with online dots, revoke, setup steps | PLANNED |
 
-**Homepage (`/`).** Join game checks for an existing queue entry or match before registering through the current `POST /v1/match/queue` route. On mount and before registration, the queue card reads `GET /v1/match/status`; queued users are polled sequentially every second. A matched response stops polling and displays the match ID without navigation or WebSockets. Requests time out, are aborted on unmount, and failures keep the Join game action available; retrying checks status first and registers only when the server confirms no existing entry. The model selector shows the backend's single provided model. Cancel queue stops polling and calls `DELETE /v1/match/queue`; HTTP 204 returns to idle, while `IN_MATCH` refreshes status to show the match. Errors retain the same Join game recovery action. Leaving the page does not cancel a queue entry. The elapsed timer is local to this page, not an authoritative server timestamp. Statistics are illustrative. Activity cards open informational dialogs (`info-dialog.tsx`) until those features ship.
+**Homepage (`/`).** Join game checks for an existing queue entry or match before registering through the current `POST /v1/match/queue` route. On mount and before registration, the queue card reads `GET /v1/match/status`; queued users are polled sequentially every second. A matched response stops polling and navigates to `/match/[match_id]`, which opens the match WebSocket. Requests time out, are aborted on unmount, and failures keep the Join game action available; retrying checks status first and registers only when the server confirms no existing entry. The model selector shows the backend's single provided model. Cancel queue stops polling and calls `DELETE /v1/match/queue`; HTTP 204 returns to idle, while `IN_MATCH` refreshes status to show the match. Errors retain the same Join game recovery action. Leaving the page does not cancel a queue entry. The elapsed timer is local to this page, not an authoritative server timestamp. Statistics are illustrative. Activity cards open informational dialogs (`info-dialog.tsx`) until those features ship.
 
 **Header (`site-header.tsx`).** Shared by the lobby, search, and profile: wordmark, Play (underlined only on `/`), Leaderboards and How to play (informational dialogs for now), player search, and the profile menu (hover, click, keyboard) with My profile, My ladder, and Sign out. Identity comes from `useSession()`, with guest/loading/error states.
 
-**Tag dialog (`username-dialog.tsx`).** Shown by the lobby if and only if the signed-in user's `username` is null. It is a blocking modal: Escape and closing are refused, and the only ways out are claiming a tag or signing out. The input checks the format rule locally on every keystroke, and after a 350 ms pause asks `GET /api/v1/users/username-availability` (aborting stale requests) for taken/profanity results. Submit stays disabled while the format is invalid or the tag is known to be unavailable; `PATCH /api/v1/users/me` rejections are shown inline. Copy warns that the tag can't be changed.
+**Tag dialog (`username-dialog.tsx`).** Shown by the lobby if and only if the signed-in user's `username` is null. It is a blocking modal: Escape and closing are refused, and the only ways out are claiming a tag or signing out. The input checks the format rule locally on every keystroke, and after a 350 ms pause asks `GET /v1/users/username-availability` (aborting stale requests) for taken/profanity results. Submit stays disabled while the format is invalid or the tag is known to be unavailable; `PATCH /v1/users/me` rejections are shown inline. Copy warns that the tag can't be changed.
 
-**Player search (`user-search.tsx`).** A combobox in `site-header.tsx`. After a 200 ms pause it asks `GET /api/v1/users/search` for 5 suggestions (aborting stale requests), only while its list is open. Arrow keys move through the suggestions, Enter opens the highlighted profile or else `/search?q=`, and Escape closes the list. The list shows searching/no-match/error text in an `aria-live` line. `/search` loads 20 results per page and fetches the next page when a sentinel nears the viewport; a blank query shows a prompt instead of searching.
+**Player search (`user-search.tsx`).** A combobox in `site-header.tsx`. After a 200 ms pause it asks `GET /v1/users/search` for 5 suggestions (aborting stale requests), only while its list is open. Arrow keys move through the suggestions, Enter opens the highlighted profile or else `/search?q=`, and Escape closes the list. The list shows searching/no-match/error text in an `aria-live` line. `/search` loads 20 results per page and fetches the next page when a sentinel nears the viewport; a blank query shows a prompt instead of searching.
 
-**Profile (`/profile/[username]`).** A Server Component that forwards the session cookie to `GET /api/v1/users/by-username/{username}`. 401 redirects to `/login`; an unknown or malformed tag shows "Player not found"; other failures show "Profile unavailable". It shows only `UserProfile` fields. Win rate sums `ratings` and shows "No debates yet." while there are none. `avatar.tsx` renders Google avatars (the only host in `next.config.ts`) and falls back to initials.
+**Profile (`/profile/[username]`).** A Server Component that forwards the session cookie to `GET /v1/users/by-username/{username}`. 401 redirects to `/login`; an unknown or malformed tag shows "Player not found"; other failures show "Profile unavailable". It shows only `UserProfile` fields, plus an Add Friend button (`add-friend.tsx`, `POST /v1/friends/add`) on other players' profiles. Win rate sums `ratings` and shows "No debates yet." while there are none. `avatar.tsx` renders Google avatars (the only host in `next.config.ts`) and falls back to initials.
 
-**Game selection (`/play`).** A card listing ladders (cloud models and the BYOM arena), each showing your Elo on it. BYOM requires choosing one of your online devices; offline devices are shown but disabled with a link to `/bilc`. One primary "Find match" button. While queued: elapsed time and a secondary "Cancel". On `matched`, navigate to `/match/[id]`.
+**Game selection (`/play`).** A card listing ladders (cloud models and the BYOM arena), each showing your Elo on it. BYOM requires choosing one of your online devices; offline devices are shown but disabled with a link to `/bilc`. One primary "Find match" button. While queued: elapsed time and a secondary "Cancel". On `matched`, navigate to `/match/[match_id]`.
 
-**Debate view (`/match/[id]`).** Topic as the headline. Two columns, `pro` left and `con` right, each headed by the player's name, Elo, and side color. Before turns: a prompt box for your side only (character counter to 2000, one submit, then locked) with a countdown and the opponent's ready state. During turns: each column fills with its turns under phase eyebrows (`opening`, `rebuttal`, `closing`), streaming live. After: a verdict panel spanning both columns with the winner, the judge's reasoning, and Elo change per player (or the forfeit/void reason), plus a link back to `/play`.
+**Debate view (`/match/[match_id]`).** A separate arena with only a slim wordmark/status header. Initially, the topic and full assigned position sit above a centered prompt editor, character counter, server deadline countdown, and red submit button. Submission replaces the editor with plain text that slides up as the topic shrinks and moves up. The player's argument streams beneath it. `TURN_END` shows a waiting-for-opponent panel; `JUDGING` changes only its message. The result shows the winner and reason above equal-width own/opponent argument tabs, retaining the player's private prompt only in their own tab. Return links lead to the lobby. Errors and loading are inline; no reconnect or persisted match history is implemented. Prompts remain only in page memory.
 
 ## Code conventions
 
@@ -92,9 +92,9 @@ Do not: add light mode; use colored or gradient fills (no purple/indigo/blue "AI
 ## State (React Context)
 
 - Server data that a single page needs: fetch in a Server Component or local `useState`. No context.
-- Context is for state shared across a subtree that changes over time. Planned contexts:
+- Context is for state shared across a subtree that changes over time. Contexts:
   - `SessionContext` (app-wide, implemented in `session-provider.tsx`): current user or null, session status, `setUser()`, `logout()`. Provider in the root layout. Replaces per-component `/auth/me` calls (`login-status.tsx` on `/health` still makes its own).
-  - `MatchContext` (inside `/match/[id]` only): owns the match WebSocket, a reducer over PROTOCOL messages, and `submitPrompt()`/`resign()`. No component other than its provider touches the socket.
+  - `MatchContext` (implemented, inside `/match/[match_id]` only): owns one match WebSocket, heartbeat echo and cleanup, a reducer over current PROTOCOL messages, and `submitPrompt()`. No component other than its provider touches the socket; resignation is not implemented.
 - One context per concern, in `app/components/providers/<name>-provider.tsx`, exporting the provider and a `use<Name>()` hook that throws outside its provider.
 - Keep context values stable (`useMemo`/`useReducer`); put fast-changing streaming text in the reducer, not in many `useState`s.
 - No external state libraries.

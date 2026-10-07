@@ -1,8 +1,8 @@
-"""add topics table (model existed without a migration)
+"""create topics table
 
-Revision ID: d0b6f9593f67
+Revision ID: c709c313023f
 Revises: 2cd06ea1db8c
-Create Date: 2026-10-02 17:35:47.317280
+Create Date: 2026-10-04 22:18:11.773422
 
 """
 from typing import Sequence, Union
@@ -12,7 +12,7 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision: str = 'd0b6f9593f67'
+revision: str = 'c709c313023f'
 down_revision: Union[str, Sequence[str], None] = '2cd06ea1db8c'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None

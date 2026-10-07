@@ -19,6 +19,11 @@ class UserRepository:
         statement = select(User).where(func.lower(User.username) == username.lower())
         result = await self.session.execute(statement)
         return result.scalar_one_or_none()
+        
+    async def get_by_uuid(self, user_id: UUID) -> User | None:
+        statement = select(User).where(User.id == user_id)
+        result = await self.session.execute(statement)
+        return result.scalar_one_or_none()
 
     async def search_by_username(self, query: str, limit: int, offset: int) -> list[User]:
         """Tagged users matching `query`, best first: exact, prefix, contains, then fuzzy."""

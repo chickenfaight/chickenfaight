@@ -32,7 +32,7 @@ class Matchmaker:
                 self.queued_users.remove(user_id)
                 self.assignments[user_id] = match_id
 
-            game = GameEngine(match_id, players, model="provided") # TODO hardcoded stuff
+            game = GameEngine(match_id, players, model="openrouter/free") # TODO hardcoded stuff
             self.engines[match_id] = game
             self.tasks[match_id] = asyncio.create_task(
                 self.run_match(game),

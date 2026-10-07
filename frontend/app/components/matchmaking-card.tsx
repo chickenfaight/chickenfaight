@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { api, ApiError } from "../lib/api";
 import { parseQueueStatus } from "../lib/protocol";
@@ -11,7 +12,7 @@ const focus = "focus-visible:outline-2 focus-visible:outline-offset-4 focus-visi
 export default function MatchmakingCard() {
   const [phase, setPhase] = useState<Phase>("checking");
   const [error, setError] = useState("");
-  const [matchId, setMatchId] = useState("");
+  const router = useRouter();
   const [elapsed, setElapsed] = useState(0);
   const [attempt, setAttempt] = useState(0);
   const action = useRef<"GET" | "POST" | "DELETE">("GET");
@@ -51,7 +52,7 @@ export default function MatchmakingCard() {
         const status = parseQueueStatus(data);
         setError("");
         if (status.status === "matched") {
-          setMatchId(status.match_id);
+          router.push(`/match/${encodeURIComponent(status.match_id)}`);
           setPhase("matched");
           busy.current = false;
           return;
@@ -86,7 +87,7 @@ export default function MatchmakingCard() {
     }
     void poll();
     return () => { controller.abort(); clearTimeout(timer); };
-  }, [attempt]);
+  }, [attempt, router]);
 
   useEffect(() => {
     if (phase !== "queued") return;
@@ -124,10 +125,10 @@ export default function MatchmakingCard() {
       <span>{queued ? "Time searching on this page" : "One shared queue for now"}</span>
       {queued && <span className="font-mono text-sm tabular-nums text-[#ff7882]">{String(Math.floor(elapsed / 60)).padStart(2, "0")}:{String(elapsed % 60).padStart(2, "0")}</span>}
     </div>
-    {phase === "matched" ? <div className="rounded-xl border border-emerald-400/20 bg-emerald-400/5 p-3" role="status"><p className="text-xs font-semibold text-emerald-400">Debate ready</p><p className="mt-2 text-[10px] text-zinc-400">Match ID</p><p className="mt-1 break-all font-mono text-xs text-zinc-200">{matchId}</p></div>
+    {phase === "matched" ? <p role="status" className="py-3 text-sm text-zinc-300">Entering the arena…</p>
       : phase === "signed-out" ? <Link href="/login" className={`flex h-12 items-center justify-center rounded-xl bg-[#e53848] text-sm font-bold ${focus}`}>Sign in to queue</Link>
       : <button onClick={() => request(queued ? "DELETE" : "POST")} disabled={waiting && !queued} className={`flex h-12 w-full items-center justify-center rounded-xl text-sm font-bold disabled:cursor-not-allowed disabled:opacity-50 ${focus} ${queued ? "border border-white/15 bg-white/5" : "bg-[#e53848] text-white enabled:hover:bg-[#c92d3c]"}`}>{queued ? "Cancel queue" : phase === "cancelling" ? "Cancelling…" : phase === "checking" ? "Checking…" : phase === "joining" ? "Joining…" : "Join game"}</button>}
     {error && <p role="alert" className="mt-3 text-xs leading-relaxed text-red-300">{error}</p>}
-    <p className="mt-3 text-center text-[10px] leading-relaxed text-zinc-500">{phase === "matched" ? "Debate play is coming next." : queued ? "You can leave the queue anytime before an opponent is found." : "Model selection is coming soon."}</p>
+    <p className="mt-3 text-center text-[10px] leading-relaxed text-zinc-500">{phase === "matched" ? "Your debate is ready." : queued ? "You can leave the queue anytime before an opponent is found." : "Model selection is coming soon."}</p>
   </div>;
 }

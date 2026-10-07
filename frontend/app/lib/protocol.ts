@@ -1,11 +1,12 @@
-export type User = { username: string | null; elo: number };
+export type User = { id: string; username: string | null; elo: number };
 
 export function parseUser(data: unknown): User {
-  if (typeof data !== "object" || data === null || !("elo" in data) || !("username" in data)
-    || typeof data.elo !== "number" || !(data.username === null || typeof data.username === "string")) {
+  if (typeof data !== "object" || data === null || !("id" in data) || !("elo" in data) || !("username" in data)
+    || typeof data.id !== "string" || typeof data.elo !== "number"
+    || !(data.username === null || typeof data.username === "string")) {
     throw new Error("Invalid user");
   }
-  return { username: data.username, elo: data.elo };
+  return { id: data.id, username: data.username, elo: data.elo };
 }
 
 // Mirrors the server's tag format rule; the server re-checks it and adds profanity and uniqueness checks.
@@ -81,4 +82,58 @@ function parseRating(data: unknown): Rating {
 export function parseUserProfile(data: unknown): UserProfile {
   if (!isObject(data) || !Array.isArray(data.ratings)) throw new Error("Invalid profile");
   return { ...parseUserPublic(data), ratings: data.ratings.map(parseRating) };
+}
+
+// Current arena wire format in PROTOCOL.md; full reconnect snapshots are planned.
+export type Side = "pro" | "con";
+export type ArenaTopic = { topic: string; pro_position: string; con_position: string };
+export type ArenaResult = {
+  winner: Side | null;
+  reason: string;
+  status: "completed" | "forfeited" | "voided";
+  end_reason: "judged" | "no_prompt";
+  arguments: Record<Side, string>;
+};
+export type MatchMessage =
+  | { type: "MATCH_STATE"; payload: { topic: ArenaTopic; you: Side; deadline: string | null } }
+  | { type: "TURN_DELTA"; payload: { delta: string } }
+  | { type: "TURN_END" | "JUDGING"; payload: Record<string, unknown> }
+  | { type: "MATCH_RESULT"; payload: ArenaResult }
+  | { type: "HEARTBEAT"; payload: Record<string, unknown> }
+  | { type: "ERROR"; payload: { code: string; message: string } };
+
+function record(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+function side(value: unknown): value is Side { return value === "pro" || value === "con"; }
+
+export function parseMatchMessage(raw: string): MatchMessage {
+  const data: unknown = JSON.parse(raw);
+  if (!record(data) || !record(data.payload)) throw new Error("Invalid match message");
+  const p = data.payload;
+  switch (data.type) {
+    case "MATCH_STATE":
+      if (record(p.topic) && typeof p.topic.topic === "string" && typeof p.topic.pro_position === "string"
+        && typeof p.topic.con_position === "string" && side(p.you)
+        && (p.deadline === null || (typeof p.deadline === "string" && Number.isFinite(Date.parse(p.deadline))))) {
+        return { type: data.type, payload: { topic: p.topic as ArenaTopic, you: p.you, deadline: p.deadline } };
+      }
+      break;
+    case "TURN_DELTA":
+      if (typeof p.delta === "string") return { type: data.type, payload: { delta: p.delta } };
+      break;
+    case "TURN_END": case "JUDGING": case "HEARTBEAT":
+      return { type: data.type, payload: p };
+    case "MATCH_RESULT":
+      if ((p.winner === null || side(p.winner)) && typeof p.reason === "string"
+        && ["completed", "forfeited", "voided"].includes(String(p.status))
+        && ["judged", "no_prompt"].includes(String(p.end_reason))
+        && record(p.arguments) && typeof p.arguments.pro === "string" && typeof p.arguments.con === "string") {
+        return { type: data.type, payload: p as ArenaResult };
+      }
+      break;
+    case "ERROR":
+      if (typeof p.code === "string" && typeof p.message === "string") return { type: data.type, payload: { code: p.code, message: p.message } };
+  }
+  throw new Error("Invalid match message");
 }

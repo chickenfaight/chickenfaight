@@ -1,8 +1,8 @@
 """trigram index for player search
 
-Revision ID: f46f29c22129
-Revises: d0b6f9593f67
-Create Date: 2026-10-02 17:36:14.193050
+Revision ID: a564d201ffb5
+Revises: 2fe41f402ed3
+Create Date: 2026-10-07 00:00:00.000000
 
 """
 from typing import Sequence, Union
@@ -12,8 +12,8 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision: str = 'f46f29c22129'
-down_revision: Union[str, Sequence[str], None] = 'd0b6f9593f67'
+revision: str = 'a564d201ffb5'
+down_revision: Union[str, Sequence[str], None] = '2fe41f402ed3'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

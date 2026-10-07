@@ -1,21 +1,31 @@
 from .schemas import (
+    FriendAdd,
+    FriendsRead,
     GoogleIdentity,
+    PromptSubmission,
     Rating,
+    TopicRead,
     UserProfile,
     UserPublic,
     UserRead,
     UsernameAvailability,
     UsernameUpdate,
     UserSearchPage,
+    Verdict,
 )
 
 __all__ = [
+    "FriendAdd",
+    "FriendsRead",
     "GoogleIdentity",
+    "PromptSubmission",
     "Rating",
+    "TopicRead",
     "UserProfile",
     "UserPublic",
     "UserRead",
     "UsernameAvailability",
     "UsernameUpdate",
     "UserSearchPage",
+    "Verdict",
 ]

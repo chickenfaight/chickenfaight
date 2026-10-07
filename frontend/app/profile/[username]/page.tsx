@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
+import AddFriendButton from "../../components/add-friend";
 import Avatar from "../../components/avatar";
 import SiteHeader from "../../components/site-header";
 import { backendUrl } from "../../lib/auth";
@@ -42,12 +43,22 @@ async function redirectToOwnProfile(): Promise<never> {
   redirect(target);
 }
 
+// The viewer's own ID, or null if it can't be read; the profile still renders without it.
+async function viewerId(): Promise<string | null> {
+  try {
+    const response = await backendGet("/auth/me");
+    return response.ok ? parseUser(await response.json()).id : null;
+  } catch {
+    return null;
+  }
+}
+
 async function lookUp(username: string): Promise<Lookup> {
   // A tag that breaks the format rule can't exist, so skip the request.
   if (usernameFormatError(username)) return { status: "missing" };
   let response: Response;
   try {
-    response = await backendGet(`/api/v1/users/by-username/${encodeURIComponent(username)}`);
+    response = await backendGet(`/v1/users/by-username/${encodeURIComponent(username)}`);
   } catch {
     return { status: "error" };
   }
@@ -65,7 +76,7 @@ function Stat({ label, value }: { label: string; value: string }) {
   return <div><p className="text-[10px] text-zinc-400">{label}</p><p className="mt-1 text-2xl font-bold tracking-tight">{value}</p></div>;
 }
 
-function Profile({ profile }: { profile: UserProfile }) {
+function Profile({ profile, meId }: { profile: UserProfile; meId: string | null }) {
   const games = profile.ratings.reduce((sum, rating) => sum + rating.games_played, 0);
   const wins = profile.ratings.reduce((sum, rating) => sum + rating.wins, 0);
   const losses = profile.ratings.reduce((sum, rating) => sum + rating.losses, 0);
@@ -77,6 +88,7 @@ function Profile({ profile }: { profile: UserProfile }) {
         <div className="min-w-0">
           <p className="mb-1 text-[10px] font-semibold uppercase tracking-[0.2em] text-[#f37981]">Player</p>
           <h1 id="profile-title" className="truncate text-4xl font-black tracking-[-0.045em]">{profile.username}</h1>
+          {meId && meId !== profile.id && <AddFriendButton meId={meId} otherId={profile.id} />}
         </div>
       </section>
       <section aria-labelledby="record-title" className={`${panel} p-6`}>
@@ -100,13 +112,13 @@ export default async function ProfilePage({ params }: PageProps<"/profile/[usern
   // Tags are plain ASCII, so anything still percent-encoded fails the format check as a missing player.
   const { username: tag } = await params;
   if (tag === "me") await redirectToOwnProfile();
-  const result = await lookUp(tag);
+  const [result, meId] = await Promise.all([lookUp(tag), viewerId()]);
 
   return (
     <div className="flex min-h-svh flex-col bg-[#17181b] font-sans text-[#f5f3ef]">
       <SiteHeader />
       <main className="mx-auto w-full max-w-[1100px] flex-1 px-6 py-10 xl:px-10">
-        {result.status === "found" ? <Profile profile={result.profile} /> : (
+        {result.status === "found" ? <Profile profile={result.profile} meId={meId} /> : (
           <section aria-labelledby="profile-title" className={`${panel} p-9`}>
             <h1 id="profile-title" className="text-xl font-bold">{result.status === "missing" ? "Player not found" : "Profile unavailable"}</h1>
             <p className="mt-2 truncate text-sm text-zinc-500">

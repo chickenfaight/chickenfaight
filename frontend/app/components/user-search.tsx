@@ -35,7 +35,7 @@ export default function UserSearch({ initialQuery = "" }: { initialQuery?: strin
     const timer = setTimeout(async () => {
       try {
         const params = new URLSearchParams({ q: trimmed, limit: String(SUGGESTION_LIMIT) });
-        const page = parseUserSearchPage(await api(`/api/v1/users/search?${params}`, controller.signal));
+        const page = parseUserSearchPage(await api(`/v1/users/search?${params}`, controller.signal));
         setSuggestions({ status: "done", items: page.items });
       } catch (error) {
         if (controller.signal.aborted) return;
