@@ -23,6 +23,22 @@ class AlreadyMatchedError(ServiceError):
 class MatchNotFoundError(ServiceError):
     pass
 
+class UserNotFoundError(ServiceError):
+    def __init__(self, detail: str = "No player has that tag."):
+        self.detail = detail
+        super().__init__(detail)
+
+
+class FriendSelfError(ServiceError):
+    def __init__(self):
+        super().__init__("You can't add yourself as a friend.")
+
+
+class RateLimitedError(ServiceError):
+    def __init__(self, retry_after: int):
+        self.retry_after = retry_after
+        super().__init__(f"Rate limited; retry after {retry_after}s")
+
 
 class UsernameError(ServiceError):
     """A user tag was rejected; `code`/`status_code`/`detail` map to PROTOCOL.md."""

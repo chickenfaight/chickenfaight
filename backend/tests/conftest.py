@@ -6,6 +6,7 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, create_async_engine
 
+from app.api.rate_limit import reset_rate_limits
 from app.auth.dependencies import get_current_user
 from app.config import settings
 from app.db.migrate import migrate, reset
@@ -13,6 +14,11 @@ from app.db.session import get_session
 from app.main import app
 from app.models import User
 from app.services.matchmaking import Matchmaker
+
+
+@pytest.fixture(autouse=True)
+def fresh_rate_limits() -> None:
+    reset_rate_limits()
 
 
 @pytest.fixture(scope="session")

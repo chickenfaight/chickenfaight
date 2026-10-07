@@ -14,7 +14,7 @@ Use a tool's current idiomatic style: `Annotated` dependencies, `Mapped[...]`/`m
 app/
   main.py         app, middleware, router registration
   config.py       Settings from env (only place that reads env)
-  api/            routers — thin: parse, call a service, return a schema
+  api/            routers — thin: parse, call a service, return a schema; rate_limit.py (per-user limits)
   auth/           google.py, dependencies.py (session user), bilc.py (JWT, PLANNED)
   services/       business logic; owns transactions and authorization checks
   repositories/   SQLAlchemy queries only, one class per table/aggregate
@@ -39,6 +39,7 @@ State the auth of every endpoint explicitly; PROTOCOL.md lists which are public.
 - **BILC routes / socket:** `BilcDependency` (PLANNED) validating the access JWT.
 - **WebSockets:** authenticate and authorize *before* `accept()`.
 - **Ownership** (own device, participant in match) is checked in services, not routers. Return 404 for other users' private resources.
+- **Rate limits:** routes that read other users' data or change the friends list add `dependencies=[rate_limit(burst=..., per_minute=...)]` (`app/api/rate_limit.py`), an in-memory token bucket per signed-in user that raises `RateLimitedError` (429 `RATE_LIMITED` with `Retry-After`). Each `rate_limit(...)` call is its own bucket; reuse the returned dependency to share one across routes. Values are listed in PROTOCOL.md.
 - Pairing codes and refresh tokens: generate with `secrets`, store only SHA-256 hashes, compare with `hmac.compare_digest`.
 
 ## Game engine (PLANNED)
@@ -65,10 +66,15 @@ Live state (matchmaking queues, running engines, connected BILC devices) is in-m
 
 ## User tags
 
-`users.username` is the player's public tag, null until set (PROTOCOL.md: `PATCH /api/v1/users/me`). Rules live in `app/services/usernames.py`:
+`users.username` is the player's public tag, null until set (PROTOCOL.md: `PATCH /v1/users/me`). Rules live in `app/services/usernames.py`:
 - Format `[A-Za-z0-9_]{3,24}`; uniqueness ignores case (unique index `uq_users_username_lower`) but the typed casing is kept.
 - Profanity: `better-profanity` whole-word check (also split on `_`, camelCase, and letter/digit boundaries), plus a short list of severe stems matched as substrings after undoing leetspeak, because tags glue words together. Ambiguous short words stay whole-word only (`class`, `grape` pass; `Scunthorpe` is a known false positive).
+- Search (`UserRepository.search_by_username`): tagged users whose lowercased tag contains the query (LIKE wildcards escaped) or is trigram-similar to it (`%>`, pg_trgm's word similarity ≥ 0.6). Ordered exact, prefix, contains, then word similarity, tag length, tag, and `id`, so offset pages are stable.
 - Set once: `UPDATE ... WHERE username IS NULL` makes the write atomic, and nothing else writes the column (sign-in never touches it). Matchmaking refuses users without a tag.
+
+## Friends
+
+Adding a friend is one-way: `friendships` rows mean `user_id` added `friend_id`, and the other player doesn't approve it. All of `FriendService`'s methods act on the caller's own list. No route reveals another player's friends; profiles expose only `is_friend`, meaning whether the caller added that player. Only tagged players can be added. Adding twice and removing a non-friend both succeed without changing anything.
 
 ## Matchmaking and Elo
 
@@ -81,11 +87,12 @@ Postgres. Constraint and index names come from the naming convention in `app/db/
 
 | Table | Columns | Notes |
 |---|---|---|
-| `users` (implemented) | `id` UUID, `google_sub` unique, `email?`, `username?` unique on `lower(username)`, `avatar_url?`, `updated_at` | Drop `elo` when `ratings` ships; `username` is the user's tag (see below) |
+| `users` (implemented) | `id` UUID, `google_sub` unique, `email?`, `username?` unique on `lower(username)` plus a `pg_trgm` GIN index on `lower(username)` for search, `avatar_url?`, `updated_at` | Drop `elo` when `ratings` ships; `username` is the user's tag (see below) |
 | `providers` (implemented) | `id` UUID, `slug` unique, `display_name`, `base_url`, `adapter`, `is_active`, `updated_at` | `adapter` uses `InferenceAdapter`, stored as VARCHAR + CHECK; currently only `openai_compatible`. Credentials and inference wiring remain in server configuration / PLANNED integration |
 | `models` (implemented) | `id` UUID, `provider_id`, `api_model_id`, `display_name`, `input_cost?`, `output_cost?`, `cached_input_cost?`, `pricing_updated_at?`, `context_window?`, `max_output_tokens?`, `is_active`, `provider_metadata` JSONB, `updated_at` | Unique `(provider_id, api_model_id)`; costs are nonnegative NUMERIC(20,10) USD per million tokens (null = unknown, zero = free); token limits are positive when set. Inference wiring remains PLANNED |
 | `ladders` | `id` UUID, `slug` unique, `display_name`, `kind` (`cloud`/`byom`), `provider_model_id?`, `is_active`, `provider_metadata` JSONB | Exactly one `byom` row |
 | `ratings` | PK(`user_id`, `ladder_id`), `elo` = 1000, `games_played`, `wins`, `losses`, `updated_at` | Created on first queue |
+| `friendships` (implemented) | PK(`user_id`, `friend_id`), both FKs to `users` with `ON DELETE CASCADE`, CHECK `user_id <> friend_id` | See "Friends"; replaced the unused `friends` table |
 | `topics` (implemented) | `id` UUID, `category`, `topic`, `pro_position`, `con_position`, `is_active` | Text fields are limited to 255 characters; category defaults to `General`; active by default |
 | `matches` | `id` UUID, `ladder_id`, `topic_id`, `status`, `winner_side?`, `end_reason?`, `verdict_reasoning?`, `judge_metadata` JSONB, `started_at?`, `ended_at?` | |
 | `match_participants` | PK(`match_id`, `side`), `user_id` (unique with `match_id`), `bilc_device_id?`, `prompt?`, `elo_before`, `elo_after?` | `prompt` never exposed to others |
@@ -141,7 +148,7 @@ Alembic migrations live in `app/db/migrations/versions/` (config in `pyproject.t
 | Production | Migrations run on startup; never auto-reset (`APP_ENV` unset) | Run one server process; concurrent startups would race on migrations |
 
 The temporary topic importer lives in `app/db/seed.py`; ladder seeding is PLANNED.
-From `backend/`, run `uv run python -m app.db.create_tables`, then
+Migrations create the `topics` table; from `backend/`, run
 `uv run python -m app.db.seed topics.example.txt`.
 New topics are active by default; pass `--inactive` to add inactive topics. Each UTF-8 line is
 `category | topic | pro position | con position` (no embedded pipes); blank lines and `#` comments are ignored.
@@ -152,9 +159,3 @@ model has no uniqueness constraint on topic content.
 Code can call `await import_topics(session, path, is_active=True)` with a fresh session
 and a `pathlib.Path`. `TopicRepository` provides add, ID/content lookup, and random
 active-topic selection (returns `None` when none are active); callers own transactions.
-
-For an existing `topics` table, apply this schema change before importing:
-
-```sql
-ALTER TABLE topics ADD COLUMN category VARCHAR(255) NOT NULL DEFAULT 'General';
-```

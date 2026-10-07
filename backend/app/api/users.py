@@ -1,11 +1,12 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Path, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.rate_limit import rate_limit
 from app.auth.dependencies import CurrentUserDependency
 from app.db.session import get_session
-from app.schemas import UserRead, UsernameAvailability, UsernameUpdate
+from app.schemas import UserProfile, UserRead, UsernameAvailability, UsernameUpdate, UserSearchPage
 from app.services.user import UserService
 
 
@@ -13,7 +14,11 @@ router = APIRouter(prefix="/users", tags=["users"])
 SessionDependency = Annotated[AsyncSession, Depends(get_session)]
 
 
-@router.get("/username-availability", response_model=UsernameAvailability)
+@router.get(
+    "/username-availability",
+    response_model=UsernameAvailability,
+    dependencies=[rate_limit(burst=20, per_minute=60)],
+)
 async def username_availability(
     username: Annotated[str, Query(max_length=64)],
     _user: CurrentUserDependency,
@@ -31,8 +36,25 @@ async def set_username(
     claimed = await UserService(session).claim_username(user, body.username)
     return UserRead.model_validate(claimed)
 
-@router.get("/user/{username}", response_model=UserRead)
-async def get_user(username, session: SessionDependency) -> UserRead:
-    found = await UserService(session).users.get_by_username(username)
-    found.email = None
-    return UserRead.model_validate(found)
+@router.get("/search", response_model=UserSearchPage, dependencies=[rate_limit(burst=20, per_minute=60)])
+async def search_users(
+    q: Annotated[str, Query(min_length=1, max_length=64)],
+    _user: CurrentUserDependency,
+    session: SessionDependency,
+    limit: Annotated[int, Query(ge=1, le=50)] = 20,
+    offset: Annotated[int, Query(ge=0)] = 0,
+) -> UserSearchPage:
+    return await UserService(session).search(q, limit, offset)
+
+
+@router.get(
+    "/by-username/{username}",
+    response_model=UserProfile,
+    dependencies=[rate_limit(burst=20, per_minute=60)],
+)
+async def get_profile(
+    username: Annotated[str, Path(max_length=64)],
+    user: CurrentUserDependency,
+    session: SessionDependency,
+) -> UserProfile:
+    return await UserService(session).get_profile(user, username)
