@@ -3,14 +3,11 @@ import logging
 from uuid import UUID, uuid4
 from collections import deque, defaultdict
 
+from app.config import settings
 from app.engine.game_engine import GameEngine
 from app.services.exceptions import AlreadyMatchedError, AlreadyQueuedError
 
 logger = logging.getLogger(__name__)
-
-# One fixed model for every turn. `openrouter/free` routes each request to a random free model,
-# including a safety classifier that replies "User Safety: safe" instead of arguing.
-PLAYER_MODEL = "nvidia/nemotron-3-super-120b-a12b:free"
 
 
 class Matchmaker:
@@ -39,7 +36,7 @@ class Matchmaker:
                 self.queued_users.remove(user_id)
                 self.assignments[user_id] = match_id
 
-            game = GameEngine(match_id, players, model=PLAYER_MODEL) # TODO per-ladder models
+            game = GameEngine(match_id, players, model=settings.inference_player_model) # TODO per-ladder models
             self.engines[match_id] = game
             self.tasks[match_id] = asyncio.create_task(
                 self.run_match(game),

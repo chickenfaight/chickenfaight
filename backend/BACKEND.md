@@ -35,7 +35,7 @@ Rules:
 ## Auth
 
 State the auth of every endpoint explicitly; PROTOCOL.md lists which are public.
-- **Web routes / match socket:** `CurrentUserDependency` (signed session cookie holding only `user_id`).
+- **Web routes / match socket:** `CurrentUserDependency`. The signed session cookie holds only a random `session_token`; `SessionService` (`app/services/auth_session.py`) looks up its SHA-256 hash in `sessions`, rejecting unknown, expired, or logged-out tokens and clearing the stale cookie. Sign-in creates a row (and deletes that user's expired ones); logout deletes it. Sessions last `SESSION_LIFETIME` (14 days), which also sets the cookie's max-age.
 - **BILC routes / socket:** `BilcDependency` (PLANNED) validating the access JWT.
 - **WebSockets:** authenticate and authorize *before* `accept()`.
 - **Ownership** (own device, participant in match) is checked in services, not routers. Return 404 for other users' private resources.
@@ -60,7 +60,7 @@ The current engine keeps one receiver and one heartbeat task per browser connect
 
 The engine never calls a provider directly. `app/inference/` exposes one `ModelClient` interface (`stream(messages, max_tokens) -> AsyncIterator[str]`) with `OpenAIModelClient` (cloud, `AsyncOpenAI` with `base_url`) and `BilcModelClient` (sends `TURN_REQUEST` to a device, yields `MATCH_RESPONSE` deltas). Tests use a fake implementation.
 
-OpenRouter is the selected cloud inference provider: it offers a single platform for accessing various models, including free models, through OpenAI-compatible endpoints. Configure `INFERENCE_BASE_URL=https://openrouter.ai/api/v1` and an OpenRouter `INFERENCE_API_KEY`; BILC continues to use the user's local OpenAI-compatible endpoint.
+OpenRouter is the selected cloud inference provider: it offers a single platform for accessing various models, including free models, through OpenAI-compatible endpoints. Configure `INFERENCE_BASE_URL=https://openrouter.ai/api/v1` and an OpenRouter `INFERENCE_API_KEY`; BILC continues to use the user's local OpenAI-compatible endpoint. The provider and models come from env (`INFERENCE_BASE_URL`, `INFERENCE_PLAYER_MODEL`, `INFERENCE_JUDGE_MODEL`), so development can use Purdue GenAI Studio instead; `.env.example` has both setups. OpenRouter's free tier allows 50 requests a day across all free models, and one match uses 3 to 6. On GenAI Studio, use `mistral:latest`: most of its models queue concurrent requests, so simultaneous matches slow down and can hit the 30 s first-token timeout. Its per-key rate limit (HTTP 400, 'Rate limit exceeded') caps total throughput; failed requests get the normal retry.
 
 Live state (matchmaking queues, running engines, connected BILC devices) is in-memory in one server process. Running multiple processes would need a shared store; out of scope.
 
@@ -92,6 +92,7 @@ Postgres. Constraint and index names come from the naming convention in `app/db/
 | `models` (implemented) | `id` UUID, `provider_id`, `api_model_id`, `display_name`, `input_cost?`, `output_cost?`, `cached_input_cost?`, `pricing_updated_at?`, `context_window?`, `max_output_tokens?`, `is_active`, `provider_metadata` JSONB, `updated_at` | Unique `(provider_id, api_model_id)`; costs are nonnegative NUMERIC(20,10) USD per million tokens (null = unknown, zero = free); token limits are positive when set. Inference wiring remains PLANNED |
 | `ladders` | `id` UUID, `slug` unique, `display_name`, `kind` (`cloud`/`byom`), `provider_model_id?`, `is_active`, `provider_metadata` JSONB | Exactly one `byom` row |
 | `ratings` | PK(`user_id`, `ladder_id`), `elo` = 1000, `games_played`, `wins`, `losses`, `updated_at` | Created on first queue |
+| `sessions` (implemented) | `token_hash` PK (SHA-256 hex of the cookie token), `user_id` FK to `users` with `ON DELETE CASCADE`, `expires_at` | One row per signed-in browser |
 | `friendships` (implemented) | PK(`user_id`, `friend_id`), both FKs to `users` with `ON DELETE CASCADE`, CHECK `user_id <> friend_id` | See "Friends"; replaced the unused `friends` table |
 | `topics` (implemented) | `id` UUID, `category`, `topic`, `pro_position`, `con_position`, `is_active` | Text fields are limited to 255 characters; category defaults to `General`; active by default |
 | `matches` | `id` UUID, `ladder_id`, `topic_id`, `status`, `winner_side?`, `end_reason?`, `verdict_reasoning?`, `judge_metadata` JSONB, `started_at?`, `ended_at?` | |

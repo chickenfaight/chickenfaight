@@ -56,7 +56,7 @@ Do not: add light mode; use colored or gradient fills (no purple/indigo/blue "AI
 
 | Route | Screen | Status |
 |---|---|---|
-| `/login` | Google sign-in | implemented |
+| `/login` | Google sign-in; redirects to `/` when the session is already valid | implemented |
 | `/health` | Backend check (dev) | implemented |
 | `/` | Desktop lobby: queue registration/status polling, session/profile menu, sample stats and activity cards | implemented (matchmaking integration; sample stats) |
 | `/play` | Game selection | PLANNED |
@@ -67,6 +67,8 @@ Do not: add light mode; use colored or gradient fills (no purple/indigo/blue "AI
 | `/bilc` | Pair a device (show code), device list with online dots, revoke, setup steps | PLANNED |
 
 **Homepage (`/`).** Join game checks for an existing queue entry or match before registering through the current `POST /v1/match/queue` route. On mount and before registration, the queue card reads `GET /v1/match/status`; queued users are polled sequentially every second. A matched response stops polling and navigates to `/match/[match_id]`, which opens the match WebSocket. Requests time out, are aborted on unmount, and failures keep the Join game action available; retrying checks status first and registers only when the server confirms no existing entry. The model selector shows the backend's single provided model. Cancel queue stops polling and calls `DELETE /v1/match/queue`; HTTP 204 returns to idle, while `IN_MATCH` refreshes status to show the match. Errors retain the same Join game recovery action. Leaving the page does not cancel a queue entry. The elapsed timer is local to this page, not an authoritative server timestamp. Statistics are illustrative. Activity cards open informational dialogs (`info-dialog.tsx`) until those features ship.
+
+**Automatic sign-in.** Sessions live in the backend's HTTP-only cookie, never in local storage. `/` and `/login` are Server Components that call `serverSession()` (`lib/server-session.ts`), which asks `GET /auth/me` to validate the cookie: `/` redirects to `/login` when there's no valid session, and `/login` redirects to `/` when there is. If the backend is unreachable, both pages render and show their error states. `SessionProvider` also sends the visitor to `/login` whenever its own `/auth/me` check or a logout leaves the session signed out, except on `/login` and `/health`. Server-side fetches forward the browser's raw `Cookie` header via `forwardedCookie()`: `cookies().toString()` URL-encodes values and breaks the signed cookie.
 
 **Header (`site-header.tsx`).** Shared by the lobby, search, and profile: wordmark, Play (underlined only on `/`), Leaderboards and How to play (informational dialogs for now), player search, and the profile menu (hover, click, keyboard) with My profile, My ladder, and Sign out. Identity comes from `useSession()`, with guest/loading/error states.
 

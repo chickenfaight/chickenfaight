@@ -109,6 +109,7 @@ export default function MatchmakingCard() {
 
   const queued = phase === "queued";
   const waiting = queued || phase === "joining" || phase === "checking" || phase === "cancelling";
+  const buttonDisabled = waiting && !queued;
   const title = {
     checking: "Checking queue…", idle: "Ready to ruffle feathers?", joining: "Joining queue…",
     cancelling: "Leaving queue…", queued: "Finding an opponent…", matched: "Opponent found!", error: "Queue status unavailable", "signed-out": "Join the debate",
@@ -127,7 +128,9 @@ export default function MatchmakingCard() {
     </div>
     {phase === "matched" ? <p role="status" className="py-3 text-sm text-zinc-300">Entering the arena…</p>
       : phase === "signed-out" ? <Link href="/login" className={`flex h-12 items-center justify-center rounded-xl bg-[#e53848] text-sm font-bold ${focus}`}>Sign in to queue</Link>
-      : <button onClick={() => request(queued ? "DELETE" : "POST")} disabled={waiting && !queued} className={`flex h-12 w-full items-center justify-center rounded-xl text-sm font-bold disabled:cursor-not-allowed disabled:opacity-50 ${focus} ${queued ? "border border-white/15 bg-white/5" : "bg-[#e53848] text-white enabled:hover:bg-[#c92d3c]"}`}>{queued ? "Cancel queue" : phase === "cancelling" ? "Cancelling…" : phase === "checking" ? "Checking…" : phase === "joining" ? "Joining…" : "Join game"}</button>}
+      // aria-disabled instead of disabled: on reload, Firefox restores the previous page's `disabled`
+      // state before React loads, which no longer matches the server HTML and breaks hydration.
+      : <button type="button" aria-disabled={buttonDisabled} onClick={() => { if (!buttonDisabled) request(queued ? "DELETE" : "POST"); }} className={`flex h-12 w-full items-center justify-center rounded-xl text-sm font-bold aria-disabled:cursor-not-allowed aria-disabled:opacity-50 ${focus} ${queued ? "border border-white/15 bg-white/5" : "bg-[#e53848] text-white not-aria-disabled:hover:bg-[#c92d3c]"}`}>{queued ? "Cancel queue" : phase === "cancelling" ? "Cancelling…" : phase === "checking" ? "Checking…" : phase === "joining" ? "Joining…" : "Join game"}</button>}
     {error && <p role="alert" className="mt-3 text-xs leading-relaxed text-red-300">{error}</p>}
     <p className="mt-3 text-center text-[10px] leading-relaxed text-zinc-500">{phase === "matched" ? "Your debate is ready." : queued ? "You can leave the queue anytime before an opponent is found." : "Model selection is coming soon."}</p>
   </div>;

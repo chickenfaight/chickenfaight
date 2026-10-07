@@ -13,6 +13,7 @@ from fastapi import WebSocket, WebSocketDisconnect
 from openai import OpenAIError
 from pydantic import ValidationError
 
+from app.config import settings
 from app.db.session import SessionFactory
 from app.inference.model_client import *
 from app.models import Topic
@@ -49,7 +50,6 @@ class GameEngine:
     FIRST_TOKEN_TIMEOUT = 30
     TURN_TIMEOUT = 90
     JUDGE_TIMEOUT = 120
-    JUDGE_MODEL = "nvidia/nemotron-3-super-120b-a12b:free" # free via OpenRouter, supports response schema enforcement
 
     def __init__(self, match_id: UUID, players: tuple[UUID, UUID], model: str):
         # TODO figure out LLM identifier strategy
@@ -66,7 +66,7 @@ class GameEngine:
 
         self.connections: dict[UUID, WebSocket] = {} # dict[user_id, WebSocket]
         self.model_clients: dict[UUID, ModelClient] = {}
-        self.judge_clients: OpenAIModelClient = OpenAIModelClient(model=self.JUDGE_MODEL)
+        self.judge_clients: OpenAIModelClient = OpenAIModelClient(model=settings.inference_judge_model)
 
         self.prompts: dict[UUID, str] = {}
         self.prompt_received = {player: asyncio.Event() for player in players}

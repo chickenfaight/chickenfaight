@@ -46,8 +46,7 @@ class OpenAIModelClient(ModelClient):
             max_completion_tokens=max_tokens,
             stream=True,
             # Hidden reasoning counts against `max_tokens` and can leave no room for the argument.
-            # OpenRouter setting; providers without reasoning ignore it.
-            extra_body={"reasoning": {"enabled": False}},
+            extra_body={"reasoning": {"enabled": False}} if settings.inference_is_openrouter else None,
         )
 
         async with completion:
@@ -77,9 +76,8 @@ class OpenAIModelClient(ModelClient):
                 },
             ],
             response_format=Verdict,
-            extra_body={
-                "provider": {"require_parameters": True} # OpenRouter setting
-            }
+            # Route only to providers that enforce the response schema.
+            extra_body={"provider": {"require_parameters": True}} if settings.inference_is_openrouter else None,
         )
 
         message = completion.choices[0].message

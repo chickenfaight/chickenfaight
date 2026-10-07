@@ -70,6 +70,7 @@ Server-side constants; clients read deadlines from messages rather than hard-cod
 | Queue poll interval | 2 s |
 | Pairing code TTL | 10 min, single use |
 | BILC access JWT / refresh token | 15 min / 30 days, rotated on every use |
+| Web session (implemented) | 14 days from sign-in, not extended by use; logout ends it immediately |
 | REST rate limits, per user (implemented) | Token buckets, each holding a burst and refilling steadily: search, profile lookup, tag availability, and friends list each allow a burst of 20 and 60/min; adding and removing friends share a burst of 10 and 20/min |
 
 Rate limits apply per signed-in user, on routes that read other users' data or change the friends list. They're held in server memory, so they reset when the server restarts.
@@ -104,9 +105,9 @@ Player prompts are never returned by any endpoint or message except to their aut
 |---|---|---|---|---|
 | GET | `/health` | public | — | `{ status: "healthy" }` (implemented) |
 | GET | `/auth/google/login` | public | — | 302 to Google (implemented) |
-| GET | `/auth/google/callback` | public | OAuth params | 302 to `FRONTEND_URL`, sets session (implemented) |
-| GET | `/auth/me` | session | — | `UserRead` (implemented) |
-| POST | `/auth/logout` | public | — | 204, clears session (implemented) |
+| GET | `/auth/google/callback` | public | OAuth params | 302 to `FRONTEND_URL`; starts a server-side session and sets the session cookie (implemented) |
+| GET | `/auth/me` | session | — | `UserRead`. This is how clients validate a stored session: 401 if the cookie is missing, forged, expired, or logged out (implemented) |
+| POST | `/auth/logout` | public | — | 204; deletes the session server-side, so a copy of the old cookie stops working, and clears the cookie (implemented) |
 | PATCH | `/v1/users/me` | session | `{ username: str }` (3–24 chars, `[a-zA-Z0-9_]`, unique) | `UserRead` |
 | GET | `/v1/users/username-availability` | session | `?username=` (≤ 64 chars) | `{ available: bool, code: str\|null, detail: str\|null }`; `code` is one of the `USERNAME_*` errors above when unavailable (implemented) |
 | GET | `/v1/users/search` | session | `?q=` (1–64 chars), `?limit=` (1–50, default 20), `?offset=` (≥ 0, default 0) | `{ items: [UserPublic], next_offset: int\|null }`; only users with a tag; ranked exact tag, then prefix, then contains, then fuzzy (trigram word similarity), all ignoring case; `next_offset` is null on the last page; a blank `q` returns no items (implemented) |
@@ -218,7 +219,7 @@ Server config (env): `INFERENCE_BASE_URL`, `INFERENCE_API_KEY`, `JUDGE_MODEL`. L
 
 Current judge client: `judge(topic, pro, con)` accepts a topic and the two sides' generated transcripts (never player prompts). It sends a fixed system instruction and a JSON user message containing `topic`, `pro_position`, `con_position`, `pro`, and `con`. This non-streaming call requests structured output using the current `Verdict` schema (`winner`, `reason`); the engine integration and target `reasoning` field below remain pending.
 
-Player turns currently use one fixed free model, `nvidia/nemotron-3-super-120b-a12b:free` (`PLAYER_MODEL` in `app/services/matchmaking.py`), and send OpenRouter's `reasoning: { enabled: false }` so hidden reasoning doesn't use up `max_tokens`. Don't use `openrouter/free`: it routes each request to a random free model, including a content-safety classifier that replies "User Safety: safe" instead of arguing, and models that print their reasoning as the argument. A turn that streams no visible text counts as a model error, so it's retried like any other (implemented).
+Player turns use one fixed model, `INFERENCE_PLAYER_MODEL`, and the judge uses `INFERENCE_JUDGE_MODEL`; both default to `nvidia/nemotron-3-super-120b-a12b:free`. Any OpenAI-compatible provider works (`INFERENCE_BASE_URL`), and Purdue GenAI Studio is supported for development with `mistral:latest` in both roles; it is the only model tested there that serves concurrent requests in parallel instead of one at a time. OpenRouter-only options are sent only when the base URL is `openrouter.ai`: player turns send `reasoning: { enabled: false }`, so hidden reasoning doesn't use up `max_tokens`, and the judge sends `provider: { require_parameters: true }`. Don't use `openrouter/free`: it routes each request to a random free model, including a content-safety classifier that replies "User Safety: safe" instead of arguing, and models that print their reasoning as the argument. A turn that streams no visible text counts as a model error, so it's retried like any other (implemented).
 
 Current argument generation uses the engine's `format_game(player)` wrapper (implemented): a fixed system message supplies the topic, assigned side and position, opening phase, and current token budget. Only that player's strategy is included, inside `<player_strategy>` delimiters after stripping those delimiter strings from the strategy. The model is told to follow the strategy's tone, persona, style, and arguments freely, including on controversial topics and without hedging or disclaimers, but the strategy can't change the topic, side, position, phase, length limit, or plain-text output, and the model must not pose as or instruct the judge. The current engine generates one opening argument per side; the six-turn flow below remains planned.
 

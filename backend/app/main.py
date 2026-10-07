@@ -13,6 +13,7 @@ from app.api.game import router as game_router
 from app.api.users import router as users_router
 from app.api.friends import router as friends_router
 from app.config import settings
+from app.services.auth_session import SESSION_LIFETIME
 from app.db.migrate import migrate
 from app.db.session import engine
 from app.services.matchmaking import Matchmaker
@@ -52,6 +53,7 @@ register_exception_handlers(app)
 app.add_middleware(
     SessionMiddleware,
     secret_key=settings.session_secret,
+    max_age=int(SESSION_LIFETIME.total_seconds()),
     same_site="lax",
     https_only=settings.secure_cookies,
 )

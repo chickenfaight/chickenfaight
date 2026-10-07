@@ -1,5 +1,6 @@
 "use client";
 
+import { usePathname, useRouter } from "next/navigation";
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { backendUrl } from "../../lib/auth";
 import { parseUser, type User } from "../../lib/protocol";
@@ -17,6 +18,9 @@ type Session = {
 
 const SessionContext = createContext<Session | null>(null);
 
+// Pages a signed-out visitor may stay on.
+const PUBLIC_PATHS = ["/login", "/health"];
+
 // The signed-in user from `/auth/me`, shared by every page.
 export default function SessionProvider({ children }: { children: React.ReactNode }) {
   const [user, setUserState] = useState<User | null>(null);
@@ -24,6 +28,8 @@ export default function SessionProvider({ children }: { children: React.ReactNod
   const [loggingOut, setLoggingOut] = useState(false);
   const [logoutError, setLogoutError] = useState("");
   const logoutController = useRef<AbortController | null>(null);
+  const router = useRouter();
+  const pathname = usePathname();
 
   useEffect(() => {
     const controller = new AbortController();
@@ -38,6 +44,11 @@ export default function SessionProvider({ children }: { children: React.ReactNod
     void load();
     return () => { controller.abort(); logoutController.current?.abort(); };
   }, []);
+
+  // No valid session (expired, invalid, or just logged out): send the visitor to log in.
+  useEffect(() => {
+    if (status === "out" && !PUBLIC_PATHS.includes(pathname)) router.replace("/login");
+  }, [status, pathname, router]);
 
   const setUser = useCallback((next: User) => { setUserState(next); setStatus("in"); }, []);
 
