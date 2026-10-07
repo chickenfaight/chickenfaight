@@ -17,13 +17,24 @@ createdb chickenfaight_test   # for `uv run pytest`; tables are created by the t
 
 ```bash
 cd backend
-cp .env.example .env        # fill in Postgres credentials, Google OAuth, SESSION_SECRET
+cp .env.example .env        # fill in Postgres credentials, Google OAuth, SESSION_SECRET, INFERENCE_API_KEY
 uv run fastapi dev app/main.py
 ```
 
 `uv run` installs dependencies from `uv.lock`, and startup applies database migrations, so this one command is also how you catch up after every `git pull`. If startup reports a reset or a schema problem, see "Changing the schema" in [backend/BACKEND.md](backend/BACKEND.md).
 
 Google OAuth: create an OAuth 2.0 Web client in Google Cloud Console with redirect URI `http://localhost:8000/auth/google/callback`. Generate `SESSION_SECRET` with `openssl rand -hex 32`.
+
+**Debate topics**
+
+Matches need at least one active topic; with none, a match fails with "No active topic found". Migrations create an empty `topics` table, so load topics once after setup, and again whenever your local database is reset:
+
+```bash
+cd backend
+uv run python -m app.db.seed topics.example.txt
+```
+
+Each line of the file is `category | topic | pro position | con position`; `#` lines and blank lines are ignored. Re-running is safe: topics already in the database are skipped. Add `--inactive` to load topics that won't be picked for matches yet. Details are in [backend/BACKEND.md](backend/BACKEND.md), under "Changing the schema".
 
 **Frontend** (http://localhost:3000)
 
