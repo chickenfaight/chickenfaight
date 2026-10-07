@@ -88,6 +88,8 @@ Postgres. Constraint and index names come from the naming convention in `app/db/
 | Table | Columns | Notes |
 |---|---|---|
 | `users` (implemented) | `id` UUID, `google_sub` unique, `email?`, `username?` unique on `lower(username)` plus a `pg_trgm` GIN index on `lower(username)` for search, `avatar_url?`, `updated_at` | Drop `elo` when `ratings` ships; `username` is the user's tag (see below) |
+| `providers` (implemented) | `id` UUID, `slug` unique, `display_name`, `base_url`, `adapter`, `is_active`, `updated_at` | `adapter` uses `InferenceAdapter`, stored as VARCHAR + CHECK; currently only `openai_compatible`. Credentials and inference wiring remain in server configuration / PLANNED integration |
+| `models` (implemented) | `id` UUID, `provider_id`, `api_model_id`, `display_name`, `input_cost?`, `output_cost?`, `cached_input_cost?`, `pricing_updated_at?`, `context_window?`, `max_output_tokens?`, `is_active`, `provider_metadata` JSONB, `updated_at` | Unique `(provider_id, api_model_id)`; costs are nonnegative NUMERIC(20,10) USD per million tokens (null = unknown, zero = free); token limits are positive when set. Inference wiring remains PLANNED |
 | `ladders` | `id` UUID, `slug` unique, `display_name`, `kind` (`cloud`/`byom`), `provider_model_id?`, `is_active`, `provider_metadata` JSONB | Exactly one `byom` row |
 | `ratings` | PK(`user_id`, `ladder_id`), `elo` = 1000, `games_played`, `wins`, `losses`, `updated_at` | Created on first queue |
 | `friendships` (implemented) | PK(`user_id`, `friend_id`), both FKs to `users` with `ON DELETE CASCADE`, CHECK `user_id <> friend_id` | See "Friends"; replaced the unused `friends` table |
@@ -110,6 +112,7 @@ Postgres. Constraint and index names come from the naming convention in `app/db/
 | Column | Shape |
 |---|---|
 | `ladders.provider_metadata` | `{ provider: str, context_length?: int }` |
+| `models.provider_metadata` | Provider-specific object, validated with `ModelProviderMetadata`; pricing and token limits use dedicated columns |
 | `bilc_devices.model_metadata` | `HELLO.model` from PROTOCOL.md |
 | `turns.usage` | `{ latency_ms: int, first_token_ms: int, prompt_tokens?: int, completion_tokens?: int, finish_reason?: str }` |
 | `matches.judge_metadata` | `{ model: str, attempts: int, raw_output: str, usage: <turns.usage shape> }` |

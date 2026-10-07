@@ -13,6 +13,7 @@ class UserRead(BaseModel):
     avatar_url: str | None
     elo: int
 
+
 class UserPublic(BaseModel):
     """Fields anyone signed in may see. Never add email or other private data here."""
     model_config = ConfigDict(from_attributes=True)
