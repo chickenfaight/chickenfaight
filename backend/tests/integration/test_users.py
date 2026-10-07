@@ -198,6 +198,7 @@ async def test_profile_by_tag(client, log_in, make_user, db_session):
         "username": "Rooster_42",
         "avatar_url": "https://lh3.googleusercontent.com/a/pic",
         "ratings": [],
+        "is_friend": False,
     }
     assert "secret@example.com" not in response.text
 
@@ -279,6 +280,27 @@ async def test_search_paginates(client, log_in, make_user):
     last = (await client.get(SEARCH, params={"q": "hen_", "limit": 2, "offset": 4})).json()
     assert [item["username"] for item in last["items"]] == ["hen_4"]
     assert last["next_offset"] is None
+
+
+async def test_search_is_rate_limited_per_user(client, log_in, make_user):
+    viewer = await make_user("viewer")
+    log_in(viewer)
+    for _ in range(20):
+        assert (await client.get(SEARCH, params={"q": "a"})).status_code == 200
+    response = await client.get(SEARCH, params={"q": "a"})
+    assert response.status_code == 429
+    assert response.json()["code"] == "RATE_LIMITED"
+    assert int(response.headers["retry-after"]) >= 1
+    # Another user's budget is separate.
+    log_in(await make_user("other"))
+    assert (await client.get(SEARCH, params={"q": "a"})).status_code == 200
+
+
+async def test_profile_lookups_are_rate_limited(client, log_in, make_user):
+    await make_user("Rooster_42")
+    log_in(await make_user("viewer"))
+    statuses = [(await client.get(PROFILE + "rooster_42")).status_code for _ in range(21)]
+    assert statuses == [200] * 20 + [429]
 
 
 async def test_search_requires_auth(client):

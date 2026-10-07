@@ -58,18 +58,19 @@ export function parseUserPublic(data: unknown): UserPublic {
   return { id: data.id, username: data.username, avatar_url: data.avatar_url };
 }
 
-export type UserSearchPage = { items: UserPublic[]; next_offset: number | null };
+// A page of players, as returned by search and the friends list.
+export type UserPage = { items: UserPublic[]; next_offset: number | null };
 
-export function parseUserSearchPage(data: unknown): UserSearchPage {
+export function parseUserPage(data: unknown): UserPage {
   if (!isObject(data) || !Array.isArray(data.items)
     || !(data.next_offset === null || typeof data.next_offset === "number")) {
-    throw new Error("Invalid search page");
+    throw new Error("Invalid user page");
   }
   return { items: data.items.map(parseUserPublic), next_offset: data.next_offset };
 }
 
 export type Rating = { ladder: string; elo: number; games_played: number; wins: number; losses: number };
-export type UserProfile = UserPublic & { ratings: Rating[] };
+export type UserProfile = UserPublic & { ratings: Rating[]; is_friend: boolean };
 
 function parseRating(data: unknown): Rating {
   if (!isObject(data) || typeof data.ladder !== "string"
@@ -80,8 +81,8 @@ function parseRating(data: unknown): Rating {
 }
 
 export function parseUserProfile(data: unknown): UserProfile {
-  if (!isObject(data) || !Array.isArray(data.ratings)) throw new Error("Invalid profile");
-  return { ...parseUserPublic(data), ratings: data.ratings.map(parseRating) };
+  if (!isObject(data) || !Array.isArray(data.ratings) || typeof data.is_friend !== "boolean") throw new Error("Invalid profile");
+  return { ...parseUserPublic(data), ratings: data.ratings.map(parseRating), is_friend: data.is_friend };
 }
 
 // Current arena wire format in PROTOCOL.md; full reconnect snapshots are planned.

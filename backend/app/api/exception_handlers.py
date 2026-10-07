@@ -4,6 +4,8 @@ from fastapi.responses import JSONResponse
 from app.services.exceptions import (
     AlreadyMatchedError,
     AlreadyQueuedError,
+    FriendSelfError,
+    RateLimitedError,
     UsernameError,
     UserNotFoundError,
 )
@@ -50,7 +52,28 @@ async def handle_user_not_found(
 ) -> JSONResponse:
     return JSONResponse(
         status_code=404,
-        content={"code": "NOT_FOUND", "detail": "No player has that tag."},
+        content={"code": "NOT_FOUND", "detail": error.detail},
+    )
+
+
+async def handle_friend_self(
+        request: Request,
+        error: FriendSelfError,
+) -> JSONResponse:
+    return JSONResponse(
+        status_code=422,
+        content={"code": "FRIEND_SELF", "detail": str(error)},
+    )
+
+
+async def handle_rate_limited(
+        request: Request,
+        error: RateLimitedError,
+) -> JSONResponse:
+    return JSONResponse(
+        status_code=429,
+        content={"code": "RATE_LIMITED", "detail": "Too many requests. Try again shortly."},
+        headers={"Retry-After": str(error.retry_after)},
     )
 
 
@@ -59,6 +82,8 @@ EXCEPTION_HANDLERS = {
     AlreadyMatchedError: handle_already_matched,
     UsernameError: handle_username_error,
     UserNotFoundError: handle_user_not_found,
+    FriendSelfError: handle_friend_self,
+    RateLimitedError: handle_rate_limited,
 }
 
 def register_exception_handlers(app: FastAPI) -> None:

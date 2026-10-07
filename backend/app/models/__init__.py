@@ -1,5 +1,5 @@
 from app.models.user import User
 from app.models.topic import Topic
-from app.models.friend import Friend
+from app.models.friend import Friendship
 
-__all__ = ["User", "Topic", "Friend"]
+__all__ = ["User", "Topic", "Friendship"]

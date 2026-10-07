@@ -50,7 +50,8 @@ Everything here is PLANNED unless marked **(implemented)**. Remove a PLANNED sta
 | `MODEL_UNAVAILABLE`, `MODEL_ERROR`, `MODEL_TIMEOUT` | — | — | Sent by BILC about the local model |
 | `HEARTBEAT_TIMEOUT` | — | 4408 | No message within the timeout |
 | `REPLACED` | — | 4409 | A newer connection for the same user+match or device |
-| `RATE_LIMITED` | 429 | — | Too many requests |
+| `FRIEND_SELF` | 422 | — | Players can't add themselves as friends (implemented) |
+| `RATE_LIMITED` | 429 | — | Too many requests; the response carries a `Retry-After` header in whole seconds (implemented) |
 | `INTERNAL` | 500 | 1011 | Server fault; never include internals in `detail` |
 
 ### Limits and timings
@@ -69,13 +70,16 @@ Server-side constants; clients read deadlines from messages rather than hard-cod
 | Queue poll interval | 2 s |
 | Pairing code TTL | 10 min, single use |
 | BILC access JWT / refresh token | 15 min / 30 days, rotated on every use |
+| REST rate limits, per user (implemented) | Token buckets, each holding a burst and refilling steadily: search, profile lookup, tag availability, and friends list each allow a burst of 20 and 60/min; adding and removing friends share a burst of 10 and 20/min |
+
+Rate limits apply per signed-in user, on routes that read other users' data or change the friends list. They're held in server memory, so they reset when the server restarts.
 
 ## Shared types
 
 ```
 UserRead         { id: uuid, email: str|null, username: str|null, avatar_url: str|null, elo: int }   (implemented; elo is removed when Rating ships; username is the user's tag, null until set)
 UserPublic       { id: uuid, username: str|null, avatar_url: str|null }   (implemented)
-UserProfile      UserPublic + { ratings: [Rating] }   (implemented; `ratings` is empty until ratings ship)
+UserProfile      UserPublic + { ratings: [Rating], is_friend: bool }   (implemented; `ratings` is empty until ratings ship; `is_friend` is whether the caller has added this player)
 Rating           { ladder: str, elo: int, games_played: int, wins: int, losses: int }
 Ladder           { slug: str, display_name: str, kind: "cloud"|"byom" }
 Side             "pro" | "con"
@@ -109,6 +113,9 @@ Player prompts are never returned by any endpoint or message except to their aut
 | GET | `/v1/users/by-username/{username}` | session | `{username}`: tag, ignoring case | `UserProfile`; 404 `NOT_FOUND` if no user has that tag (implemented) |
 | GET | `/v1/users/{id}` | session | `{id}: uuid` | `UserProfile` |
 | GET | `/v1/users/{id}/matches` | session | `{id}: uuid`, `?limit&offset` | `[MatchSummary]`, finished only |
+| GET | `/v1/friends` | session | `?limit=` (1–100, default 50), `?offset=` (≥ 0, default 0) | `{ items: [UserPublic], next_offset: int\|null }`: the caller's own friends only, ordered by tag ignoring case. No route lists another player's friends (implemented) |
+| PUT | `/v1/friends/{user_id}` | session | `{user_id}: uuid` | 204, also if already a friend. Adding is one-way; the other player doesn't approve it. 404 `NOT_FOUND` if no tagged player has that ID; 422 `FRIEND_SELF` for the caller's own ID (implemented) |
+| DELETE | `/v1/friends/{user_id}` | session | `{user_id}: uuid` | 204, also if not a friend (implemented) |
 | GET | `/v1/ladders` | session | — | `[Ladder]` (active only) |
 | GET | `/v1/ladders/{slug}/leaderboard` | session | `?limit&offset` | `[{ rank, user: UserPublic, rating: Rating }]` |
 | POST | `/v1/matchmaking/queue` | session | `{ ladder: str, bilc_id?: uuid }` (`bilc_id` required iff ladder is BYOM, must be caller's online idle device) | 202 `{ status: "queued" }` |

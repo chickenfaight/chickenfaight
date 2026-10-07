@@ -1,6 +1,5 @@
 from .schemas import (
-    FriendAdd,
-    FriendsRead,
+    FriendsPage,
     GoogleIdentity,
     PromptSubmission,
     Rating,
@@ -15,8 +14,7 @@ from .schemas import (
 )
 
 __all__ = [
-    "FriendAdd",
-    "FriendsRead",
+    "FriendsPage",
     "GoogleIdentity",
     "PromptSubmission",
     "Rating",

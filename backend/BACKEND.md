@@ -14,7 +14,7 @@ Use a tool's current idiomatic style: `Annotated` dependencies, `Mapped[...]`/`m
 app/
   main.py         app, middleware, router registration
   config.py       Settings from env (only place that reads env)
-  api/            routers — thin: parse, call a service, return a schema
+  api/            routers — thin: parse, call a service, return a schema; rate_limit.py (per-user limits)
   auth/           google.py, dependencies.py (session user), bilc.py (JWT, PLANNED)
   services/       business logic; owns transactions and authorization checks
   repositories/   SQLAlchemy queries only, one class per table/aggregate
@@ -39,6 +39,7 @@ State the auth of every endpoint explicitly; PROTOCOL.md lists which are public.
 - **BILC routes / socket:** `BilcDependency` (PLANNED) validating the access JWT.
 - **WebSockets:** authenticate and authorize *before* `accept()`.
 - **Ownership** (own device, participant in match) is checked in services, not routers. Return 404 for other users' private resources.
+- **Rate limits:** routes that read other users' data or change the friends list add `dependencies=[rate_limit(burst=..., per_minute=...)]` (`app/api/rate_limit.py`), an in-memory token bucket per signed-in user that raises `RateLimitedError` (429 `RATE_LIMITED` with `Retry-After`). Each `rate_limit(...)` call is its own bucket; reuse the returned dependency to share one across routes. Values are listed in PROTOCOL.md.
 - Pairing codes and refresh tokens: generate with `secrets`, store only SHA-256 hashes, compare with `hmac.compare_digest`.
 
 ## Game engine (PLANNED)
@@ -71,6 +72,10 @@ Live state (matchmaking queues, running engines, connected BILC devices) is in-m
 - Search (`UserRepository.search_by_username`): tagged users whose lowercased tag contains the query (LIKE wildcards escaped) or is trigram-similar to it (`%>`, pg_trgm's word similarity ≥ 0.6). Ordered exact, prefix, contains, then word similarity, tag length, tag, and `id`, so offset pages are stable.
 - Set once: `UPDATE ... WHERE username IS NULL` makes the write atomic, and nothing else writes the column (sign-in never touches it). Matchmaking refuses users without a tag.
 
+## Friends
+
+Adding a friend is one-way: `friendships` rows mean `user_id` added `friend_id`, and the other player doesn't approve it. All of `FriendService`'s methods act on the caller's own list. No route reveals another player's friends; profiles expose only `is_friend`, meaning whether the caller added that player. Only tagged players can be added. Adding twice and removing a non-friend both succeed without changing anything.
+
 ## Matchmaking and Elo
 
 - One queue per ladder. Pair the two closest-rated players within ±100 Elo; the window widens by 50 every 10 s waited. BYOM players queue only with an online, idle device.
@@ -85,6 +90,7 @@ Postgres. Constraint and index names come from the naming convention in `app/db/
 | `users` (implemented) | `id` UUID, `google_sub` unique, `email?`, `username?` unique on `lower(username)` plus a `pg_trgm` GIN index on `lower(username)` for search, `avatar_url?`, `updated_at` | Drop `elo` when `ratings` ships; `username` is the user's tag (see below) |
 | `ladders` | `id` UUID, `slug` unique, `display_name`, `kind` (`cloud`/`byom`), `provider_model_id?`, `is_active`, `provider_metadata` JSONB | Exactly one `byom` row |
 | `ratings` | PK(`user_id`, `ladder_id`), `elo` = 1000, `games_played`, `wins`, `losses`, `updated_at` | Created on first queue |
+| `friendships` (implemented) | PK(`user_id`, `friend_id`), both FKs to `users` with `ON DELETE CASCADE`, CHECK `user_id <> friend_id` | See "Friends"; replaced the unused `friends` table |
 | `topics` (implemented) | `id` UUID, `category`, `topic`, `pro_position`, `con_position`, `is_active` | Text fields are limited to 255 characters; category defaults to `General`; active by default |
 | `matches` | `id` UUID, `ladder_id`, `topic_id`, `status`, `winner_side?`, `end_reason?`, `verdict_reasoning?`, `judge_metadata` JSONB, `started_at?`, `ended_at?` | |
 | `match_participants` | PK(`match_id`, `side`), `user_id` (unique with `match_id`), `bilc_device_id?`, `prompt?`, `elo_before`, `elo_after?` | `prompt` never exposed to others |

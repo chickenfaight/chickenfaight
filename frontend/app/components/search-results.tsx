@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, ApiError } from "../lib/api";
-import { parseUserSearchPage, type UserPublic } from "../lib/protocol";
+import { parseUserPage, type UserPublic } from "../lib/protocol";
 import { profileHref } from "../lib/routes";
 import Avatar from "./avatar";
 
@@ -31,7 +31,7 @@ export default function SearchResults({ query }: { query: string }) {
     controller.current = current;
     try {
       const params = new URLSearchParams({ q: query, limit: String(PAGE_SIZE), offset: String(offset) });
-      const page = parseUserSearchPage(await api(`/v1/users/search?${params}`, current.signal));
+      const page = parseUserPage(await api(`/v1/users/search?${params}`, current.signal));
       setState((previous) => ({
         // Skip anyone already listed in case a new signup shifted the pages.
         items: [...previous.items, ...page.items.filter((user) => !previous.items.some((seen) => seen.id === user.id))],

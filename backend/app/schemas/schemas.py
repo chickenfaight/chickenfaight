@@ -1,4 +1,4 @@
-from typing import Literal, List
+from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -33,6 +33,8 @@ class Rating(BaseModel):
 class UserProfile(UserPublic):
     # Empty until the ratings table ships.
     ratings: list[Rating] = []
+    # Whether the caller has added this player as a friend.
+    is_friend: bool = False
 
 
 class UserSearchPage(BaseModel):
@@ -77,11 +79,6 @@ class Verdict(BaseModel):
     reason: str
 
 
-class FriendsRead(BaseModel):
-    id: UUID
-    friend_ids: List[UUID]
-
-
-class FriendAdd(BaseModel):
-    id: UUID
-    other_id: UUID
+class FriendsPage(BaseModel):
+    items: list[UserPublic]
+    next_offset: int | None

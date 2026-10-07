@@ -2,8 +2,9 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.user import User
+from app.repositories.friend import FriendRepository
 from app.repositories.user import UserRepository
-from app.schemas import GoogleIdentity, UserPublic, UsernameAvailability, UserSearchPage
+from app.schemas import GoogleIdentity, UserProfile, UserPublic, UsernameAvailability, UserSearchPage
 from app.services.exceptions import (
     UserNotFoundError,
     UsernameAlreadySetError,
@@ -55,6 +56,12 @@ class UserService:
         if user is None:
             raise UserNotFoundError()
         return user
+
+    async def get_profile(self, viewer: User, username: str) -> UserProfile:
+        """A player's public profile, as seen by `viewer`."""
+        user = await self.get_by_username(username)
+        is_friend = await FriendRepository(self.session).is_friend(viewer.id, user.id)
+        return UserProfile.model_validate(user).model_copy(update={"is_friend": is_friend})
 
     async def search(self, query: str, limit: int, offset: int) -> UserSearchPage:
         query = query.strip()

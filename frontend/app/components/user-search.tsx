@@ -3,7 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useId, useState } from "react";
 import { api, ApiError } from "../lib/api";
-import { parseUserSearchPage, type UserPublic } from "../lib/protocol";
+import { parseUserPage, type UserPublic } from "../lib/protocol";
 import { profileHref, searchHref } from "../lib/routes";
 import Avatar from "./avatar";
 
@@ -35,7 +35,7 @@ export default function UserSearch({ initialQuery = "" }: { initialQuery?: strin
     const timer = setTimeout(async () => {
       try {
         const params = new URLSearchParams({ q: trimmed, limit: String(SUGGESTION_LIMIT) });
-        const page = parseUserSearchPage(await api(`/v1/users/search?${params}`, controller.signal));
+        const page = parseUserPage(await api(`/v1/users/search?${params}`, controller.signal));
         setSuggestions({ status: "done", items: page.items });
       } catch (error) {
         if (controller.signal.aborted) return;
