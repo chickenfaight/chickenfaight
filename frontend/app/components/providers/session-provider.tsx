@@ -47,7 +47,7 @@ export default function SessionProvider({ children }: { children: React.ReactNod
 
   // No valid session (expired, invalid, or just logged out): send the visitor to log in.
   useEffect(() => {
-    if (status === "out" && !PUBLIC_PATHS.includes(pathname)) router.replace("/login");
+    if (status === "out" && !PUBLIC_PATHS.includes(pathname)) { router.replace("/login"); setStatus("loading"); }
   }, [status, pathname, router]);
 
   const setUser = useCallback((next: User) => { setUserState(next); setStatus("in"); }, []);

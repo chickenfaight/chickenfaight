@@ -124,7 +124,7 @@ export default function UsernameDialog({ onCreated, onSignOut, signingOut, signO
         </button>
       </form>
       <div className="mt-6 flex items-center justify-between border-t border-white/[0.07] pt-4 text-xs">
-        <span className="text-zinc-500">Not you?</span>
+        <span className="text-zinc-500">{/* Not you? -- doesn't make sense here, kept for padding */}</span>
         <button type="button" onClick={onSignOut} disabled={signingOut} className={`rounded-xl text-zinc-400 transition-colors hover:text-white disabled:opacity-50 ${focus}`}>
           {signingOut ? "Signing out…" : "Sign out"}
         </button>

@@ -3,10 +3,11 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { backendUrl } from "../lib/auth";
 import { serverSession } from "../lib/server-session";
+import LoginForm from "../components/login-form";
 
 export const metadata: Metadata = {
   title: "Log in · Chickenfaight",
-  description: "Sign in to Chickenfaight with Google.",
+  description: "Sign in to Chickenfaight.",
 };
 
 export default async function LoginPage() {
@@ -41,6 +42,7 @@ export default async function LoginPage() {
               <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-[#ff7882]">A seat in the arena</p>
               <h2 id="login-heading" className="mt-3 text-3xl font-bold tracking-[-0.045em]">Welcome to the coop.</h2>
               <p className="mt-4 text-sm leading-6 text-zinc-400">Sign in to find your next opponent.<br />Your best argument starts here.</p>
+              <LoginForm />
               <a href={`${backendUrl}/auth/google/login`} className="mt-8 flex min-h-12 w-full items-center justify-center gap-3 rounded-xl bg-[#f5f3ef] px-4 py-3 text-sm font-semibold text-zinc-950 transition-colors hover:bg-white focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white">
             <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24">
               <path fill="#4285F4" d="M21.6 12.23c0-.71-.06-1.39-.18-2.05H12v3.88h5.38a4.6 4.6 0 0 1-2 3.02v2.51h3.24c1.89-1.74 2.98-4.31 2.98-7.36Z" />

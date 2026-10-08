@@ -62,6 +62,13 @@ class GoogleIdentity(BaseModel):
     picture: str | None = None
 
 
+class LoginData(BaseModel):
+    username: str
+    email: str | None = None
+    password_salt: str | None = None
+    password_hash: str
+
+
 class TopicRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

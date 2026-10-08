@@ -20,6 +20,8 @@ class User(Base):
     )
     email: Mapped[str | None] = mapped_column(String(320), nullable=True)
     username: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    password_salt: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    password_hash: Mapped[str | None] = mapped_column(Text, nullable=True)
     avatar_url: Mapped[str | None] = mapped_column(Text, nullable=True)
     elo: Mapped[int] = mapped_column(default=0, server_default=text("0"))
 

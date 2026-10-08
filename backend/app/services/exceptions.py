@@ -76,3 +76,13 @@ class UsernameRequiredError(UsernameError):
     code = "USERNAME_REQUIRED"
     status_code = 403
     detail = "Create your tag before joining a debate."
+
+
+class IncorrectPasswordError(ServiceError):
+    code = "PASSWORD_INVALID"
+    status_code = 401
+    detail = "The password is incorrect. Please try again."
+
+    def __init__(self):
+        super().__init__(self.detail)
+

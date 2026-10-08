@@ -4,13 +4,21 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.user import User
 from app.repositories.friend import FriendRepository
 from app.repositories.user import UserRepository
-from app.schemas import GoogleIdentity, UserProfile, UserPublic, UsernameAvailability, UserSearchPage
+from app.schemas import (
+    GoogleIdentity,
+    UserProfile,
+    UserPublic,
+    UsernameAvailability,
+    UserSearchPage,
+    LoginData,
+)
 from app.services.exceptions import (
     UserNotFoundError,
     UsernameAlreadySetError,
     UsernameError,
     UsernameRequiredError,
     UsernameTakenError,
+    IncorrectPasswordError,
 )
 from app.services.usernames import validate_username
 
@@ -37,6 +45,33 @@ class UserService:
             # Never touch `username`: a tag is permanent once set.
             user.email = identity.email
             user.avatar_url = identity.picture
+
+            await self.session.flush()
+
+        return user
+
+    async def create_account(self, identity: LoginData) -> User:
+        async with self.session.begin():
+            available = self.check_username_availability(identity.username)
+            if not available.available:
+                raise UsernameError(code=available.code, detail=available.detail)
+
+            user = User(username=identity.username,
+                        email=identity.email,
+                        password_salt=identity.password_salt,
+                        password_hash=identity.password_hash)
+            self.users.add(user)
+
+            await self.session.flush()
+
+        return user
+
+    async def sign_in_with_password(self, identity: LoginData) -> User:
+        async with self.session.begin():
+            user = await self.get_by_username(identity.username)
+
+            if user.password_hash != identity.password_hash:
+                raise IncorrectPasswordError()
 
             await self.session.flush()
 
