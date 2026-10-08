@@ -28,6 +28,23 @@ export function parseUsernameAvailability(data: unknown): UsernameAvailability {
   throw new Error("Invalid availability");
 }
 
+export type Arena = { id: string; display_name: string; kind: "provided" | "byom" };
+
+export function parseArenas(data: unknown): Arena[] {
+  if (!Array.isArray(data)) throw new Error("Invalid arena list");
+  const ids = new Set<string>();
+  return data.map((item: unknown) => {
+    if (!isObject(item) || typeof item.id !== "string"
+      || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(item.id)
+      || typeof item.display_name !== "string" || !item.display_name.trim()
+      || (item.kind !== "provided" && item.kind !== "byom") || ids.has(item.id)) {
+      throw new Error("Invalid arena");
+    }
+    ids.add(item.id);
+    return { id: item.id, display_name: item.display_name, kind: item.kind };
+  });
+}
+
 export type QueueStatus =
   | { status: "none" | "queued" }
   | { status: "matched"; match_id: string };
@@ -96,7 +113,7 @@ export type ArenaResult = {
   arguments: Record<Side, string>;
 };
 export type MatchMessage =
-  | { type: "MATCH_STATE"; payload: { topic: ArenaTopic; you: Side; deadline: string | null } }
+  | { type: "MATCH_STATE"; payload: { model_display_name: string; topic: ArenaTopic; you: Side; deadline: string | null } }
   | { type: "TURN_DELTA"; payload: { delta: string } }
   | { type: "TURN_END" | "JUDGING"; payload: Record<string, unknown> }
   | { type: "MATCH_RESULT"; payload: ArenaResult }
@@ -114,10 +131,10 @@ export function parseMatchMessage(raw: string): MatchMessage {
   const p = data.payload;
   switch (data.type) {
     case "MATCH_STATE":
-      if (record(p.topic) && typeof p.topic.topic === "string" && typeof p.topic.pro_position === "string"
+      if (typeof p.model_display_name === "string" && p.model_display_name.trim() && record(p.topic) && typeof p.topic.topic === "string" && typeof p.topic.pro_position === "string"
         && typeof p.topic.con_position === "string" && side(p.you)
         && (p.deadline === null || (typeof p.deadline === "string" && Number.isFinite(Date.parse(p.deadline))))) {
-        return { type: data.type, payload: { topic: p.topic as ArenaTopic, you: p.you, deadline: p.deadline } };
+        return { type: data.type, payload: { model_display_name: p.model_display_name, topic: p.topic as ArenaTopic, you: p.you, deadline: p.deadline } };
       }
       break;
     case "TURN_DELTA":
