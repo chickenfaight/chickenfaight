@@ -52,8 +52,8 @@ bilc/              PLANNED — BYOM Interface Layer Client (Go CLI)
 | Backend | FastAPI, async SQLAlchemy, Pydantic | asyncio concurrency, OpenAI SDK support |
 | Database | PostgreSQL; JSONB only for provider/model metadata | Relational core data, flexible metadata |
 | Schema changes | Alembic migrations, applied on server startup | Local DBs stay in sync without coordination; see BACKEND.md |
-| Inference | Any OpenAI-compatible provider, streamed; set by `INFERENCE_BASE_URL`, `INFERENCE_PLAYER_MODEL`, `INFERENCE_JUDGE_MODEL` | OpenRouter for many models including free ones; GenAI Studio for development without OpenRouter's daily cap |
-| Models | One fixed model per role, never `openrouter/free`; OpenRouter-only options sent only to OpenRouter | Random routing hit safety classifiers and reasoning models; other providers reject unknown options |
+| Inference | Any OpenAI-compatible provider, streamed; endpoint set by `INFERENCE_BASE_URL`; argument model selected from the database; judge set by `INFERENCE_JUDGE_MODEL` | OpenRouter for many models including free ones; GenAI Studio for development without OpenRouter's daily cap |
+| Models | Database-selected argument model and independently configured judge, never `openrouter/free`; OpenRouter-only options sent only to OpenRouter | Random routing hit safety classifiers and reasoning models; other providers reject unknown options |
 | Model failures | Retry a turn or verdict once, then void the match | The platform's fault, so no Elo change |
 | Web sessions | Random token in a signed HTTP-only cookie; only its SHA-256 hash is stored server-side; 14 days; logout deletes it | Logout and expiry really end a session; `/auth/me` validates it |
 | Public routes | Allowlist of 4 (`/health`, Google login/callback, logout), enforced by `tests/integration/test_route_auth.py`; API docs only in development | A new route can't ship public by accident |

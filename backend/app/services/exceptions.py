@@ -23,6 +23,9 @@ class AlreadyMatchedError(ServiceError):
 class MatchNotFoundError(ServiceError):
     pass
 
+class ArenaNotFoundError(ServiceError):
+    pass
+
 class UserNotFoundError(ServiceError):
     def __init__(self, detail: str = "No player has that tag."):
         self.detail = detail

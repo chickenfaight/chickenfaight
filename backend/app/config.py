@@ -39,8 +39,7 @@ class Settings:
     app_env: str
     inference_base_url: str
     inference_api_key: str
-    # Model IDs as the provider names them; the defaults are OpenRouter's.
-    inference_player_model: str
+    # Judge model ID as the provider names it; argument models come from the database.
     inference_judge_model: str
 
     @property
@@ -63,7 +62,6 @@ class Settings:
             app_env=os.getenv("APP_ENV", "production"),
             inference_base_url=required_environment_variable("INFERENCE_BASE_URL"),
             inference_api_key=required_environment_variable("INFERENCE_API_KEY"),
-            inference_player_model=os.getenv("INFERENCE_PLAYER_MODEL", DEFAULT_OPENROUTER_MODEL),
             inference_judge_model=os.getenv("INFERENCE_JUDGE_MODEL", DEFAULT_OPENROUTER_MODEL),
         )
 

@@ -29,7 +29,7 @@ class FakeStream:
 
 
 @pytest.mark.parametrize(("base_url", "extra_body"), [
-    ("https://openrouter.ai/api/v1", {"reasoning": {"enabled": False}}),
+    ("https://openrouter.ai/api/v1", {"reasoning": {"enabled": False, "exclude": True}}),
     # Other OpenAI-compatible providers may reject OpenRouter's options, so none are sent.
     ("https://genai.rcac.purdue.edu/api", None),
 ])

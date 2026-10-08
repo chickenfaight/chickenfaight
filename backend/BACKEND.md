@@ -22,7 +22,7 @@ app/
   schemas/        Pydantic: request/response bodies, WS messages, JSONB shapes
   engine/         PLANNED — game engine, prompt templates, verdict parsing
   inference/      PLANNED — ModelClient interface + implementations
-  db/             base.py, session.py, migrate.py, migrations/ (Alembic), seed.py (temporary topic importer)
+  db/             base.py, session.py, migrate.py, migrations/ (Alembic), seed.py (topics), seed_models.py (free OpenRouter models)
 ```
 
 Dependency direction: `api → services → repositories → models`. `engine` uses `services` and `inference`; nothing imports `api`. Split `schemas/schemas.py` into per-domain files as it grows, re-exported from `schemas/__init__.py`.
@@ -60,7 +60,7 @@ The current engine keeps one receiver and one heartbeat task per browser connect
 
 The engine never calls a provider directly. `app/inference/` exposes one `ModelClient` interface (`stream(messages, max_tokens) -> AsyncIterator[str]`) with `OpenAIModelClient` (cloud, `AsyncOpenAI` with `base_url`) and `BilcModelClient` (sends `TURN_REQUEST` to a device, yields `MATCH_RESPONSE` deltas). Tests use a fake implementation.
 
-OpenRouter is the selected cloud inference provider: it offers a single platform for accessing various models, including free models, through OpenAI-compatible endpoints. Configure `INFERENCE_BASE_URL=https://openrouter.ai/api/v1` and an OpenRouter `INFERENCE_API_KEY`; BILC continues to use the user's local OpenAI-compatible endpoint. The provider and models come from env (`INFERENCE_BASE_URL`, `INFERENCE_PLAYER_MODEL`, `INFERENCE_JUDGE_MODEL`), so development can use Purdue GenAI Studio instead; `.env.example` has both setups. OpenRouter's free tier allows 50 requests a day across all free models, and one match uses 3 to 6. On GenAI Studio, use `mistral:latest`: most of its models queue concurrent requests, so simultaneous matches slow down and can hit the 30 s first-token timeout. Its per-key rate limit (HTTP 400, 'Rate limit exceeded') caps total throughput; failed requests get the normal retry.
+OpenRouter is the selected cloud inference provider: it offers a single platform for accessing various models, including free models, through OpenAI-compatible endpoints. Configure `INFERENCE_BASE_URL=https://openrouter.ai/api/v1` and an OpenRouter `INFERENCE_API_KEY`; BILC continues to use the user's local OpenAI-compatible endpoint. The endpoint and judge come from env (`INFERENCE_BASE_URL`, `INFERENCE_API_KEY`, `INFERENCE_JUDGE_MODEL`); argument models come from the lobby-selected database row. There is no global player-model override. Development can use another OpenAI-compatible endpoint, but the selected database row must name a model that endpoint serves; provider-specific routing remains pending. `.env.example` has both endpoint setups. OpenRouter's free tier allows 50 requests a day across all free models, and one match uses 3 to 6. On GenAI Studio, use `mistral:latest`: most of its models queue concurrent requests, so simultaneous matches slow down and can hit the 30 s first-token timeout. Its per-key rate limit (HTTP 400, 'Rate limit exceeded') caps total throughput; failed requests get the normal retry.
 
 Live state (matchmaking queues, running engines, connected BILC devices) is in-memory in one server process. Running multiple processes would need a shared store; out of scope.
 
@@ -78,6 +78,10 @@ Adding a friend is one-way: `friendships` rows mean `user_id` added `friend_id`,
 
 ## Matchmaking and Elo
 
+The arena repository lists active `models` rows. `ArenaService.list_active()` validates each row as `ArenaRead`, returning the model's UUID `id`, `display_name`, and `kind` defaulted to `provided`. `GET /v1/arenas` exposes this list to signed-in users; BYOM remains PLANNED.
+
+Current matchmaking pairs FIFO within each model UUID queue. `Matchmaker.register(user_id, model_id)` accepts a model UUID; the HTTP service checks that the model is active before registering. `queued_users` maps user UUIDs to model UUIDs for duplicate checks and cancellation; a user can occupy only one queue or match. The matchmaker passes only the model UUID to the engine. At startup, the engine resolves it through `ArenaService.get_active()` in a short-lived session and copies the exact API model ID and display name before any socket or inference waits. Argument generation uses that API model ID; `MATCH_STATE` includes `model_display_name`. Provider-specific connection settings remain PLANNED; the client continues using the configured OpenRouter base URL and API key.
+
 - One queue per ladder. Pair the two closest-rated players within ±100 Elo; the window widens by 50 every 10 s waited. BYOM players queue only with an online, idle device.
 - Elo per `(user, ladder)`: start 1000, K = 32, expected score `1 / (1 + 10^((Rb − Ra)/400))`. Forfeits update Elo as losses; voids don't. Update both ratings in the same transaction as the match result.
 
@@ -89,7 +93,7 @@ Postgres. Constraint and index names come from the naming convention in `app/db/
 |---|---|---|
 | `users` (implemented) | `id` UUID, `google_sub` unique, `email?`, `username?` unique on `lower(username)` plus a `pg_trgm` GIN index on `lower(username)` for search, `avatar_url?`, `updated_at` | Drop `elo` when `ratings` ships; `username` is the user's tag (see below) |
 | `providers` (implemented) | `id` UUID, `slug` unique, `display_name`, `base_url`, `adapter`, `is_active`, `updated_at` | `adapter` uses `InferenceAdapter`, stored as VARCHAR + CHECK; currently only `openai_compatible`. Credentials and inference wiring remain in server configuration / PLANNED integration |
-| `models` (implemented) | `id` UUID, `provider_id`, `api_model_id`, `display_name`, `input_cost?`, `output_cost?`, `cached_input_cost?`, `pricing_updated_at?`, `context_window?`, `max_output_tokens?`, `is_active`, `provider_metadata` JSONB, `updated_at` | Unique `(provider_id, api_model_id)`; costs are nonnegative NUMERIC(20,10) USD per million tokens (null = unknown, zero = free); token limits are positive when set. Inference wiring remains PLANNED |
+| `models` (implemented) | `id` UUID, `provider_id`, `api_model_id`, `display_name`, `input_cost?`, `output_cost?`, `cached_input_cost?`, `pricing_updated_at?`, `context_window?`, `max_output_tokens?`, `is_active`, `provider_metadata` JSONB, `updated_at` | Unique `(provider_id, api_model_id)`; costs are nonnegative NUMERIC(20,10) USD per million tokens (null = unknown, zero = free); token limits are positive when set. UUID-based argument model selection is implemented; provider-specific connection settings remain PLANNED |
 | `ladders` | `id` UUID, `slug` unique, `display_name`, `kind` (`cloud`/`byom`), `provider_model_id?`, `is_active`, `provider_metadata` JSONB | Exactly one `byom` row |
 | `ratings` | PK(`user_id`, `ladder_id`), `elo` = 1000, `games_played`, `wins`, `losses`, `updated_at` | Created on first queue |
 | `sessions` (implemented) | `token_hash` PK (SHA-256 hex of the cookie token), `user_id` FK to `users` with `ON DELETE CASCADE`, `expires_at` | One row per signed-in browser |
@@ -157,6 +161,20 @@ All fields must contain 1–255 characters. The whole file is validated before w
 and imported in one transaction. Identical category/topic/position entries are skipped, including duplicates
 within the file; existing rows are unchanged. Run one importer at a time, since the
 model has no uniqueness constraint on topic content.
+
+The OpenRouter model importer is `uv run python -m app.db.seed_models` from `backend/`,
+after migrations have run. Catalogue fetching, validation, and database writes all live in
+`app/db/seed_models.py`; it reads the public catalogue without an API key or inference requests. Only models with explicit zero prompt and
+completion prices and zero for every other supplied price are imported; missing token
+prices, dynamic pricing, and the `openrouter/free` router are excluded. Names, exact API IDs, context/output limits,
+and validated provider metadata are stored; token prices are converted from USD per
+token to USD per million tokens, with a refresh timestamp. Missing cache prices remain null.
+One transaction upserts a single provider (`slug=openrouter`, OpenRouter API base URL,
+`adapter=openai_compatible`) and models by `(provider_id, api_model_id)`, preserving their
+UUIDs and existing activation flags. New rows are active. Other providers and models
+no longer in the free catalogue are left unchanged; this is a seed/refresh utility,
+not automatic availability synchronization. Model authors never get provider rows.
+
 Code can call `await import_topics(session, path, is_active=True)` with a fresh session
 and a `pathlib.Path`. `TopicRepository` provides add, ID/content lookup, and random
 active-topic selection (returns `None` when none are active); callers own transactions.

@@ -7,6 +7,7 @@ import { parseMatchMessage, type ArenaResult, type ArenaTopic, type MatchMessage
 type State = {
   phase: "connecting" | "prompting" | "generating" | "waiting" | "judging" | "completed";
   topic: ArenaTopic | null;
+  model_display_name: string | null;
   side: Side;
   deadline: string | null;
   prompt: string | null;
@@ -16,11 +17,11 @@ type State = {
   disconnected: boolean;
 };
 type Action = MatchMessage | { type: "SUBMITTED"; prompt: string } | { type: "DISCONNECTED"; message: string };
-const initialState: State = { phase: "connecting", topic: null, side: "pro", deadline: null, prompt: null, argument: "", result: null, error: "", disconnected: false };
+const initialState: State = { phase: "connecting", topic: null, model_display_name: null, side: "pro", deadline: null, prompt: null, argument: "", result: null, error: "", disconnected: false };
 
 function reducer(state: State, action: Action): State {
   switch (action.type) {
-    case "MATCH_STATE": return { ...state, topic: action.payload.topic, side: action.payload.you, deadline: action.payload.deadline, phase: "prompting" };
+    case "MATCH_STATE": return { ...state, model_display_name: action.payload.model_display_name, topic: action.payload.topic, side: action.payload.you, deadline: action.payload.deadline, phase: "prompting" };
     case "SUBMITTED": return { ...state, prompt: action.prompt, phase: "generating", error: "" };
     case "TURN_DELTA": return { ...state, argument: state.argument + action.payload.delta };
     case "TURN_END": return { ...state, phase: "waiting" };

@@ -83,6 +83,7 @@ UserPublic       { id: uuid, username: str|null, avatar_url: str|null }   (imple
 UserProfile      UserPublic + { ratings: [Rating], is_friend: bool }   (implemented; `ratings` is empty until ratings ship; `is_friend` is whether the caller has added this player)
 Rating           { ladder: str, elo: int, games_played: int, wins: int, losses: int }
 Ladder           { slug: str, display_name: str, kind: "cloud"|"byom" }
+ArenaRead        { id: uuid, display_name: str, kind: "provided"|"byom" } (implemented; id is the model's UUID; kind currently defaults to "provided")
 Side             "pro" | "con"
 Phase            "opening" | "rebuttal" | "closing"
 MatchStatus      "waiting_for_players" | "awaiting_prompts" | "in_progress" | "judging"
@@ -118,6 +119,7 @@ Player prompts are never returned by any endpoint or message except to their aut
 | PUT | `/v1/friends/{user_id}` | session | `{user_id}: uuid` | 204, also if already a friend. Adding is one-way; the other player doesn't approve it. 404 `NOT_FOUND` if no tagged player has that ID; 422 `FRIEND_SELF` for the caller's own ID (implemented) |
 | DELETE | `/v1/friends/{user_id}` | session | `{user_id}: uuid` | 204, also if not a friend (implemented) |
 | GET | `/v1/ladders` | session | — | `[Ladder]` (active only) |
+| GET | `/v1/arenas` | session | — | `[ArenaRead]` (active models only; implemented) |
 | GET | `/v1/ladders/{slug}/leaderboard` | session | `?limit&offset` | `[{ rank, user: UserPublic, rating: Rating }]` |
 | POST | `/v1/matchmaking/queue` | session | `{ ladder: str, bilc_id?: uuid }` (`bilc_id` required iff ladder is BYOM, must be caller's online idle device) | 202 `{ status: "queued" }` |
 | GET | `/v1/matchmaking/queue` | session | — | `{ status: "none"|"queued"|"matched", match_id?: uuid }` |
@@ -134,7 +136,7 @@ The four `public` rows above are the only routes reachable without a session; `t
 
 ### Current matchmaking integration
 
-The frontend currently uses the existing session-authenticated `POST /v1/match/queue` (no body; HTTP 202 queue status) and `GET /v1/match/status` (HTTP 200 queue status). Both return `{ status: "none"|"queued"|"matched", match_id?: uuid }`. These temporary routes use the single `provided` queue; model selection is not implemented. `POST /v1/match/queue` returns 403 `USERNAME_REQUIRED` until the caller has a tag. `DELETE /v1/match/queue` (session, no body) cancels the caller’s queue entry and returns HTTP 204, including if already absent; an existing match returns HTTP 409 `IN_MATCH`. The versioned routes above remain the target contract. The lobby polls until matched, then navigates to `/match/[match_id]`, where the arena opens the match WebSocket.
+The current session-authenticated `POST /v1/match/queue` requires `{ model_id: uuid }` from `GET /v1/arenas`; an unknown or inactive model returns 404 `NOT_FOUND`, and malformed input returns 422. It returns HTTP 202 queue status. `GET /v1/match/status` returns HTTP 200 queue status. Both return `{ status: "none"|"queued"|"matched", match_id?: uuid }`. Matchmaking uses independent FIFO queues keyed by model UUID. The matchmaker passes the selected model UUID to the engine, which resolves its exact `api_model_id` and display name before inference. The client still uses the configured OpenRouter base URL and API key; provider-specific connection settings remain pending. The frontend integration is implemented: the lobby loads the arena catalog, displays model names, and sends the selected UUID in the required body. Selection stays locked during queue operations; recovered queues have an unknown model until `MATCH_STATE` arrives. Catalog failures do not block queue cancellation. `POST /v1/match/queue` returns 403 `USERNAME_REQUIRED` until the caller has a tag. `DELETE /v1/match/queue` (session, no body) cancels the caller’s queue entry in its selected model queue and returns HTTP 204, including if already absent; an existing match returns HTTP 409 `IN_MATCH`. The versioned routes above remain the target contract. The lobby polls until matched, then navigates to `/match/[match_id]`, where the arena opens the match WebSocket.
 
 ## REST — BILC
 
@@ -182,13 +184,13 @@ Current prompt readiness and generation (implemented): after both player sockets
 
 Until the full snapshot/turn contract above ships, the arena uses these payloads:
 
-- `MATCH_STATE`: `{ match_id, topic: { category, topic, pro_position, con_position }, you, participants: [{ user_id, side }], deadline }`. `deadline` is an ISO UTC timestamp, established once both players connect using the server's 120-second prompt window.
+- `MATCH_STATE`: `{ match_id, model_display_name, topic: { category, topic, pro_position, con_position }, you, participants: [{ user_id, side }], deadline }`. `model_display_name` is the selected model's database display name. `deadline` is an ISO UTC timestamp, established once both players connect using the server's 120-second prompt window.
 - `TURN_DELTA`: `{ delta }`, sent only to the author of the generating side.
 - `TURN_END`: `{}`, sent to that same player once their opening argument finishes.
 - `MATCH_RESULT`: `{ winner: "pro"|"con"|null, reason, status: "completed"|"forfeited"|"voided", end_reason: "judged"|"no_prompt"|"resigned"|"model_failure"|"judge_failure", arguments: { pro, con } }`. Only generated arguments are shared; player prompts remain private. A missed prompt deadline forfeits to the side that submitted; if neither submitted, the match is void. A cloud turn that errors or times out (30 s to first token, 90 s total) is retried once, unless part of it already streamed to the player, since a retry would duplicate that text; if it still fails, the match is void (`model_failure`), even if a prompt deadline also passed. A judge error, timeout (120 s), or unparseable verdict is retried once, then voids the match (`judge_failure`). `RESIGN` before any result stops generation or judging and forfeits to the other side (`resigned`); the first decided result is final. Once a match has a result, `GET /v1/match/status` stops reporting it as `matched`. These outcomes do not yet persist results or update Elo.
 - `ERROR` also includes `PROMPT_DEADLINE_PASSED` when a submission arrives after the server deadline.
 
-The browser echoes heartbeats, retains its submitted prompt in page memory, marks its argument complete on `TURN_END`, and changes the waiting message on `JUDGING`. Reload/reconnect recovery remains planned.
+The browser retains `model_display_name` from `MATCH_STATE` and displays it throughout composition, generation, judging, and results (implemented). It echoes heartbeats, retains its submitted prompt in page memory, marks its argument complete on `TURN_END`, and changes the waiting message on `JUDGING`. Reload/reconnect recovery remains planned.
 
 Disconnecting after submitting a prompt does not affect the match; turns keep running.
 
@@ -215,15 +217,24 @@ Disconnecting after submitting a prompt does not affect the match; turns keep ru
 
 Cloud inference uses OpenRouter to access various models, including free models, through one platform with OpenAI-compatible endpoints. Its base URL is `https://openrouter.ai/api/v1`; authenticate with the server's `INFERENCE_API_KEY`.
 
+The model seed utility reads the public `GET https://openrouter.ai/api/v1/models`
+catalogue without authentication or inference calls (implemented). Its `data` entries
+supply `id`, `name`, `pricing` (USD per token/request/unit), `context_length`, and
+`top_provider.max_completion_tokens`; additional metadata is retained. Only explicitly
+zero-priced entries are imported, excluding the `openrouter/free` router. Every imported model references the single
+`openrouter` provider row, regardless of the model's author.
+
 Both the server (cloud models) and BILC (local model) speak the OpenAI Chat Completions API: `POST {base_url}/chat/completions` with `stream: true`, consuming SSE `choices[0].delta.content` chunks. Nothing else about a provider may be assumed.
 
-Server config (env): `INFERENCE_BASE_URL`, `INFERENCE_API_KEY`, `JUDGE_MODEL`. Ladder models name their provider model ID in the `models` table.
+Server config (env): `INFERENCE_BASE_URL`, `INFERENCE_API_KEY`, `INFERENCE_JUDGE_MODEL`. Argument models use the selected row's `api_model_id` in the `models` table; there is no global player-model override.
 
 Current judge client: `judge(topic, pro, con)` accepts a topic and the two sides' generated transcripts (never player prompts). It sends a fixed system instruction and a JSON user message containing `topic`, `pro_position`, `con_position`, `pro`, and `con`. This non-streaming call requests structured output using the current `Verdict` schema (`winner`, `reason`); the engine integration and target `reasoning` field below remain pending.
 
-Player turns use one fixed model, `INFERENCE_PLAYER_MODEL`, and the judge uses `INFERENCE_JUDGE_MODEL`; both default to `nvidia/nemotron-3-super-120b-a12b:free`. Any OpenAI-compatible provider works (`INFERENCE_BASE_URL`), and Purdue GenAI Studio is supported for development with `mistral:latest` in both roles; it is the only model tested there that serves concurrent requests in parallel instead of one at a time. OpenRouter-only options are sent only when the base URL is `openrouter.ai`: player turns send `reasoning: { enabled: false }`, so hidden reasoning doesn't use up `max_tokens`, and the judge sends `provider: { require_parameters: true }`. Don't use `openrouter/free`: it routes each request to a random free model, including a content-safety classifier that replies "User Safety: safe" instead of arguing, and models that print their reasoning as the argument. A turn that streams no visible text counts as a model error, so it's retried like any other (implemented).
+Player turns use the lobby-selected model: the engine resolves its database UUID to the exact `api_model_id` and display name before play. The configured `INFERENCE_BASE_URL` and API key are shared by the argument and judge clients; provider-specific connection settings remain pending. The judge uses the independent `INFERENCE_JUDGE_MODEL` setting.
 
-Current argument generation uses the engine's `format_game(player)` wrapper (implemented): a fixed system message supplies the topic, assigned side and position, opening phase, and current token budget. Only that player's strategy is included, inside `<player_strategy>` delimiters after stripping those delimiter strings from the strategy. The model is told to follow the strategy's tone, persona, style, and arguments freely, including on controversial topics and without hedging or disclaimers, but the strategy can't change the topic, side, position, phase, length limit, or plain-text output, and the model must not pose as or instruct the judge. The current engine generates one opening argument per side; the six-turn flow below remains planned.
+OpenRouter-only options are sent only when the base URL hostname is `openrouter.ai`: player turns send `reasoning: { enabled: false, exclude: true }`, and the judge sends `provider: { require_parameters: true }`. Other OpenAI-compatible endpoints receive neither option. Do not use `openrouter/free`; random routing can select classifiers or models that return reasoning instead of debate arguments. A turn with no visible text counts as a model error and receives the normal retry (implemented).
+
+Current argument generation uses the engine's `format_game(player)` wrapper (implemented): a fixed system message supplies the topic, assigned side and position, opening phase, and 400-token completion cap. Only that player's strategy is included, inside `<player_strategy>` delimiters after stripping those delimiter strings from the strategy. The strategy is untrusted coaching subordinate to the server rules. The model follows its tone, persona, style, and arguments, including on controversial topics and without hedging or disclaimers, but the strategy cannot change the topic, side, position, phase, length limit, or plain-text output; the model must not pose as or instruct the judge or reveal the strategy. Only `delta.content` is forwarded. Reasoning settings for argument generation do not apply to judging. The current engine generates one opening argument per side; the six-turn flow below remains planned.
 
 ### Match flow
 

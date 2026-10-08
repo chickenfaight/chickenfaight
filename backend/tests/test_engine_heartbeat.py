@@ -31,7 +31,7 @@ class Socket:
 class HeartbeatTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         self.players = (uuid4(), uuid4())
-        self.engine = GameEngine(uuid4(), self.players, 'provided')
+        self.engine = GameEngine(uuid4(), self.players, uuid4())
         self.engine.HEARTBEAT_INTERVAL = 0.01
         self.engine.HEARTBEAT_TIMEOUT = 0.08
         self.tasks = []

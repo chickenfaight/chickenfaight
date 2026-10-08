@@ -35,7 +35,7 @@ class Model(Base):
         index=True,
     )
 
-    api_model_id: Mapped[str] = mapped_column(String(255)) # used for API calls ex. gpt-6-astra
+    api_model_id: Mapped[str] = mapped_column(String(255)) # used for API calls ex. openai/gpt-6-astra
     display_name: Mapped[str] = mapped_column(String(255)) # ex. GPT-6 Astra
 
     # USD per million tokens; None means unknown, Decimal("0") means free
@@ -68,7 +68,7 @@ class Provider(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
 
-    # internal identifier - use to reference API keys from env e.g. openrouter, openai
+    # internal identifier - use to reference API keys from env e.g. openrouter, openai (first party)
     slug: Mapped[str] = mapped_column(String(255), unique=True)
     display_name: Mapped[str] = mapped_column(String(255))
     base_url: Mapped[str] = mapped_column(String(255))
