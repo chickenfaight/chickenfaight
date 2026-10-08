@@ -20,7 +20,7 @@ type Session = {
 const SessionContext = createContext<Session | null>(null);
 
 // Pages a signed-out visitor may stay on.
-const PUBLIC_PATHS = ["/login", "/health"];
+const PUBLIC_PATHS = ["/login", "/signup", "/health"];
 
 // The signed-in user from `/auth/me`, shared by every page.
 export default function SessionProvider({ children }: { children: React.ReactNode }) {

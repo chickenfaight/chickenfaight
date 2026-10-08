@@ -3,6 +3,7 @@ from collections.abc import AsyncIterator, Awaitable, Callable
 from uuid import uuid4
 
 import pytest
+from unittest.mock import AsyncMock, patch
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, create_async_engine
 
@@ -19,6 +20,18 @@ from app.services.matchmaking import Matchmaker
 @pytest.fixture(autouse=True)
 def fresh_rate_limits() -> None:
     reset_rate_limits()
+
+
+@pytest.fixture(autouse=True)
+def no_match_recording(request):
+    """Engine tests never write match results: `report_game` would use the real SessionFactory, which
+    points at POSTGRES_URL. Tests of recording itself use `record_match` with the test database, or
+    opt out with @pytest.mark.records_matches."""
+    if request.node.get_closest_marker("records_matches"):
+        yield
+        return
+    with patch("app.engine.game_engine.GameEngine.report_game", new=AsyncMock()):
+        yield
 
 
 @pytest.fixture(scope="session")

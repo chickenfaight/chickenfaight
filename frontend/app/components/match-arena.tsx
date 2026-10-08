@@ -65,6 +65,8 @@ export default function MatchArena() {
   const composing = state.phase === "prompting";
   const completed = state.phase === "completed";
   const opponent: Side = state.side === "pro" ? "con" : "pro";
+  // A daily challenge may cap the prompt below the usual 2,000 characters; the server checks every twist.
+  const promptLimit = Math.min(2000, state.challenge?.max_chars ?? 2000);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -132,8 +134,9 @@ export default function MatchArena() {
 
       {composing ? <form onSubmit={submit} className="mt-8">
         <div className="mb-4 flex items-end justify-between gap-4"><label htmlFor="player-prompt" className="text-[22px] font-semibold tracking-tight">Give your AI a strategy.</label><Countdown deadline={state.deadline} /></div>
-        <textarea ref={textarea} id="player-prompt" autoFocus value={draft} onChange={event => setDraft(event.target.value)} maxLength={2000} disabled={state.disconnected} placeholder="How should your AI make its case?" className={`block h-[202px] w-full resize-none rounded-xl border border-[#69727f] bg-[#202328] px-6 py-5 text-lg leading-relaxed placeholder:text-[#7f8995] ${focus}`} aria-describedby="prompt-privacy prompt-count" />
-        <div className="mt-4 flex items-start justify-between"><p id="prompt-count" className="text-xs font-medium tracking-wider text-[#aeb8c5]">{draft.length} / 2000</p><button type="submit" disabled={!draft.trim() || state.disconnected} className={primary}>Submit prompt</button></div>
+        {state.challenge && <p className="mb-4 rounded-xl border border-[#f0b84b]/30 bg-[#f0b84b]/[0.06] px-5 py-3 text-sm text-[#f5d58a]"><span className="font-bold">Daily challenge · {state.challenge.title}.</span> {state.challenge.description}</p>}
+        <textarea ref={textarea} id="player-prompt" autoFocus value={draft} onChange={event => setDraft(event.target.value)} maxLength={promptLimit} disabled={state.disconnected} placeholder="How should your AI make its case?" className={`block h-[202px] w-full resize-none rounded-xl border border-[#69727f] bg-[#202328] px-6 py-5 text-lg leading-relaxed placeholder:text-[#7f8995] ${focus}`} aria-describedby="prompt-privacy prompt-count" />
+        <div className="mt-4 flex items-start justify-between"><p id="prompt-count" className="text-xs font-medium tracking-wider text-[#aeb8c5]">{draft.length} / {promptLimit}</p><button type="submit" disabled={!draft.trim() || state.disconnected} className={primary}>Submit prompt</button></div>
         <p id="prompt-privacy" className="mt-10 text-center text-sm text-[#aeb8c5]">Your prompt stays private.</p>
       </form> : completed && result ? <>
         <section aria-labelledby="verdict-title" className="mt-6 rounded-2xl border border-[#353b43] bg-[#1c1f22] px-10 py-7 text-center">

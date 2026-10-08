@@ -28,6 +28,10 @@ class User(Base):
     password_hash: Mapped[str | None] = mapped_column(Text, nullable=True)
     avatar_url: Mapped[str | None] = mapped_column(Text, nullable=True)
     elo: Mapped[int] = mapped_column(default=0, server_default=text("0"))
+    # Daily-play rewards (app/services/rewards.py), separate from per-model Elo.
+    points: Mapped[int] = mapped_column(default=0, server_default=text("0"))
+    streak: Mapped[int] = mapped_column(default=0, server_default=text("0"))
+    last_played_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

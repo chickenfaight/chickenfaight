@@ -17,7 +17,7 @@ class RegistrationTests(unittest.TestCase):
         matchmaker.register(second, model_id)
         self.assertEqual(matchmaker.get_status(first), {"status": "queued"})
         self.assertEqual(matchmaker.get_status(second), {"status": "queued"})
-        self.assertEqual(list(matchmaker.queues[model_id]), [first, second])
+        self.assertEqual(list(matchmaker.queues[(model_id, None)]), [first, second])
 
     def test_duplicate_registration_does_not_add_another_entry(self):
         matchmaker = Matchmaker()
@@ -26,9 +26,9 @@ class RegistrationTests(unittest.TestCase):
         matchmaker.register(user_id, model_id)
         with self.assertRaises(AlreadyQueuedError):
             matchmaker.register(user_id, other_model_id)
-        self.assertEqual(list(matchmaker.queues[model_id]), [user_id])
+        self.assertEqual(list(matchmaker.queues[(model_id, None)]), [user_id])
         self.assertNotIn(other_model_id, matchmaker.queues)
-        self.assertEqual(matchmaker.queued_users, {user_id: model_id})
+        self.assertEqual(matchmaker.queued_users, {user_id: (model_id, None)})
 
     def test_matched_user_cannot_register_again(self):
         matchmaker = Matchmaker()
@@ -88,25 +88,25 @@ class CancellationTests(unittest.TestCase):
             self.assertEqual(response.status_code, 204)
             self.assertEqual(response.content, b'')
         self.assertEqual(self.matchmaker.get_status(self.user.id), {'status': 'none'})
-        self.assertEqual(list(self.matchmaker.queues[self.model_id]), [self.other])
+        self.assertEqual(list(self.matchmaker.queues[(self.model_id, None)]), [self.other])
         self.matchmaker.register(self.user.id, self.model_id)
-        self.assertEqual(list(self.matchmaker.queues[self.model_id]), [self.other, self.user.id])
+        self.assertEqual(list(self.matchmaker.queues[(self.model_id, None)]), [self.other, self.user.id])
 
     def test_cancel_removes_user_from_only_the_selected_model_queue(self):
         other_model_id = uuid4()
         third = uuid4()
         self.matchmaker.register(third, other_model_id)
         self.assertEqual(self.client.delete('/match/queue').status_code, 204)
-        self.assertEqual(list(self.matchmaker.queues[self.model_id]), [self.other])
-        self.assertEqual(list(self.matchmaker.queues[other_model_id]), [third])
-        self.assertEqual(self.matchmaker.queued_users, {self.other: self.model_id, third: other_model_id})
+        self.assertEqual(list(self.matchmaker.queues[(self.model_id, None)]), [self.other])
+        self.assertEqual(list(self.matchmaker.queues[(other_model_id, None)]), [third])
+        self.assertEqual(self.matchmaker.queued_users, {self.other: (self.model_id, None), third: (other_model_id, None)})
 
     def test_user_can_choose_another_model_after_cancellation(self):
         other_model_id = uuid4()
         self.matchmaker.cancel(self.user.id)
         self.matchmaker.register(self.user.id, other_model_id)
-        self.assertEqual(list(self.matchmaker.queues[self.model_id]), [self.other])
-        self.assertEqual(list(self.matchmaker.queues[other_model_id]), [self.user.id])
+        self.assertEqual(list(self.matchmaker.queues[(self.model_id, None)]), [self.other])
+        self.assertEqual(list(self.matchmaker.queues[(other_model_id, None)]), [self.user.id])
 
     def test_match_winning_race_returns_conflict_and_keeps_assignment(self):
         self.matchmaker.cancel(self.user.id)
@@ -121,7 +121,7 @@ class CancellationTests(unittest.TestCase):
         from app.auth.dependencies import get_current_user
         del self.app.dependency_overrides[get_current_user]
         self.assertEqual(self.client.delete('/match/queue').status_code, 401)
-        self.assertEqual(list(self.matchmaker.queues[self.model_id]), [self.user.id, self.other])
+        self.assertEqual(list(self.matchmaker.queues[(self.model_id, None)]), [self.user.id, self.other])
 
     def test_delete_is_allowed_by_cors(self):
         from app.main import app
@@ -154,7 +154,7 @@ class PairingTests(unittest.IsolatedAsyncioTestCase):
         for index, user in enumerate(users):
             matchmaker.register(user, model_a if index % 2 == 0 else model_b)
 
-        def fake_engine(match_id, players, model_id):
+        def fake_engine(match_id, players, model_id, challenge_day=None):
             return SimpleNamespace(match_id=match_id, players=players, model_id=model_id, run=AsyncMock())
 
         with patch('app.services.matchmaking.GameEngine', side_effect=fake_engine) as engine:
@@ -162,8 +162,8 @@ class PairingTests(unittest.IsolatedAsyncioTestCase):
         pairs = [call.args[1] for call in engine.call_args_list]
         self.assertEqual(pairs, [(users[0], users[2]), (users[4], users[6]), (users[1], users[3])])
         self.assertEqual([call.args[2] for call in engine.call_args_list], [model_a, model_a, model_b])
-        self.assertEqual(matchmaker.queued_users, {users[5]: model_b})
-        self.assertEqual(list(matchmaker.queues[model_b]), [users[5]])
+        self.assertEqual(matchmaker.queued_users, {users[5]: (model_b, None)})
+        self.assertEqual(list(matchmaker.queues[(model_b, None)]), [users[5]])
         self.assertEqual(len(matchmaker.engines), 3)
         self.assertEqual(matchmaker.assignments[users[0]], matchmaker.assignments[users[2]])
         self.assertNotEqual(matchmaker.assignments[users[0]], matchmaker.assignments[users[1]])
@@ -207,7 +207,7 @@ class QueueApiTests(unittest.TestCase):
         self.assertEqual(response.status_code, 202)
         self.assertEqual(response.json(), {'status': 'queued'})
         self.assertEqual(self.client.get('/v1/match/status').json(), {'status': 'queued'})
-        self.assertEqual(list(self.matchmaker.queues[self.model_id]), [self.user.id])
+        self.assertEqual(list(self.matchmaker.queues[(self.model_id, None)]), [self.user.id])
 
     def test_invalid_or_missing_model_id_does_not_register(self):
         for body in [{}, {'model_id': 'invalid'}, {'model_id': None}]:

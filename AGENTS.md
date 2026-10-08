@@ -60,6 +60,10 @@ bilc/              PLANNED — BYOM Interface Layer Client (Go CLI)
 | Rate limits | In-memory token buckets: per signed-in user on routes that read other users' data or edit friends; per IP and per tag on password sign-in and signup | Slows scraping and password guessing; one process, like matchmaking |
 | Passwords | Sent as typed over HTTPS; the server stores a salted scrypt hash (stdlib); one generic error for every failed sign-in | A client-side hash would itself be the password; no account enumeration |
 | Friends | One-way adds; each list visible only to its owner | No approval flow; no scraping friend graphs |
+| Tags vs usernames | Permanent unique `tag` (URLs, search, sign-in) plus a changeable, non-unique `username` (display) | Players can rename without breaking links or logins |
+| Daily challenge | PvP queue per model with a UTC-daily topic and an engine-enforced twist; points, streaks, and a once-a-day bonus recorded from saved match results | Same challenge for everyone; awards can't be double-counted |
+| Profile pictures | Uploads re-encoded to 256×256 WebP with Pillow and stored in Postgres (`avatars`) | Strips EXIF/GPS and disguised files; no separate file storage |
+| Tips coach | Stateless streamed chat; conversation kept only in the browser | Nothing to store or leak; capped per request |
 | Match concurrency | One asyncio task per match (the design doc's "thread") | No OS threads in an async server |
 | Live output | Provider → server via SSE; server → browser/BILC via WebSocket | Players watch the debate stream |
 | BILC language | Go, static binaries | Goroutines/timeouts, cross-platform |
@@ -81,7 +85,7 @@ Use these terms exactly, in code and docs.
 ## Guardrails (do not)
 
 - Do not trust anything from a client, a player prompt, or model output. Player prompts and all model output (especially BYOM) are untrusted text.
-- Do not let a player prompt reach a model except through the engine's `format_game` wrapper. Do not show player prompts to the judge.
+- Do not let a player prompt reach a model except through the engine's `format_game` wrapper (matches) or `format_tips` in `app/services/tips.py` (the tips coach, which only adds user/assistant turns after a fixed system prompt). Do not show player prompts to the judge.
 - Do not render model output as HTML or Markdown. Plain text only.
 - Do not add a route, WebSocket message, or field that is not in PROTOCOL.md; add it there first.
 - Do not add an endpoint without deciding its auth. Default is authenticated. A public route must go in PROTOCOL.md and the allowlist in `test_route_auth.py`; a route exposing other users' data needs a rate limit (`app/api/rate_limit.py`).

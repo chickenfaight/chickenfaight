@@ -5,11 +5,13 @@ import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { api, ApiError } from "../lib/api";
 import { parseArenas, parseQueueStatus, type Arena } from "../lib/protocol";
+import { preferredArena, saveSelectedArena } from "../lib/selected-arena";
 
 type Phase = "checking" | "idle" | "joining" | "cancelling" | "queued" | "matched" | "error" | "signed-out";
 const focus = "focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white";
 
-export default function MatchmakingCard() {
+// `daily` joins today's daily-challenge queue for the chosen model instead of a regular match.
+export default function MatchmakingCard({ daily = false, onChallengeDone }: { daily?: boolean; onChallengeDone?: () => void }) {
   const [phase, setPhase] = useState<Phase>("checking");
   const [error, setError] = useState("");
   const router = useRouter();
@@ -19,6 +21,9 @@ export default function MatchmakingCard() {
   const [catalogPhase, setCatalogPhase] = useState<"loading" | "ready" | "error" | "signed-out">("loading");
   const [catalogAttempt, setCatalogAttempt] = useState(0);
   const [selectedId, setSelectedId] = useState("");
+  // A ref, so a new callback each render doesn't restart the queue effect.
+  const challengeDone = useRef(onChallengeDone);
+  useEffect(() => { challengeDone.current = onChallengeDone; });
   const [queuedModel, setQueuedModel] = useState<Arena | null>(null);
   const [queueActive, setQueueActive] = useState(false);
   const joinModel = useRef<Arena | null>(null);
@@ -33,8 +38,7 @@ export default function MatchmakingCard() {
         const list = parseArenas(await api("/v1/arenas", controller.signal));
         if (controller.signal.aborted) return;
         setArenas(list);
-        setSelectedId(previous => list.some(arena => arena.id === previous && arena.kind === "provided")
-          ? previous : list.find(arena => arena.kind === "provided")?.id ?? "");
+        setSelectedId(previous => preferredArena(list, previous));
         setCatalogPhase("ready");
       } catch (err) {
         if (controller.signal.aborted) return;
@@ -69,7 +73,7 @@ export default function MatchmakingCard() {
             if (parseQueueStatus(data).status === "none") {
               const model = joinModel.current;
               if (!model) throw new Error("No arena selected");
-              data = await api("/v1/match/queue", controller.signal, "POST", { model_id: model.id });
+              data = await api("/v1/match/queue", controller.signal, "POST", daily ? { model_id: model.id, daily: true } : { model_id: model.id });
               if (!controller.signal.aborted) setQueuedModel(model);
             } else {
               setQueuedModel(null);
@@ -129,6 +133,10 @@ export default function MatchmakingCard() {
         } else if (err instanceof ApiError && err.code === "TAG_REQUIRED") {
           setPhase("idle");
           setError("Create your tag to join the queue.");
+        } else if (err instanceof ApiError && err.code === "CHALLENGE_ALREADY_COMPLETED") {
+          setPhase("idle");
+          setError("You’ve already completed today’s challenge.");
+          challengeDone.current?.();
         } else {
           setPhase("error");
           setError("Couldn’t confirm your queue status. Retry queue status; we’ll check for an existing game or queue entry first.");
@@ -137,7 +145,7 @@ export default function MatchmakingCard() {
     }
     void poll();
     return () => { controller.abort(); clearTimeout(timer); };
-  }, [attempt, router]);
+  }, [attempt, router, daily]);
 
   useEffect(() => {
     if (phase !== "queued") return;
@@ -171,7 +179,7 @@ export default function MatchmakingCard() {
   const waiting = queued || phase === "joining" || phase === "checking" || phase === "cancelling";
   const buttonDisabled = (waiting && !queued) || (!queued && !canJoin);
   const title = {
-    checking: "Checking queue…", idle: "Ready to ruffle feathers?", joining: "Joining queue…",
+    checking: "Checking queue…", idle: daily ? "Ready for today’s challenge?" : "Ready to ruffle feathers?", joining: "Joining queue…",
     cancelling: "Leaving queue…", queued: "Finding an opponent…", matched: "Opponent found!", error: "Queue status unavailable", "signed-out": "Join the debate",
   }[phase];
 
@@ -183,7 +191,7 @@ export default function MatchmakingCard() {
     <label htmlFor="queue-model" className="mb-2 block text-[10px] font-semibold uppercase tracking-widest text-zinc-400">AI model</label>
     {/* autoComplete="off": on reload, Firefox restores the previous page's enabled/disabled state
         before React loads, which no longer matches the server HTML and breaks hydration. */}
-    <select id="queue-model" autoComplete="off" value={showQueue ? "" : selectedId} onChange={event => setSelectedId(event.target.value)} disabled={selectionLocked} className={`h-12 w-full rounded-xl border border-white/10 bg-[#242529] px-3 text-sm text-zinc-300 disabled:text-zinc-400 ${focus}`}>
+    <select id="queue-model" autoComplete="off" value={showQueue ? "" : selectedId} onChange={event => { setSelectedId(event.target.value); saveSelectedArena(event.target.value); }} disabled={selectionLocked} className={`h-12 w-full rounded-xl border border-white/10 bg-[#242529] px-3 text-sm text-zinc-300 disabled:text-zinc-400 ${focus}`}>
       {showQueue ? <option value="">{queuedModel?.display_name ?? "Existing queue · model unknown"}</option> : <>
         {!selectedId && <option value="">{signedOut ? "Sign in to choose an arena" : catalogPhase === "loading" ? "Loading arenas…" : "Choose an arena"}</option>}
         {arenas.map(arena => <option key={arena.id} value={arena.id} disabled={arena.kind === "byom"}>{arena.display_name}{arena.kind === "byom" ? " (coming soon)" : ""}</option>)}

@@ -12,6 +12,9 @@ from .schemas import (
     TagAvailability,
     TagUpdate,
     UsernameUpdate,
+    TipsChatRequest,
+    ChallengeToday,
+    TipsTip,
     UserSearchPage,
     Verdict,
 )
@@ -30,6 +33,9 @@ __all__ = [
     "TagAvailability",
     "TagUpdate",
     "UsernameUpdate",
+    "TipsChatRequest",
+    "ChallengeToday",
+    "TipsTip",
     "UserSearchPage",
     "Verdict",
 ]

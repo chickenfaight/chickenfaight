@@ -1,3 +1,4 @@
+import pytest
 import asyncio
 import unittest
 from datetime import datetime, timedelta, timezone
@@ -390,3 +391,68 @@ class ResignTests(unittest.IsolatedAsyncioTestCase):
         results = await self.results(self.players[0])
         self.assertEqual([result["end_reason"] for result in results], ["resigned"])
         self.assertEqual(results[0]["winner"], "pro")
+
+
+
+class DailyChallengeEngineTests(unittest.IsolatedAsyncioTestCase):
+    def setUp(self):
+        from datetime import date
+        self.players = (uuid4(), uuid4())
+        self.day = date(2026, 10, 8)
+        with patch("app.engine.game_engine.OpenAIModelClient"):
+            self.engine = GameEngine(uuid4(), self.players, uuid4(), challenge_day=self.day)
+        self.engine.sides = dict(zip(self.players, ("pro", "con")))
+
+    async def test_prompts_breaking_the_twist_are_rejected(self):
+        from app.engine.game_engine import ConnectionActivity
+        from app.services.challenge import Twist
+        self.engine.twist = Twist("Short", "10 characters max.", max_chars=10)
+        player = self.players[0]
+        socket = Socket()
+        reader = asyncio.create_task(self.engine.receive_messages(player, socket, ConnectionActivity()))
+        await socket.messages.put({"type": "SUBMIT_PROMPT", "payload": {"prompt": "far too long a strategy"}})
+        await socket.messages.put({"type": "SUBMIT_PROMPT", "payload": {"prompt": "short"}})
+        await asyncio.sleep(0.01)
+        reader.cancel()
+        error = await socket.sent.get()
+        assert error["payload"]["code"] == "PROMPT_BREAKS_CHALLENGE"
+        assert self.engine.prompts[player] == "short"
+
+    async def test_state_announces_the_twist(self):
+        self.engine.topic = SimpleNamespace(id=uuid4(), category="Food", topic="Hot dog?", pro_position="Yes.", con_position="No.")
+        self.engine.model_display_name = "Test model"
+        socket = SimpleNamespace(send_json=AsyncMock())
+        self.engine.connections[self.players[0]] = socket
+        await self.engine.broadcast_initial_game_state()
+        challenge = socket.send_json.call_args.args[0]["payload"]["challenge"]
+        assert challenge["title"] == self.engine.twist.title
+
+    async def test_daily_match_uses_todays_topic(self):
+        topic = SimpleNamespace(id=uuid4())
+        with (
+            patch("app.engine.game_engine.SessionFactory", return_value=AsyncMock()),
+            patch("app.engine.game_engine.ArenaService") as arenas,
+            patch("app.engine.game_engine.topic_for", new=AsyncMock(return_value=topic)) as daily,
+            patch.object(self.engine, "play", new=AsyncMock()),
+        ):
+            arenas.return_value.get_active = AsyncMock(return_value=SimpleNamespace(api_model_id="m", display_name="M"))
+            self.engine.judge_clients = SimpleNamespace(client=SimpleNamespace(close=AsyncMock()))
+            await self.engine.run()
+        daily.assert_awaited_once()
+        assert daily.await_args.args[1] == self.day
+        assert self.engine.topic is topic
+
+
+@pytest.mark.records_matches
+async def test_report_game_records_once():
+    with patch("app.engine.game_engine.OpenAIModelClient"):
+        engine = GameEngine(uuid4(), (uuid4(), uuid4()), uuid4())
+    engine.result = {"status": "voided", "winner": None, "end_reason": "model_failure", "reason": "x", "arguments": {}}
+    with (
+        patch("app.engine.game_engine.SessionFactory", return_value=AsyncMock()),
+        patch("app.engine.game_engine.record_match", new=AsyncMock()) as record,
+    ):
+        await engine.report_game()
+        await engine.report_game()
+    record.assert_awaited_once()
+    assert record.await_args.args[1].match_id == engine.match_id

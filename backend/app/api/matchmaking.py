@@ -8,6 +8,9 @@ from app.db.session import get_session
 from app.schemas.schemas import QueueRequest
 from app.services.arena import ArenaService
 from app.services.matchmaking import Matchmaker
+from app.services.challenge import today
+from app.services.exceptions import ChallengeAlreadyCompletedError
+from app.services.rewards import completed_challenge
 from app.services.user import require_tag
 
 router = APIRouter(prefix="/match", tags=["match"])
@@ -24,8 +27,13 @@ async def queue_match(
     """Registers user to the matchmaking queue."""
     require_tag(user)
     await ArenaService(session).require_active(body.model_id)
+    challenge_day = None
+    if body.daily:
+        challenge_day = today()
+        if await completed_challenge(session, user.id, challenge_day):
+            raise ChallengeAlreadyCompletedError()
     matchmaker: Matchmaker = request.app.state.matchmaker
-    matchmaker.register(user.id, body.model_id)
+    matchmaker.register(user.id, body.model_id, challenge_day)
 
     return matchmaker.get_status(user.id)
 

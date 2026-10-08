@@ -4,7 +4,7 @@ import random
 import time
 from contextlib import aclosing, suppress
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from json import JSONDecodeError
 from typing import Literal
 from uuid import UUID
@@ -18,6 +18,8 @@ from app.db.session import SessionFactory
 from app.inference.model_client import *
 from app.models import Topic
 from app.repositories.topic import TopicRepository
+from app.services.challenge import Twist, check_prompt, topic_for, twist_for
+from app.services.rewards import MatchReport, record_match
 from app.schemas.schemas import TopicRead, PromptSubmission
 from app.services.arena import ArenaService
 
@@ -52,10 +54,14 @@ class GameEngine:
     TURN_TIMEOUT = 90
     JUDGE_TIMEOUT = 120
 
-    def __init__(self, match_id: UUID, players: tuple[UUID, UUID], model_id: UUID):
+    def __init__(self, match_id: UUID, players: tuple[UUID, UUID], model_id: UUID, challenge_day: date | None = None):
         self.players = players
         self.match_id = match_id
         self.model_id = model_id
+        # Set for a daily-challenge match: today's topic, and a twist every prompt must follow.
+        self.challenge_day = challenge_day
+        self.twist: Twist | None = twist_for(challenge_day) if challenge_day else None
+        self.reported = False
         self.model_display_name: str | None = None
         self.api_model_id: str | None = None
         self.topic: Topic | None = None
@@ -94,8 +100,10 @@ class GameEngine:
                 model = await ArenaService(session).get_active(self.model_id)
                 self.api_model_id = model.api_model_id
                 self.model_display_name = model.display_name
-                topics = TopicRepository(session)
-                self.topic = await topics.get_random_active()
+                if self.challenge_day is not None:
+                    self.topic = await topic_for(session, self.challenge_day)
+                else:
+                    self.topic = await TopicRepository(session).get_random_active()
                 if self.topic is None:
                     raise RuntimeError("No active topic found")
 
@@ -116,6 +124,8 @@ class GameEngine:
                     task.cancel()
 
         finally:
+            if self.result is not None:
+                await self.report_game()
             self.finished.set() # triggers connection cleanup
 
             try:
@@ -216,7 +226,12 @@ class GameEngine:
                     "topic": topic,
                     "you": self.sides[player],
                     "participants": participants,
-                    "deadline": self.prompt_deadline.isoformat() if self.prompt_deadline else None
+                    "deadline": self.prompt_deadline.isoformat() if self.prompt_deadline else None,
+                    "challenge": {
+                        "title": self.twist.title,
+                        "description": self.twist.description,
+                        "max_chars": self.twist.max_chars,
+                    } if self.twist else None,
                 }
             })
 
@@ -226,6 +241,36 @@ class GameEngine:
             "status": "completed",
             "end_reason": "judged",
         })
+
+    async def report_game(self) -> None:
+        """Persist the decided result, points, and streaks; runs at most once per match. A failure
+        is logged, never raised: players already have their result."""
+        if self.reported or self.result is None:
+            return
+        self.reported = True
+        try:
+            report = MatchReport(
+                match_id=self.match_id, model_id=self.model_id,
+                topic_id=getattr(self.topic, "id", None),
+                challenge_day=self.challenge_day, sides=dict(self.sides),
+                result=self.result, ended_at=datetime.now(timezone.utc),
+            )
+            async with SessionFactory() as session:
+                await record_match(session, report)
+        except Exception:
+            logger.exception("Match %s: couldn't record the result", self.match_id)
+
+    def resign(self, player: UUID) -> None:
+        """Forfeit `player`'s side, from `RESIGN` or account deletion. Ignored once a result is
+        decided, so it cannot overturn a verdict."""
+        side = self.sides[player]
+        if self.decide({
+            "winner": "con" if side == "pro" else "pro",
+            "reason": f"The {side.upper()} side left the debate before it ended.",
+            "status": "forfeited",
+            "end_reason": "resigned",
+        }):
+            self.resigned.set()
 
     def decide(self, result: dict) -> bool:
         """Record the match outcome unless one was already decided; returns whether this one was."""
@@ -370,15 +415,7 @@ class GameEngine:
                         # The browser echoed our heartbeat; activity was updated above.
                         continue
                     case "RESIGN":
-                        # Ignored once a result is decided, so it cannot overturn a verdict.
-                        side = self.sides[player]
-                        if self.decide({
-                            "winner": "con" if side == "pro" else "pro",
-                            "reason": f"The {side.upper()} side left the debate before it ended.",
-                            "status": "forfeited",
-                            "end_reason": "resigned",
-                        }):
-                            self.resigned.set()
+                        self.resign(player)
                         continue
                     case _:
                         await socket.send_json({
@@ -426,6 +463,13 @@ class GameEngine:
                         "code": "BAD_MESSAGE",
                         "message": "Invalid prompt string",
                     },
+                })
+                continue
+
+            if self.twist is not None and (problem := check_prompt(self.twist, submission.prompt)):
+                await socket.send_json({
+                    "type": "ERROR",
+                    "payload": {"code": "PROMPT_BREAKS_CHALLENGE", "message": problem},
                 })
                 continue
 

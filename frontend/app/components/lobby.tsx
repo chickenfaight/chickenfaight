@@ -1,10 +1,14 @@
 "use client";
 
-import { useState } from "react";
+import Link from "next/link";
+import { useEffect, useState } from "react";
+import { api } from "../lib/api";
+import { parseChallengeToday, type ChallengeToday } from "../lib/protocol";
 import Icon from "./line-icon";
 import InfoDialog, { type DetailTitle } from "./info-dialog";
 import MatchmakingCard from "./matchmaking-card";
 import { useSession } from "./providers/session-provider";
+import AppShell from "./app-shell";
 import SiteHeader from "./site-header";
 import TagDialog from "./tag-dialog";
 
@@ -14,10 +18,20 @@ const panel = "rounded-3xl border border-white/[0.07] bg-[#202124]";
 export default function Lobby() {
   const { user, status: session, setUser, logout, loggingOut, logoutError } = useSession();
   const [detail, setDetail] = useState<DetailTitle | null>(null);
+  const [challenge, setChallenge] = useState<ChallengeToday | null>(null);
+
+  // Today's challenge for its card; the card still works as a link if this fails.
+  useEffect(() => {
+    if (session !== "in") return;
+    const controller = new AbortController();
+    api("/v1/challenge/today", controller.signal)
+      .then((data) => { if (!controller.signal.aborted) setChallenge(parseChallengeToday(data)); })
+      .catch(() => {});
+    return () => controller.abort();
+  }, [session]);
 
   return (
-    <div className="flex min-h-svh flex-col bg-[#17181b] font-sans text-[#f5f3ef] min-[1024px]:h-svh min-[1024px]:min-h-[800px]">
-      <SiteHeader current="play" />
+    <AppShell header={<SiteHeader current="play" />} fill>
 
       <main className="mx-auto flex w-full max-w-[1540px] flex-1 flex-col gap-4 px-6 py-4 xl:gap-6 xl:px-10 xl:py-6 min-[1024px]:min-h-0">
         <div className="flex shrink-0 items-end justify-between"><div><p className="mb-1 text-[10px] font-semibold uppercase tracking-[0.2em] text-[#f37981]">The debate arena</p><h1 className="text-2xl font-bold tracking-tight">Welcome to the coop.</h1></div></div>
@@ -45,8 +59,13 @@ export default function Lobby() {
         </div>
 
         <section aria-label="Explore the arena" className="grid shrink-0 grid-cols-3 gap-5">
+          <Link href="/challenge" className={`${panel} group p-4 xl:p-5 text-left hover:border-white/20 ${focus}`}>
+            <span className="flex items-center justify-between"><span className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#e5b96b]/10 text-[#e5b96b]"><Icon name="bolt" /></span><span className="text-[9px] text-zinc-500">{challenge?.completed ? "Completed today ✓" : `+${challenge?.reward_points ?? 50} points`}</span></span>
+            <span className="mt-3 flex items-center justify-between text-sm font-bold">Daily challenge<Icon name="arrow" className="h-4 w-4 text-zinc-500 group-hover:text-white" /></span>
+            <span className="mt-2 block truncate text-xs text-zinc-300">{challenge?.topic?.topic ?? "One topic. A whole lot of opinions."}</span>
+            <span className="mt-1 block truncate text-[11px] text-zinc-500">{challenge ? `Twist: ${challenge.twist.title}` : "A new twist every day."}</span>
+          </Link>
           {([
-            { title: "Daily challenge", icon: "bolt", tag: "Coming soon", text: "Should AI-generated art count as art?", sub: "One topic. A whole lot of opinions.", color: "text-[#e5b96b] bg-[#e5b96b]/10" },
             { title: "Your ladder", icon: "trophy", tag: "Per-model rankings", text: "Small steps. Big pecking order.", sub: "Make your mark on every model’s ladder.", color: "text-[#ff7882] bg-[#f04b58]/10" },
             { title: "Bring your own model", icon: "chip", tag: "Coming soon", text: "Got a model with something to prove?", sub: "Your machine. Your model. Our arena.", color: "text-[#b5a4d9] bg-[#b5a4d9]/10" },
           ] as const).map((card) => <button key={card.title} onClick={() => setDetail(card.title)} className={`${panel} group p-4 xl:p-5 text-left hover:border-white/20 ${focus}`}><span className="flex items-center justify-between"><span className={`flex h-9 w-9 items-center justify-center rounded-xl ${card.color}`}><Icon name={card.icon} /></span><span className="text-[9px] text-zinc-500">{card.tag}</span></span><span className="mt-3 flex items-center justify-between text-sm font-bold">{card.title}<Icon name="arrow" className="h-4 w-4 text-zinc-500 group-hover:text-white" /></span><span className="mt-2 block text-xs text-zinc-300">{card.text}</span><span className="mt-1 block text-[11px] text-zinc-500">{card.sub}</span></button>)}
@@ -55,6 +74,6 @@ export default function Lobby() {
       </main>
       {session === "in" && user?.tag === null && <TagDialog onCreated={setUser} onSignOut={logout} signingOut={loggingOut} signOutError={logoutError} />}
       <InfoDialog title={detail} onClose={() => setDetail(null)} />
-    </div>
+    </AppShell>
   );
 }

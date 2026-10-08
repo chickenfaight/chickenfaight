@@ -2,17 +2,22 @@ import asyncio
 import logging
 from uuid import UUID, uuid4
 from collections import deque, defaultdict
+from datetime import date
 
 from app.engine.game_engine import GameEngine
 from app.services.exceptions import AlreadyMatchedError, AlreadyQueuedError
 
 logger = logging.getLogger(__name__)
 
+QueueKey = tuple[UUID, date | None]
+
 
 class Matchmaker:
     def __init__(self):
-        self.queues: defaultdict[UUID, deque[UUID]] = defaultdict(deque) # dict[model_id, user id queue]
-        self.queued_users: dict[UUID, UUID] = {} # dict[user_id, model_id] for checks and cancellation
+        # One queue per (model_id, challenge_day): regular matches use challenge_day None; daily-challenge
+        # players wait in their own queue so they only meet others playing today's challenge.
+        self.queues: defaultdict[QueueKey, deque[UUID]] = defaultdict(deque)
+        self.queued_users: dict[UUID, QueueKey] = {} # dict[user_id, queue key] for checks and cancellation
         self.assignments: dict[UUID, UUID] = {} # dict[user_id, match_id]
 
         self.engines: dict[UUID, GameEngine] = {}       # dict[match_id, engine]
@@ -25,7 +30,7 @@ class Matchmaker:
 
     async def match_available_players(self):
         # TODO more sophisticated matching algorithm with elo and shi coming soon
-        for model_id, queue in self.queues.items():
+        for (model_id, challenge_day), queue in self.queues.items():
             while len(queue) >= 2:
                 match_id = uuid4()
                 players = (queue.popleft(), queue.popleft())
@@ -34,7 +39,7 @@ class Matchmaker:
                     del self.queued_users[user_id]
                     self.assignments[user_id] = match_id
 
-                game = GameEngine(match_id, players, model_id)
+                game = GameEngine(match_id, players, model_id, challenge_day)
                 self.engines[match_id] = game
                 self.tasks[match_id] = asyncio.create_task(
                     self.run_match(game),
@@ -63,14 +68,15 @@ class Matchmaker:
         return match_id
 
 
-    def register(self, user_id: UUID, model_id: UUID):
+    def register(self, user_id: UUID, model_id: UUID, challenge_day: date | None = None):
         if user_id in self.queued_users:
             raise AlreadyQueuedError(user_id)
         if (match_id := self.active_match(user_id)) is not None:
             raise AlreadyMatchedError(user_id, match_id)
 
-        self.queues[model_id].append(user_id)
-        self.queued_users[user_id] = model_id
+        key = (model_id, challenge_day)
+        self.queues[key].append(user_id)
+        self.queued_users[user_id] = key
 
     def get_status(self, user_id: UUID) -> dict[str, str]:
         if (match_id := self.active_match(user_id)) is not None:
@@ -84,6 +90,14 @@ class Matchmaker:
 
         return {"status": "none"}
 
+    def remove_user(self, user_id: UUID) -> None:
+        """Take a user out of matchmaking entirely (account deletion): leave any queue, and
+        forfeit a live match so the opponent gets the win."""
+        if (match_id := self.active_match(user_id)) is not None:
+            self.engines[match_id].resign(user_id)
+        else:
+            self.cancel(user_id)
+
     def cancel(self, user_id: UUID):
         if (match_id := self.active_match(user_id)) is not None:
             raise AlreadyMatchedError(user_id, match_id)
@@ -91,6 +105,6 @@ class Matchmaker:
         if user_id not in self.queued_users:
             return
 
-        model_id = self.queued_users[user_id]
-        self.queues[model_id].remove(user_id)
+        key = self.queued_users[user_id]
+        self.queues[key].remove(user_id)
         del self.queued_users[user_id]

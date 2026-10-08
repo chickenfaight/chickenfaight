@@ -1,3 +1,4 @@
+from datetime import date, datetime
 from typing import Literal
 from uuid import UUID
 
@@ -38,6 +39,10 @@ class UserProfile(UserPublic):
     ratings: list[Rating] = []
     # Whether the caller has added this player as a friend.
     is_friend: bool = False
+    # Daily-play rewards; `streak` already lapses to 0 after 48 hours without a finished match.
+    points: int = 0
+    streak: int = 0
+    rank: int | None = None  # by points among tagged players
 
 
 class UserSearchPage(BaseModel):
@@ -112,5 +117,35 @@ class ArenaRead(BaseModel):
     kind: Literal["provided", "byom"] = "provided" # TODO default to provided before BYOM is implemented
 
 
+class TipsMessage(BaseModel):
+    role: Literal["user", "assistant"]  # never "system": only the server writes the system prompt
+    content: str = Field(min_length=1, max_length=2000)
+
+
+class TipsChatRequest(BaseModel):
+    model_id: UUID
+    messages: list[TipsMessage] = Field(min_length=1, max_length=20)
+
+
+class TipsTip(BaseModel):
+    tips: list[str]
+
+
 class QueueRequest(BaseModel):
     model_id: UUID
+    daily: bool = False  # join today's daily-challenge queue for this model
+
+
+class ChallengeTwist(BaseModel):
+    title: str
+    description: str
+    max_chars: int | None
+
+
+class ChallengeToday(BaseModel):
+    day: date
+    topic: "TopicRead | None"
+    twist: ChallengeTwist
+    reward_points: int
+    completed: bool
+    resets_at: datetime

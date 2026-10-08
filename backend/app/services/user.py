@@ -1,6 +1,11 @@
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+import secrets
+from datetime import UTC, datetime
+from uuid import UUID
+
+from app.models.avatar import Avatar
 from app.models.user import User
 from app.repositories.friend import FriendRepository
 from app.repositories.user import UserRepository
@@ -22,6 +27,7 @@ from app.services.exceptions import (
     InvalidCredentialsError,
 )
 from app.auth.passwords import hash_password, verify_password
+from app.services.rewards import effective_streak, points_rank
 from app.services.tags import validate_tag
 from app.services.usernames import validate_username
 
@@ -47,9 +53,10 @@ class UserService:
                 self.users.add(user)
 
             # Refresh profile fields on every login because users can change their email or pfp at Google.
-            # Never touch `tag`: a tag is permanent once set.
+            # Never touch `tag`: a tag is permanent once set. Keep an uploaded picture over Google's.
             user.email = identity.email
-            user.avatar_url = identity.picture
+            if user.id is None or await self.session.get(Avatar, user.id) is None:
+                user.avatar_url = identity.picture
 
             await self.session.flush()
 
@@ -102,7 +109,11 @@ class UserService:
         """A player's public profile, as seen by `viewer`."""
         user = await self.get_by_tag(tag)
         is_friend = await FriendRepository(self.session).is_friend(viewer.id, user.id)
-        return UserProfile.model_validate(user).model_copy(update={"is_friend": is_friend})
+        return UserProfile.model_validate(user).model_copy(update={
+            "is_friend": is_friend,
+            "streak": effective_streak(user, datetime.now(UTC)),
+            "rank": await points_rank(self.session, user),
+        })
 
     async def search(self, query: str, limit: int, offset: int) -> UserSearchPage:
         query = query.strip()
@@ -114,6 +125,41 @@ class UserService:
             items=[UserPublic.model_validate(user) for user in found[:limit]],
             next_offset=offset + limit if len(found) > limit else None,
         )
+
+    async def set_avatar(self, user: User, image: bytes) -> User:
+        """Store an already-processed picture and point `avatar_url` at it; the version in the URL
+        changes on every upload so browsers never show a stale cached image."""
+        avatar = await self.session.get(Avatar, user.id)
+        if avatar is None:
+            self.session.add(Avatar(user_id=user.id, image=image))
+        else:
+            avatar.image = image
+        user.avatar_url = f"/v1/users/{user.id}/avatar?v={secrets.token_hex(4)}"
+        # Loading the session user already began this session's transaction.
+        await self.session.commit()
+        return user
+
+    async def remove_avatar(self, user: User) -> User:
+        """Drop the uploaded picture; the Google picture returns at the next Google sign-in."""
+        avatar = await self.session.get(Avatar, user.id)
+        if avatar is not None:
+            await self.session.delete(avatar)
+        user.avatar_url = None
+        await self.session.commit()
+        return user
+
+    async def get_avatar_image(self, user_id: UUID) -> bytes:
+        avatar = await self.session.get(Avatar, user_id)
+        if avatar is None:
+            raise UserNotFoundError("No picture for that player.")
+        return avatar.image
+
+    async def delete_account(self, user: User) -> None:
+        """Delete the user row. Sessions and friendships (both directions) go with it via
+        ON DELETE CASCADE; nothing else stores user data yet."""
+        await self.session.delete(user)
+        # Loading the session user already began this session's transaction.
+        await self.session.commit()
 
     async def change_username(self, user: User, username: str) -> User:
         """Change the caller's display name; unlike the tag, any number of times."""

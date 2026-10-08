@@ -2,10 +2,12 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import AddFriendButton from "../../components/add-friend";
+import ProfileEditor from "../../components/profile-editor";
 import Avatar from "../../components/avatar";
+import AppShell from "../../components/app-shell";
 import SiteHeader from "../../components/site-header";
 import { backendUrl } from "../../lib/auth";
-import { displayName, parseUser, parseUserPage, parseUserProfile, tagFormatError, type UserPage, type UserProfile } from "../../lib/protocol";
+import { displayName, parseUser, parseUserPage, parseUserProfile, tagFormatError, type User, type UserPage, type UserProfile } from "../../lib/protocol";
 import { profileHref } from "../../lib/routes";
 import { forwardedCookie } from "../../lib/server-session";
 
@@ -45,11 +47,11 @@ async function redirectToOwnProfile(): Promise<never> {
   redirect(target);
 }
 
-// The viewer's own ID, or null if it can't be read; the profile still renders without it.
-async function viewerId(): Promise<string | null> {
+// The signed-in viewer, or null if it can't be read; the profile still renders without it.
+async function viewer(): Promise<User | null> {
   try {
     const response = await backendGet("/auth/me");
-    return response.ok ? parseUser(await response.json()).id : null;
+    return response.ok ? parseUser(await response.json()) : null;
   } catch {
     return null;
   }
@@ -115,9 +117,10 @@ function Stat({ label, value }: { label: string; value: string }) {
   return <div><p className="text-[10px] text-zinc-400">{label}</p><p className="mt-1 text-2xl font-bold tracking-tight">{value}</p></div>;
 }
 
-type ProfileProps = { profile: UserProfile; meId: string | null; friends: UserPage | null };
+type ProfileProps = { profile: UserProfile; me: User | null; friends: UserPage | null };
 
-function Profile({ profile, meId, friends }: ProfileProps) {
+function Profile({ profile, me, friends }: ProfileProps) {
+  const meId = me?.id ?? null;
   const games = profile.ratings.reduce((sum, rating) => sum + rating.games_played, 0);
   const wins = profile.ratings.reduce((sum, rating) => sum + rating.wins, 0);
   const losses = profile.ratings.reduce((sum, rating) => sum + rating.losses, 0);
@@ -130,11 +133,18 @@ function Profile({ profile, meId, friends }: ProfileProps) {
           <p className="mb-1 text-[10px] font-semibold uppercase tracking-[0.2em] text-[#f37981]">Player</p>
           <h1 id="profile-title" className="truncate text-4xl font-black tracking-[-0.045em]">{displayName(profile)}</h1>
           <p className="mt-1 truncate text-sm text-zinc-400"><span className="sr-only">Tag: </span>{profile.tag}</p>
+          {meId === profile.id && me?.email && <p className="mt-2 truncate text-xs text-zinc-500">{me.email} <span className="text-zinc-600">· only you can see this</span></p>}
+          {meId === profile.id && <ProfileEditor username={profile.username} avatarUrl={profile.avatar_url} />}
           {meId && meId !== profile.id && <AddFriendButton userId={profile.id} initialIsFriend={profile.is_friend} />}
         </div>
       </section>
       <section aria-labelledby="record-title" className={`${panel} p-6`}>
         <h2 id="record-title" className="mb-5 text-sm font-bold">Record</h2>
+        <div className="mb-5 grid grid-cols-3 gap-3 border-b border-white/[0.07] pb-5">
+          <Stat label="Points" value={profile.points.toLocaleString()} />
+          {profile.rank !== null && <Stat label="Rank" value={`#${profile.rank.toLocaleString()}`} />}
+          {profile.streak > 0 && <Stat label="Streak" value={`${profile.streak} ${profile.streak === 1 ? "day" : "days"}`} />}
+        </div>
         {games === 0 ? (
           <p className="text-sm text-zinc-500">No debates yet.</p>
         ) : (
@@ -155,14 +165,14 @@ export default async function ProfilePage({ params }: PageProps<"/profile/[tag]"
   // Tags are plain ASCII, so anything still percent-encoded fails the format check as a missing player.
   const { tag } = await params;
   if (tag === "me") await redirectToOwnProfile();
-  const [result, meId] = await Promise.all([lookUp(tag), viewerId()]);
+  const [result, me] = await Promise.all([lookUp(tag), viewer()]);
+  const meId = me?.id ?? null;
   const friends = result.status === "found" && meId === result.profile.id ? await ownFriends() : null;
 
   return (
-    <div className="flex min-h-svh flex-col bg-[#17181b] font-sans text-[#f5f3ef]">
-      <SiteHeader />
+    <AppShell header={<SiteHeader />}>
       <main className="mx-auto w-full max-w-[1100px] flex-1 px-6 py-10 xl:px-10">
-        {result.status === "found" ? <Profile profile={result.profile} meId={meId} friends={friends} /> : (
+        {result.status === "found" ? <Profile profile={result.profile} me={me} friends={friends} /> : (
           <section aria-labelledby="profile-title" className={`${panel} p-9`}>
             <h1 id="profile-title" className="text-xl font-bold">{result.status === "missing" ? "Player not found" : "Profile unavailable"}</h1>
             <p className="mt-2 truncate text-sm text-zinc-500">
@@ -171,6 +181,6 @@ export default async function ProfilePage({ params }: PageProps<"/profile/[tag]"
           </section>
         )}
       </main>
-    </div>
+    </AppShell>
   );
 }

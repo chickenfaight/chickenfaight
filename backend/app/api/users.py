@@ -1,12 +1,16 @@
 from typing import Annotated
+from uuid import UUID
 
-from fastapi import APIRouter, Depends, Path, Query
+from fastapi import APIRouter, Depends, Path, Query, Request, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
+from starlette.concurrency import run_in_threadpool
 
 from app.api.rate_limit import rate_limit
 from app.auth.dependencies import CurrentUserDependency
 from app.db.session import get_session
 from app.schemas import UserProfile, UserRead, TagAvailability, TagUpdate, UsernameUpdate, UserSearchPage
+from app.services.avatars import MAX_UPLOAD_BYTES, process_avatar
+from app.services.exceptions import AvatarInvalidError
 from app.services.user import UserService
 
 
@@ -35,6 +39,44 @@ async def set_tag(
 ) -> UserRead:
     claimed = await UserService(session).claim_tag(user, body.tag)
     return UserRead.model_validate(claimed)
+
+
+@router.put("/me/avatar", response_model=UserRead, dependencies=[rate_limit(burst=5, per_minute=10)])
+async def upload_avatar(request: Request, user: CurrentUserDependency, session: SessionDependency) -> UserRead:
+    """Replace the caller's picture with the raw image in the request body (PNG, JPEG, or WebP)."""
+    body = bytearray()
+    async for chunk in request.stream():
+        body.extend(chunk)
+        if len(body) > MAX_UPLOAD_BYTES:  # stop reading instead of buffering an oversized upload
+            raise AvatarInvalidError()
+    image = await run_in_threadpool(process_avatar, bytes(body))  # CPU-bound; keep the event loop free
+    return UserRead.model_validate(await UserService(session).set_avatar(user, image))
+
+
+@router.delete("/me/avatar", response_model=UserRead)
+async def remove_avatar(user: CurrentUserDependency, session: SessionDependency) -> UserRead:
+    return UserRead.model_validate(await UserService(session).remove_avatar(user))
+
+
+# Looser than other per-user limits: one search page shows 20 pictures at once.
+@router.get("/{user_id}/avatar", dependencies=[rate_limit(burst=100, per_minute=300)])
+async def get_avatar(user_id: UUID, _user: CurrentUserDependency, session: SessionDependency) -> Response:
+    image = await UserService(session).get_avatar_image(user_id)
+    # Safe to cache for a long time: each upload gets a new `?v=` in `avatar_url`.
+    return Response(image, media_type="image/webp", headers={
+        "Cache-Control": "private, max-age=31536000, immutable",
+        "X-Content-Type-Options": "nosniff",
+    })
+
+
+@router.delete("/me", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_account(request: Request, user: CurrentUserDependency, session: SessionDependency) -> Response:
+    """Permanently delete the caller's account: leave matchmaking (forfeiting a live match), delete
+    the user and everything tied to it, and clear the session cookie."""
+    request.app.state.matchmaker.remove_user(user.id)
+    await UserService(session).delete_account(user)
+    request.session.clear()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.patch("/me", response_model=UserRead)

@@ -1,5 +1,6 @@
 // `tag` is the permanent unique identifier (set once); `username` is the changeable display name.
-export type User = { id: string; tag: string | null; username: string | null; elo: number };
+// `email` is private: only `/auth/me` returns it, to its owner.
+export type User = { id: string; tag: string | null; username: string | null; email: string | null; elo: number };
 
 function optionalString(value: unknown): value is string | null {
   return value === null || typeof value === "string";
@@ -8,10 +9,10 @@ function optionalString(value: unknown): value is string | null {
 export function parseUser(data: unknown): User {
   if (typeof data !== "object" || data === null || !("id" in data) || !("elo" in data) || !("tag" in data) || !("username" in data)
     || typeof data.id !== "string" || typeof data.elo !== "number"
-    || !optionalString(data.tag) || !optionalString(data.username)) {
+    || !optionalString(data.tag) || !optionalString(data.username) || !("email" in data) || !optionalString(data.email)) {
     throw new Error("Invalid user");
   }
-  return { id: data.id, tag: data.tag, username: data.username, elo: data.elo };
+  return { id: data.id, tag: data.tag, username: data.username, email: data.email, elo: data.elo };
 }
 
 // What to call a player: their username, or their tag if they haven't set one.
@@ -97,7 +98,7 @@ export function parseUserPage(data: unknown): UserPage {
 }
 
 export type Rating = { ladder: string; elo: number; games_played: number; wins: number; losses: number };
-export type UserProfile = UserPublic & { ratings: Rating[]; is_friend: boolean };
+export type UserProfile = UserPublic & { ratings: Rating[]; is_friend: boolean; points: number; streak: number; rank: number | null };
 
 function parseRating(data: unknown): Rating {
   if (!isObject(data) || typeof data.ladder !== "string"
@@ -108,8 +109,40 @@ function parseRating(data: unknown): Rating {
 }
 
 export function parseUserProfile(data: unknown): UserProfile {
-  if (!isObject(data) || !Array.isArray(data.ratings) || typeof data.is_friend !== "boolean") throw new Error("Invalid profile");
-  return { ...parseUserPublic(data), ratings: data.ratings.map(parseRating), is_friend: data.is_friend };
+  if (!isObject(data) || !Array.isArray(data.ratings) || typeof data.is_friend !== "boolean"
+    || typeof data.points !== "number" || typeof data.streak !== "number" || !(data.rank === null || typeof data.rank === "number")) {
+    throw new Error("Invalid profile");
+  }
+  return { ...parseUserPublic(data), ratings: data.ratings.map(parseRating), is_friend: data.is_friend, points: data.points, streak: data.streak, rank: data.rank };
+}
+
+// The daily challenge's twist, as announced in MATCH_STATE and GET /v1/challenge/today.
+export type MatchChallenge = { title: string; description: string; max_chars: number | null };
+
+function parseChallenge(data: unknown): MatchChallenge | null {
+  if (data === null || data === undefined) return null;
+  if (!isObject(data) || typeof data.title !== "string" || typeof data.description !== "string"
+    || !(data.max_chars === null || typeof data.max_chars === "number")) {
+    throw new Error("Invalid challenge");
+  }
+  return { title: data.title, description: data.description, max_chars: data.max_chars };
+}
+
+export type ChallengeToday = {
+  day: string; topic: ArenaTopic | null; twist: MatchChallenge; reward_points: number; completed: boolean; resets_at: string;
+};
+
+export function parseChallengeToday(data: unknown): ChallengeToday {
+  if (!isObject(data) || typeof data.day !== "string" || typeof data.reward_points !== "number"
+    || typeof data.completed !== "boolean" || typeof data.resets_at !== "string") {
+    throw new Error("Invalid challenge");
+  }
+  const topic = data.topic;
+  const parsedTopic = isObject(topic) && typeof topic.topic === "string" && typeof topic.pro_position === "string" && typeof topic.con_position === "string"
+    ? { topic: topic.topic, pro_position: topic.pro_position, con_position: topic.con_position } : null;
+  const twist = parseChallenge(data.twist);
+  if (!twist) throw new Error("Invalid challenge");
+  return { day: data.day, topic: parsedTopic, twist, reward_points: data.reward_points, completed: data.completed, resets_at: data.resets_at };
 }
 
 // Current arena wire format in PROTOCOL.md; full reconnect snapshots are planned.
@@ -123,7 +156,7 @@ export type ArenaResult = {
   arguments: Record<Side, string>;
 };
 export type MatchMessage =
-  | { type: "MATCH_STATE"; payload: { model_display_name: string; topic: ArenaTopic; you: Side; deadline: string | null } }
+  | { type: "MATCH_STATE"; payload: { model_display_name: string; topic: ArenaTopic; you: Side; deadline: string | null; challenge: MatchChallenge | null } }
   | { type: "TURN_DELTA"; payload: { delta: string } }
   | { type: "TURN_END" | "JUDGING"; payload: Record<string, unknown> }
   | { type: "MATCH_RESULT"; payload: ArenaResult }
@@ -144,7 +177,7 @@ export function parseMatchMessage(raw: string): MatchMessage {
       if (typeof p.model_display_name === "string" && p.model_display_name.trim() && record(p.topic) && typeof p.topic.topic === "string" && typeof p.topic.pro_position === "string"
         && typeof p.topic.con_position === "string" && side(p.you)
         && (p.deadline === null || (typeof p.deadline === "string" && Number.isFinite(Date.parse(p.deadline))))) {
-        return { type: data.type, payload: { model_display_name: p.model_display_name, topic: p.topic as ArenaTopic, you: p.you, deadline: p.deadline } };
+        return { type: data.type, payload: { model_display_name: p.model_display_name, topic: p.topic as ArenaTopic, you: p.you, deadline: p.deadline, challenge: parseChallenge(p.challenge) } };
       }
       break;
     case "TURN_DELTA":

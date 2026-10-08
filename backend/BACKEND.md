@@ -4,7 +4,7 @@ FastAPI server: REST API, matchmaking, game engine, persistence. Contracts are i
 
 ## Stack
 
-Python ≥ 3.14 managed with `uv`; FastAPI; SQLAlchemy 2 async + psycopg 3; Alembic (migrations); Pydantic; Authlib (Google OIDC); `better-profanity` (tag filter); PostgreSQL. PLANNED additions: `openai` (inference client), `PyJWT` (BILC tokens).
+Python ≥ 3.14 managed with `uv`; FastAPI; SQLAlchemy 2 async + psycopg 3; Alembic (migrations); Pydantic; Authlib (Google OIDC); `better-profanity` (tag filter); Pillow (re-encoding uploaded profile pictures); PostgreSQL. PLANNED additions: `openai` (inference client), `PyJWT` (BILC tokens).
 
 Use a tool's current idiomatic style: `Annotated` dependencies, `Mapped[...]`/`mapped_column`, Pydantic v2 `model_validate`, `async`/`await` everywhere. Never do blocking I/O in async code.
 
@@ -57,7 +57,7 @@ The current engine keeps one receiver and one heartbeat task per browser connect
 | `format_game(prompt)` | Build the fixed-template `messages` for a turn; player prompt goes only inside delimiters, with delimiter strings stripped from it |
 | `call_model(messages)` | Stream a turn from a `ModelClient`, forwarding `TURN_DELTA`s; also used for the judge |
 | `unlink_user(socket)` | Send `MATCH_RESULT` and close the socket |
-| `report_game()` | Persist the result and Elo via services; called exactly once |
+| `report_game()` | Records the decided result, points, and streaks via `record_match()` (`app/services/rewards.py`) in its own session; runs at most once, from `run()`'s `finally`, and logs instead of raising on failure (implemented; Elo PLANNED) |
 
 The engine never calls a provider directly. `app/inference/` exposes one `ModelClient` interface (`stream(messages, max_tokens) -> AsyncIterator[str]`) with `OpenAIModelClient` (cloud, `AsyncOpenAI` with `base_url`) and `BilcModelClient` (sends `TURN_REQUEST` to a device, yields `MATCH_RESPONSE` deltas). Tests use a fake implementation.
 
@@ -72,6 +72,18 @@ Live state (matchmaking queues, running engines, connected BILC devices) is in-m
 - Profanity: `better-profanity` whole-word check (also split on `_`, camelCase, and letter/digit boundaries), plus a short list of severe stems matched as substrings after undoing leetspeak, because tags glue words together. Ambiguous short words stay whole-word only (`class`, `grape` pass; `Scunthorpe` is a known false positive).
 - Search (`UserRepository.search_by_tag`): tagged users whose lowercased tag contains the query (LIKE wildcards escaped) or is trigram-similar to it (`%>`, pg_trgm's word similarity ≥ 0.6). Ordered exact, prefix, contains, then word similarity, tag length, tag, and `id`, so offset pages are stable.
 - Set once: `UPDATE ... WHERE tag IS NULL` makes the write atomic, and nothing else writes the column (sign-in never touches it). Matchmaking refuses users without a tag.
+
+## Daily challenges, points, and streaks
+
+`app/services/challenge.py` derives each UTC day's topic (a stable pick from active topics) and twist (rotating through `TWISTS`: character limits and banned or required whole words), and `check_prompt()` enforces the twist when a prompt is submitted. The matchmaker keys queues by `(model_id, challenge_day)`, so daily players only meet each other on the same model, and the engine loads that day's topic. `record_match()` writes `matches` and `match_participants`, then, under a row lock per finishing player, adds points, advances the streak (`users.points`, `users.streak`, `users.last_played_at`), and inserts into `challenge_completions` with `ON CONFLICT DO NOTHING` to award the challenge at most once. Values are in PROTOCOL.md.
+
+## Debate tips
+
+`app/services/tips.py` holds the coach's fixed system prompt (the game's rules, the judge's criteria, and the 6 `TIPS`) and `format_tips()`, the only path from tips text to a model. `POST /v1/tips/chat` (`app/api/tips.py`) validates the conversation, looks up the active model, closes its database session, and waits for the first delta before returning a `StreamingResponse`, so a dead model is a clean 502 instead of an empty 200. Conversations are never stored.
+
+## Account deletion
+
+`DELETE /v1/users/me` calls `Matchmaker.remove_user()` (leave the queue, or `GameEngine.resign()` in a live match), then `UserService.delete_account()` deletes the `users` row. Every table that references users must declare `ON DELETE CASCADE` or `SET NULL`, so deletion never leaves user data behind or fails on a foreign key.
 
 ## Friends
 
@@ -97,11 +109,13 @@ Postgres. Constraint and index names come from the naming convention in `app/db/
 | `models` (implemented) | `id` UUID, `provider_id`, `api_model_id`, `display_name`, `input_cost?`, `output_cost?`, `cached_input_cost?`, `pricing_updated_at?`, `context_window?`, `max_output_tokens?`, `is_active`, `provider_metadata` JSONB, `updated_at` | Unique `(provider_id, api_model_id)`; costs are nonnegative NUMERIC(20,10) USD per million tokens (null = unknown, zero = free); token limits are positive when set. UUID-based argument model selection is implemented; provider-specific connection settings remain PLANNED |
 | `ladders` | `id` UUID, `slug` unique, `display_name`, `kind` (`cloud`/`byom`), `provider_model_id?`, `is_active`, `provider_metadata` JSONB | Exactly one `byom` row |
 | `ratings` | PK(`user_id`, `ladder_id`), `elo` = 1000, `games_played`, `wins`, `losses`, `updated_at` | Created on first queue |
+| `avatars` (implemented) | `user_id` PK, FK to `users` with `ON DELETE CASCADE`; `image` (256×256 WebP bytes) | Uploaded pictures, kept out of `users` so loading a user never loads image bytes. `process_avatar()` (`app/services/avatars.py`, Pillow) decodes, checks format and pixel count, applies EXIF rotation, crops, and re-encodes every upload, which strips metadata and anything disguised as an image. Google sign-in only updates `avatar_url` while there's no upload |
 | `sessions` (implemented) | `token_hash` PK (SHA-256 hex of the cookie token), `user_id` FK to `users` with `ON DELETE CASCADE`, `expires_at` | One row per signed-in browser |
 | `friendships` (implemented) | PK(`user_id`, `friend_id`), both FKs to `users` with `ON DELETE CASCADE`, CHECK `user_id <> friend_id` | See "Friends"; replaced the unused `friends` table |
 | `topics` (implemented) | `id` UUID, `category`, `topic`, `pro_position`, `con_position`, `is_active` | Text fields are limited to 255 characters; category defaults to `General`; active by default |
-| `matches` | `id` UUID, `ladder_id`, `topic_id`, `status`, `winner_side?`, `end_reason?`, `verdict_reasoning?`, `judge_metadata` JSONB, `started_at?`, `ended_at?` | |
-| `match_participants` | PK(`match_id`, `side`), `user_id` (unique with `match_id`), `bilc_device_id?`, `prompt?`, `elo_before`, `elo_after?` | `prompt` never exposed to others |
+| `matches` (results implemented) | `id` UUID (the engine's match ID), `model_id?` and `topic_id?` (`SET NULL`), `status`, `winner_side?`, `end_reason`, `verdict_reasoning?`, `challenge_day?` (UTC date, for daily-challenge matches), `ended_at` | Written once per decided match. `judge_metadata` and `started_at` remain PLANNED |
+| `match_participants` (implemented, without PLANNED columns) | PK(`match_id`, `side`), `user_id?` (unique with `match_id`; `SET NULL` when the account is deleted, so the opponent's history survives without user data) | `bilc_device_id?`, `prompt?`, `elo_before`, `elo_after?` remain PLANNED; `prompt` is never exposed to others |
+| `challenge_completions` (implemented) | PK(`user_id`, `day`), `match_id?` | Its primary key is what limits the challenge bonus to once per day, even when matches finish at the same moment |
 | `turns` | `id` UUID, `match_id`, `index` (unique with `match_id`), `side`, `phase`, `content`, `truncated`, `usage` JSONB | Written as each turn ends |
 | `votes` | PK(`match_id`, `user_id`), `side` | Community opinion; never affects Elo |
 | `bilc_devices` | `id` UUID, `user_id`, `name`, `platform`, `client_version`, `model_metadata` JSONB, `refresh_token_hash`, `last_seen_at?`, `revoked_at?` | |

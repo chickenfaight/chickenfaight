@@ -52,6 +52,37 @@ class TagError(ServiceError):
     def __init__(self):
         super().__init__(self.detail)
 
+class AvatarInvalidError(TagError):
+    """Upload rejected; handled like tag errors."""
+    code = "AVATAR_INVALID"
+    status_code = 422
+    detail = "Use a PNG, JPEG, or WebP image up to 2 MB."
+
+
+class ConversationTooLongError(TagError):
+    code = "CONVERSATION_TOO_LONG"
+    status_code = 422
+    detail = "This conversation is too long. Start a new one."
+
+
+class ConversationInvalidError(TagError):
+    code = "CONVERSATION_INVALID"
+    status_code = 422
+    detail = "Messages must alternate, starting and ending with yours."
+
+
+class ModelUnavailableError(TagError):
+    code = "MODEL_UNAVAILABLE"
+    status_code = 502
+    detail = "The model didn't respond. Try again or pick another model."
+
+
+class ChallengeAlreadyCompletedError(TagError):
+    code = "CHALLENGE_ALREADY_COMPLETED"
+    status_code = 409
+    detail = "You've already completed today's challenge. A new one starts at midnight UTC."
+
+
 class UsernameError(TagError):
     """A username (the changeable display name) was rejected; handled like tag errors."""
 

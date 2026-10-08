@@ -2,7 +2,7 @@
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useReducer, useRef, type ReactNode } from "react";
 import { backendUrl } from "../../lib/auth";
-import { parseMatchMessage, type ArenaResult, type ArenaTopic, type MatchMessage, type Side } from "../../lib/protocol";
+import { parseMatchMessage, type ArenaResult, type ArenaTopic, type MatchChallenge, type MatchMessage, type Side } from "../../lib/protocol";
 
 type State = {
   phase: "connecting" | "prompting" | "generating" | "waiting" | "judging" | "completed";
@@ -10,6 +10,7 @@ type State = {
   model_display_name: string | null;
   side: Side;
   deadline: string | null;
+  challenge: MatchChallenge | null;
   prompt: string | null;
   argument: string;
   result: ArenaResult | null;
@@ -17,11 +18,14 @@ type State = {
   disconnected: boolean;
 };
 type Action = MatchMessage | { type: "SUBMITTED"; prompt: string } | { type: "DISCONNECTED"; message: string };
-const initialState: State = { phase: "connecting", topic: null, model_display_name: null, side: "pro", deadline: null, prompt: null, argument: "", result: null, error: "", disconnected: false };
+const initialState: State = { phase: "connecting", topic: null, model_display_name: null, side: "pro", deadline: null, challenge: null, prompt: null, argument: "", result: null, error: "", disconnected: false };
+
+// Errors meaning the prompt wasn't accepted, so the player can edit and resubmit.
+const REJECTED_PROMPT = ["PROMPT_TOO_LONG", "BAD_MESSAGE", "PROMPT_BREAKS_CHALLENGE"];
 
 function reducer(state: State, action: Action): State {
   switch (action.type) {
-    case "MATCH_STATE": return { ...state, model_display_name: action.payload.model_display_name, topic: action.payload.topic, side: action.payload.you, deadline: action.payload.deadline, phase: "prompting" };
+    case "MATCH_STATE": return { ...state, model_display_name: action.payload.model_display_name, topic: action.payload.topic, side: action.payload.you, deadline: action.payload.deadline, challenge: action.payload.challenge, phase: "prompting" };
     case "SUBMITTED": return { ...state, prompt: action.prompt, phase: "generating", error: "" };
     case "TURN_DELTA": return { ...state, argument: state.argument + action.payload.delta };
     case "TURN_END": return { ...state, phase: "waiting" };
@@ -29,7 +33,7 @@ function reducer(state: State, action: Action): State {
     case "MATCH_RESULT": return { ...state, result: action.payload, phase: "completed", error: "" };
     case "DISCONNECTED": return state.result ? state : { ...state, error: action.message, disconnected: true };
     case "ERROR": {
-      const rejected = ["PROMPT_TOO_LONG", "BAD_MESSAGE"].includes(action.payload.code) && !state.argument;
+      const rejected = REJECTED_PROMPT.includes(action.payload.code) && !state.argument;
       return { ...state, error: action.payload.message, ...(rejected ? { phase: "prompting" as const, prompt: null } : {}) };
     }
     default: return state;
@@ -71,7 +75,7 @@ export function MatchProvider({ matchId, children }: { matchId: string; children
           const message = parseMatchMessage(event.data);
           if (message.type === "HEARTBEAT") { ws.send(JSON.stringify(message)); return; }
           if (message.type === "MATCH_RESULT") { completed = true; settleResign.current?.(); }
-          if (message.type === "ERROR" && ["PROMPT_TOO_LONG", "BAD_MESSAGE"].includes(message.payload.code)) submitted.current = false;
+          if (message.type === "ERROR" && REJECTED_PROMPT.includes(message.payload.code)) submitted.current = false;
           dispatch(message);
         } catch {
           dispatch({ type: "DISCONNECTED", message: "Couldn’t read the debate update. Return to the lobby to try again." });
