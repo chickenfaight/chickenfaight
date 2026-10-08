@@ -1,7 +1,7 @@
 from typing import Annotated
 
 from authlib.integrations.base_client.errors import OAuthError
-from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from fastapi import APIRouter, Depends, Request, Response, status
 from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.responses import RedirectResponse
@@ -46,17 +46,11 @@ async def google_callback(
         # validates the OpenID Connect ID token, and exposes its userinfo.
         token = await google.authorize_access_token(request)
         identity = GoogleIdentity.model_validate(token.get("userinfo"))
-    except (OAuthError, ValidationError) as error:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Google sign-in could not be verified",
-        ) from error
+    except (OAuthError, ValidationError):
+        return RedirectResponse(f"{settings.frontend_url.rstrip('/')}/login")
 
     if identity.email is not None and not identity.email_verified:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Google did not provide a verified email address",
-        )
+        return RedirectResponse(f"{settings.frontend_url.rstrip('/')}/login")
 
     user = await UserService(session).sign_in_with_google(identity)
     token = await SessionService(session).start(user)
@@ -83,4 +77,3 @@ async def logout(request: Request, session: SessionDependency) -> Response:
     request.session.clear()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
     
-

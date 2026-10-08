@@ -106,7 +106,7 @@ Player prompts are never returned by any endpoint or message except to their aut
 |---|---|---|---|---|
 | GET | `/health` | public | — | `{ status: "healthy" }` (implemented) |
 | GET | `/auth/google/login` | public | — | 302 to Google (implemented) |
-| GET | `/auth/google/callback` | public | OAuth params | 302 to `FRONTEND_URL`; starts a server-side session and sets the session cookie (implemented) |
+| GET | `/auth/google/callback` | public | OAuth params | Redirect to `FRONTEND_URL` on success; starts a server-side session and sets the session cookie. Cancelled or rejected OAuth and invalid identity data (including an unverified email) redirect to `FRONTEND_URL/login` without starting a session (implemented) |
 | GET | `/auth/me` | session | — | `UserRead`. This is how clients validate a stored session: 401 if the cookie is missing, forged, expired, or logged out (implemented) |
 | POST | `/auth/logout` | public | — | 204; deletes the session server-side, so a copy of the old cookie stops working, and clears the cookie (implemented) |
 | PATCH | `/v1/users/me` | session | `{ username: str }` (3–24 chars, `[a-zA-Z0-9_]`, unique) | `UserRead` |
