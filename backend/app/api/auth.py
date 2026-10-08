@@ -11,6 +11,7 @@ from app.auth.google import oauth
 from app.config import settings
 from app.db.session import get_session
 from app.schemas import GoogleIdentity, UserRead
+from app.services.auth_session import SessionService
 from app.services.user import UserService
 from app.models.user import User
 
@@ -58,23 +59,27 @@ async def google_callback(
         )
 
     user = await UserService(session).sign_in_with_google(identity)
+    token = await SessionService(session).start(user)
 
-    # Starlette's cookie is signed but readable, so store only the local ID,
-    # never Google's access token, refresh token, or client credentials.
+    # Starlette's cookie is signed but readable, so store only the random session token
+    # (hashed in the database), never Google's tokens or client credentials.
     request.session.clear()
-    request.session["user_id"] = str(user.id)
+    request.session["session_token"] = token
 
     return RedirectResponse(settings.frontend_url)
 
 
 @router.get("/me", response_model=UserRead)
 async def read_current_user(user: CurrentUserDependency) -> UserRead:
-    """Demonstrate using the cookie to load the local database user."""
+    """Validate the session cookie against the database; 401 if missing, expired, or logged out."""
     return UserRead.model_validate(user)    
 
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
-async def logout(request: Request) -> Response:
-    """Delete the local login cookie; no Google token is persisted here."""
+async def logout(request: Request, session: SessionDependency) -> Response:
+    """End the session in the database, so the token stops working everywhere, and clear the cookie."""
+    token = request.session.get("session_token")
+    if isinstance(token, str) and token:
+        await SessionService(session).end(token)
     request.session.clear()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
     

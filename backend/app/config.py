@@ -1,5 +1,6 @@
 import os
 from dataclasses import dataclass
+from urllib.parse import urlparse
 
 from dotenv import load_dotenv
 
@@ -21,6 +22,10 @@ def with_psycopg_driver(database_url: str) -> str:
     return database_url
 
 
+# Free on OpenRouter and supports response schemas (needed by the judge).
+DEFAULT_OPENROUTER_MODEL = "nvidia/nemotron-3-super-120b-a12b:free"
+
+
 @dataclass(frozen=True)
 class Settings:
     database_url: str
@@ -34,6 +39,13 @@ class Settings:
     app_env: str
     inference_base_url: str
     inference_api_key: str
+    # Judge model ID as the provider names it; argument models come from the database.
+    inference_judge_model: str
+
+    @property
+    def inference_is_openrouter(self) -> bool:
+        """Whether to send OpenRouter-only request options (other providers may reject them)."""
+        return urlparse(self.inference_base_url).hostname == "openrouter.ai"
 
     @classmethod
     def from_environment(cls) -> Settings:
@@ -50,6 +62,7 @@ class Settings:
             app_env=os.getenv("APP_ENV", "production"),
             inference_base_url=required_environment_variable("INFERENCE_BASE_URL"),
             inference_api_key=required_environment_variable("INFERENCE_API_KEY"),
+            inference_judge_model=os.getenv("INFERENCE_JUDGE_MODEL", DEFAULT_OPENROUTER_MODEL),
         )
 
 

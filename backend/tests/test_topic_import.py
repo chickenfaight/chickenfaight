@@ -30,4 +30,7 @@ class TopicFileTests(unittest.TestCase):
 
     def test_example_file(self):
         path = Path(__file__).resolve().parents[1] / "topics.example.txt"
-        self.assertEqual(len(read_topics(path)), 3)
+        topics = read_topics(path)
+        # Parses without errors and has no duplicates; the count changes as topics are added.
+        self.assertGreater(len(topics), 50)
+        self.assertEqual(len(set(topics)), len(topics))

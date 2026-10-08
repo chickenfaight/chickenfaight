@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-import { cookies } from "next/headers";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import AddFriendButton from "../../components/add-friend";
@@ -8,6 +7,7 @@ import SiteHeader from "../../components/site-header";
 import { backendUrl } from "../../lib/auth";
 import { parseUser, parseUserPage, parseUserProfile, usernameFormatError, type UserPage, type UserProfile } from "../../lib/protocol";
 import { profileHref } from "../../lib/routes";
+import { forwardedCookie } from "../../lib/server-session";
 
 export const metadata: Metadata = {
   title: "Profile · Chicken fAIght",
@@ -22,9 +22,8 @@ type Lookup = { status: "found"; profile: UserProfile } | { status: "missing" | 
 
 // Server-side fetches forward the browser's session cookie to the backend.
 async function backendGet(path: string): Promise<Response> {
-  const cookieStore = await cookies();
   return fetch(`${backendUrl}${path}`, {
-    headers: { cookie: cookieStore.toString() },
+    headers: { cookie: await forwardedCookie() },
     cache: "no-store",
     signal: AbortSignal.timeout(5000),
   });

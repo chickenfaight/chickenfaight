@@ -9,3 +9,8 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 <!-- END:nextjs-agent-rules -->
 
 Before any frontend change, read [FRONTEND.md](FRONTEND.md) and the root [AGENTS.md](../AGENTS.md).
+
+Frontend pitfalls already hit in this repo:
+- Server Components that call the backend forward the browser's raw `Cookie` header with `forwardedCookie()` (`app/lib/server-session.ts`), never `cookies().toString()`, which URL-encodes the signed session cookie and breaks it.
+- Never trust a session on the client alone: pages check it with the backend (`serverSession()` or `/auth/me`). `/` and `/login` redirect on the server; `SessionProvider` redirects to `/login` when the session ends.
+- For buttons whose disabled state changes after load, use `aria-disabled` and guard the click instead of `disabled`: Firefox restores the old `disabled` state on reload and breaks hydration.

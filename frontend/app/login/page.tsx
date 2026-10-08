@@ -1,13 +1,17 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { backendUrl } from "../lib/auth";
+import { serverSession } from "../lib/server-session";
 
 export const metadata: Metadata = {
   title: "Log in · Chickenfaight",
   description: "Sign in to Chickenfaight with Google.",
 };
 
-export default function LoginPage() {
+export default async function LoginPage() {
+  // Already signed in with a valid session: skip the login screen.
+  if (await serverSession() === "in") redirect("/");
   return (
     <div className="flex min-h-svh flex-col bg-[#17181b] font-sans text-[#f5f3ef]">
       <header className="flex h-16 shrink-0 items-center justify-between border-b border-white/[0.07] px-6 xl:h-[76px] xl:px-10">

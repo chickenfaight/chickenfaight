@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import settings
 from app.db.session import SessionFactory, get_session
 from app.models.user import User
+from app.services.auth_session import SessionService
 
 
 SessionDependency = Annotated[AsyncSession, Depends(get_session)]
@@ -26,19 +27,14 @@ async def get_current_user(
     connection: HTTPConnection,
     session: SessionDependency,
 ) -> User:
-    """Resolve the local user ID stored in the signed session cookie."""
-    user_id = connection.session.get("user_id")
-
-    try:
-        if not isinstance(user_id, str):
-            raise ValueError("Session user ID must be a UUID string")
-        user_id = UUID(user_id)
-    except ValueError:
+    """Resolve the session token in the signed cookie against the `sessions` table."""
+    token = connection.session.get("session_token")
+    if not isinstance(token, str) or not token:
         reject_unauthenticated(connection)
 
-    user = await session.get(User, user_id)
+    user = await SessionService(session).resolve(token)
     if user is None:
-        # The database user may have been deleted while an old cookie remains.
+        # Expired, logged out, or its user was deleted: drop the stale cookie too.
         connection.session.clear()
         reject_unauthenticated(connection)
 

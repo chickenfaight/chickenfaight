@@ -32,7 +32,7 @@ FakeModelClient([
 ])
 ```
 
-Pass it to the engine through its constructor. Only `OpenAIModelClient`'s own tests use `respx` to fake the provider's SSE responses. `BilcModelClient` tests use an in-memory fake device socket.
+Pass it to the engine through its constructor. Only `OpenAIModelClient`'s own tests touch the SDK, by replacing `client.chat.completions` with a fake (`respx` can't intercept the SDK's HTTP client). `BilcModelClient` tests use an in-memory fake device socket.
 
 ### Required coverage
 
@@ -47,6 +47,8 @@ Every backend feature ships with tests for both behavior and security:
 - **User tags:** format and profanity rules (including innocent words that contain short profanity); taken ignoring case; set once, never changed (including by sign-in); matchmaking refuses users without a tag.
 - **OpenRouter model importer:** catalogue HTTP errors and validation; explicit zero pricing (including extra charges, unknown and dynamic prices); one OpenRouter provider across model authors; deduplication and repeat imports preserve UUIDs and activation flags; refresh updates limits/metadata; unrelated rows remain unchanged.
 - **Profiles and search:** responses carry only `UserPublic`/`UserProfile` fields (never email); unknown tag → 404 `NOT_FOUND`; ranking order; typo tolerance; LIKE wildcards in the query match literally; pagination and `next_offset`; blank query → no items.
+- **Route auth** (`test_route_auth.py`): every HTTP route in the OpenAPI schema returns 401 without a session unless it's on the public allowlist, so a new route can't ship public by accident; API docs follow `APP_ENV`; CORS allows only the frontend; the match socket rejects no session (4401), a foreign or missing Origin (4403), and players not in the match (4403). Socket tests use `TestClient(app)` without `with`, because startup would migrate the real database.
+- **Sessions** (`test_auth_sessions.py`): Google sign-in starts a session that `/auth/me` accepts; only the token's hash is stored; missing, unknown, malformed, forged, and expired tokens and deleted users get 401; logout revokes the token so a copied cookie fails, and only ends that one session; sign-in clears that user's expired sessions.
 - **Friends:** add, remove, and list act only on the caller's own list; adding is one-way and idempotent; self → 422 `FRIEND_SELF`; unknown or untagged player → 404; responses carry only `UserPublic` fields; a deleted user leaves friends lists; `is_friend` reflects the caller only.
 - **Rate limits:** `TokenBucket` unit tests with a fake clock (burst, refill, cap, rejected requests cost nothing, per-key isolation, pruning); per route, request burst + 1 gets 429 `RATE_LIMITED` with `Retry-After`. An autouse fixture resets limits between tests.
 - **BILC auth:** pairing codes are single-use and expire; refresh tokens rotate; reusing an old refresh token revokes the device; revoked devices are rejected; only hashes are stored.

@@ -40,6 +40,19 @@ class RegistrationTests(unittest.TestCase):
         self.assertFalse(matchmaker.queues)
         self.assertEqual(matchmaker.get_status(user_id), {"status": "matched", "match_id": str(match_id)})
 
+    def test_decided_match_is_no_longer_reported(self):
+        # After a result (e.g. a resignation), the lobby must not send the player back into the match.
+        from types import SimpleNamespace
+        matchmaker = Matchmaker()
+        user_id, match_id = uuid4(), uuid4()
+        matchmaker.assignments[user_id] = match_id
+        matchmaker.engines[match_id] = SimpleNamespace(result=None)
+        self.assertEqual(matchmaker.get_status(user_id)["status"], "matched")
+        matchmaker.engines[match_id].result = {"end_reason": "resigned"}
+        self.assertEqual(matchmaker.get_status(user_id), {"status": "none"})
+        matchmaker.register(user_id, uuid4())
+        self.assertEqual(matchmaker.get_status(user_id), {"status": "queued"})
+
 
 class CancellationTests(unittest.TestCase):
     def setUp(self):

@@ -4,3 +4,68 @@
 Food | Does pineapple belong on pizza? | Pineapple belongs on pizza. | Pineapple does not belong on pizza.
 Work | Should remote work be the default for office jobs? | Remote work should be the default for office jobs. | Office jobs should primarily be performed in person.
 Public policy | Should public transportation in cities be free? | Cities should make public transportation free. | Cities should charge fares for public transportation.
+
+# Fun and unserious: everyday debates that famously split people (several from YouGov-style polls).
+Food | Is a hot dog a sandwich? | A hot dog is a sandwich. | A hot dog is not a sandwich.
+Food | Is cereal a soup? | Cereal is a soup. | Cereal is not a soup.
+Food | Should cereal go in the bowl before the milk? | Cereal must go in the bowl before the milk. | Milk should go in the bowl before the cereal.
+Food | Should sandwiches be cut diagonally? | Sandwiches should be cut diagonally. | Sandwiches should be cut straight across.
+Food | Are curly fries better than steak fries? | Curly fries are better than steak fries. | Steak fries are better than curly fries.
+Food | Is a Pop-Tart a ravioli? | A Pop-Tart is a ravioli. | A Pop-Tart is not a ravioli.
+Food | Should ketchup ever go on a hot dog? | Ketchup belongs on a hot dog. | Ketchup should never touch a hot dog.
+Food | Is a steak ruined if it is cooked well-done? | Well-done steak is ruined steak. | Well-done steak is a perfectly valid choice.
+Food | Is cilantro delicious? | Cilantro is delicious and improves food. | Cilantro tastes like soap and ruins food.
+Food | Should you eat pizza crust first? | Eating the crust first is the superior way to eat pizza. | Pizza must be eaten point first.
+Food | Is a Jaffa Cake a cake or a biscuit? | A Jaffa Cake is a cake. | A Jaffa Cake is a biscuit.
+Food | Is breakfast the most important meal of the day? | Breakfast is the most important meal of the day. | Breakfast is overrated.
+Food | Is candy corn good? | Candy corn is a delicious treat. | Candy corn is a crime against Halloween.
+Food | Should leftover pizza be eaten cold? | Cold leftover pizza is better than reheated. | Leftover pizza must be reheated.
+Food | Is chocolate milk better than plain milk? | Chocolate milk is better than plain milk. | Plain milk is better than chocolate milk.
+Food | Is a taco a sandwich? | A taco is a sandwich. | A taco is not a sandwich.
+Food | Are raisins in cookies a betrayal? | Raisins in cookies are a betrayal of the chocolate chip promise. | Oatmeal raisin cookies are underrated.
+Food | Is mayonnaise an acceptable condiment for fries? | Fries are great with mayonnaise. | Mayonnaise has no business near fries.
+Home | Should toilet paper hang over the roll? | Toilet paper should hang over the roll. | Toilet paper should hang under the roll.
+Home | Is it acceptable to wear shoes inside the house? | Wearing shoes inside is fine. | Shoes must come off at the door.
+Home | Should you make your bed every morning? | Everyone should make their bed every morning. | Making your bed every morning is a waste of time.
+Home | Should dishes be rinsed before going in the dishwasher? | Dishes should be rinsed first. | Rinsing before the dishwasher is pointless.
+Home | Is it better to shower in the morning than at night? | Morning showers are better. | Night showers are better.
+Home | Should the thermostat be kept cold rather than warm? | A cold house with blankets is better. | A warm house is better.
+Home | Is it acceptable to put the toilet seat down only sometimes? | Leaving the toilet seat up is fine. | The toilet seat should always go down.
+Animals | Are cats better pets than dogs? | Cats are better pets than dogs. | Dogs are better pets than cats.
+Animals | Would you rather fight one horse-sized duck than a hundred duck-sized horses? | Fighting one horse-sized duck is the better choice. | Fighting a hundred duck-sized horses is the better choice.
+Animals | Are pigeons secretly cool? | Pigeons are underappreciated and cool. | Pigeons are flying rats.
+Animals | Should dogs be allowed to sleep in the bed? | Dogs belong in the bed. | Dogs should sleep in their own beds.
+Animals | Could a gorilla beat 100 unarmed men in a fight? | A gorilla would win. | The 100 men would win.
+Language | Is it pronounced GIF with a hard G? | GIF is pronounced with a hard G. | GIF is pronounced with a soft G like jif.
+Language | Should the Oxford comma be mandatory? | The Oxford comma should always be used. | The Oxford comma is unnecessary.
+Language | Should texts ending in a period be considered rude? | Ending a text with a period is passive-aggressive. | Ending a text with a period is just correct grammar.
+Language | Is it soda or pop? | The correct word is soda. | The correct word is pop.
+Language | Should there be one space after a period or two? | One space after a period is correct. | Two spaces after a period is correct.
+Tech | Should code be indented with tabs instead of spaces? | Tabs are better for indentation. | Spaces are better for indentation.
+Tech | Is dark mode better than light mode? | Dark mode is better. | Light mode is better.
+Tech | Should you reply-all to work emails? | Reply-all keeps everyone informed. | Reply-all should be banned.
+Tech | Is it okay to leave hundreds of unread notifications? | Unread notifications are fine to ignore. | Unread notifications must be cleared.
+Tech | Should phones be kept on silent at all times? | Phones should always be on silent. | Phones should ring like they were designed to.
+Life | Are socks with sandals acceptable? | Socks with sandals are acceptable and comfortable. | Socks with sandals are a fashion crime.
+Life | Is it acceptable to recline your seat on an airplane? | Reclining your airplane seat is acceptable. | Reclining your airplane seat is rude.
+Life | Who gets the middle airplane armrest? | The middle seat passenger gets both armrests. | Armrests are first come, first served.
+Life | Is being early better than being exactly on time? | Arriving early is the right thing to do. | Arriving exactly on time is ideal.
+Life | Should you stand on the left side of an escalator? | Standing on the left is fine. | The left side is strictly for walking.
+Life | Is it okay to clap when the plane lands? | Clapping when the plane lands is wholesome. | Clapping when the plane lands is embarrassing.
+Life | Should the person who suggested the restaurant pay? | Whoever picks the restaurant should pay. | The bill should be split no matter who picked.
+Life | Is it better to be a morning person than a night owl? | Morning people have it right. | Night owls have it right.
+Life | Should birthdays be celebrated for the whole month? | A birthday deserves a full month of celebration. | A birthday is one day only.
+Life | Is it acceptable to wear pajamas in public? | Pajamas in public are perfectly fine. | Pajamas in public are unacceptable.
+Pop culture | Is Die Hard a Christmas movie? | Die Hard is a Christmas movie. | Die Hard is not a Christmas movie.
+Pop culture | Could Jack have fit on the door in Titanic? | Jack could have fit on the door. | Jack could not have survived on the door.
+Pop culture | Should movies be watched with subtitles on? | Subtitles should always be on. | Subtitles ruin the movie.
+Pop culture | Is it acceptable to start a series at season two? | Starting a series late is fine. | You must start a series from the beginning.
+Pop culture | Should spoilers expire after a week? | Spoilers are fair game after one week. | Spoilers never expire.
+Holidays | Should Christmas decorations go up before Thanksgiving? | Christmas decorations can go up before Thanksgiving. | Christmas decorations must wait until after Thanksgiving.
+Holidays | Is Halloween the best holiday? | Halloween is the best holiday. | Halloween is overrated.
+Holidays | Should gift cards count as a thoughtful gift? | Gift cards are a thoughtful gift. | Gift cards are a lazy gift.
+Hypothetical | Would it be better to be able to fly than to be invisible? | Flight is the better superpower. | Invisibility is the better superpower.
+Hypothetical | Should humans try to talk to aliens if they arrive? | Humanity should greet the aliens. | Humanity should hide from the aliens.
+Hypothetical | Would you rather have fingers for toes or toes for fingers? | Fingers for toes is the better deal. | Toes for fingers is the better deal.
+Hypothetical | Is a straw one hole or two? | A straw has one hole. | A straw has two holes.
+Hypothetical | Does water make things wet, or is water itself wet? | Water is wet. | Water is not wet; it only makes things wet.

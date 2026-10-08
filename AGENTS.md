@@ -35,10 +35,10 @@ bilc/              PLANNED — BYOM Interface Layer Client (Go CLI)
 
 - **Frontend web app** (`frontend/`): all player UI — login, game selection, live debate view, leaderboard, profile, BILC pairing. Talks to the server over REST and one WebSocket per match.
 - **API server** (`backend/`): accounts, Google OAuth, sessions, matchmaking, Elo, persistence, BILC pairing/tokens. Spawns one game engine per match.
-- **Game engine** (`backend/app/engine/`, PLANNED): runs one match — connects both players, collects prompts, alternates model turns, streams output, calls the judge, extracts the verdict, reports the result. Lives in the server process but is kept separate from general platform code.
+- **Game engine** (`backend/app/engine/`, partially built): runs one match — connects both players, collects prompts, alternates model turns, streams output, calls the judge, extracts the verdict, reports the result. Built so far: opening turns, judging, retries and void on model failure, and forfeit on resign; rebuttal/closing phases and persisting results/Elo remain PLANNED. Lives in the server process but is kept separate from general platform code.
 - **BILC** (`bilc/`, PLANNED): Go CLI on the user's machine. Holds a persistent WebSocket to the server and forwards turn requests to the user's local OpenAI-compatible model.
 - **Database**: PostgreSQL, accessed only through the backend.
-- **External services**: Google OAuth; OpenRouter for cloud inference, providing access to various models, including free models, through a single platform with OpenAI-compatible endpoints.
+- **External services**: Google OAuth; an OpenAI-compatible inference provider chosen by env: OpenRouter (the default) or Purdue GenAI Studio for development.
 
 ## Design decisions
 
@@ -52,7 +52,13 @@ bilc/              PLANNED — BYOM Interface Layer Client (Go CLI)
 | Backend | FastAPI, async SQLAlchemy, Pydantic | asyncio concurrency, OpenAI SDK support |
 | Database | PostgreSQL; JSONB only for provider/model metadata | Relational core data, flexible metadata |
 | Schema changes | Alembic migrations, applied on server startup | Local DBs stay in sync without coordination; see BACKEND.md |
-| Inference | OpenRouter via OpenAI-compatible APIs, streamed | One platform for various models, including free models; no self-hosting required |
+| Inference | Any OpenAI-compatible provider, streamed; endpoint set by `INFERENCE_BASE_URL`; argument model selected from the database; judge set by `INFERENCE_JUDGE_MODEL` | OpenRouter for many models including free ones; GenAI Studio for development without OpenRouter's daily cap |
+| Models | Database-selected argument model and independently configured judge, never `openrouter/free`; OpenRouter-only options sent only to OpenRouter | Random routing hit safety classifiers and reasoning models; other providers reject unknown options |
+| Model failures | Retry a turn or verdict once, then void the match | The platform's fault, so no Elo change |
+| Web sessions | Random token in a signed HTTP-only cookie; only its SHA-256 hash is stored server-side; 14 days; logout deletes it | Logout and expiry really end a session; `/auth/me` validates it |
+| Public routes | Allowlist of 4 (`/health`, Google login/callback, logout), enforced by `tests/integration/test_route_auth.py`; API docs only in development | A new route can't ship public by accident |
+| Rate limits | In-memory token bucket per signed-in user on routes that read other users' data or edit friends | Slows scraping; one process, like matchmaking |
+| Friends | One-way adds; each list visible only to its owner | No approval flow; no scraping friend graphs |
 | Match concurrency | One asyncio task per match (the design doc's "thread") | No OS threads in an async server |
 | Live output | Provider → server via SSE; server → browser/BILC via WebSocket | Players watch the debate stream |
 | BILC language | Go, static binaries | Goroutines/timeouts, cross-platform |
@@ -75,13 +81,14 @@ Use these terms exactly, in code and docs.
 - Do not let a player prompt reach a model except through the engine's `format_game` wrapper. Do not show player prompts to the judge.
 - Do not render model output as HTML or Markdown. Plain text only.
 - Do not add a route, WebSocket message, or field that is not in PROTOCOL.md; add it there first.
-- Do not add an endpoint without deciding its auth. Default is authenticated.
+- Do not add an endpoint without deciding its auth. Default is authenticated. A public route must go in PROTOCOL.md and the allowlist in `test_route_auth.py`; a route exposing other users' data needs a rate limit (`app/api/rate_limit.py`).
 - Do not put secrets in code, logs, or commits. Config comes from env via `backend/app/config.py`; only `.env.example` is committed.
 - Do not log tokens, cookies, pairing codes, or full prompts.
 - Do not store tokens or codes in plaintext; store hashes.
 - Do not build SQL with string formatting; use SQLAlchemy.
 - Do not change a model without a reviewed Alembic migration in the same change, and never edit a migration that is already on `main` (BACKEND.md, "Changing the schema").
 - Do not add dependencies, frameworks, or UI libraries without a reason stated in the PR.
-- Do not call an inference provider outside `backend/app/inference/`.
+- Do not call an inference provider outside `backend/app/inference/`. Do not hard-code model IDs or provider URLs; read them from `settings`.
+- Do not run the app's startup in tests (`with TestClient(app)`, or calling `lifespan`): it migrates, and in development may reset, the real database in `POSTGRES_URL`.
 - Do not hand-edit the block between the `nextjs-agent-rules` markers in `frontend/AGENTS.md`.
 - Do not create new top-level docs; extend the existing ones and keep them short.

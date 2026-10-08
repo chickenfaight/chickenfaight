@@ -36,12 +36,18 @@ function reducer(state: State, action: Action): State {
   }
 }
 
-const MatchContext = createContext<{ state: State; submitPrompt: (prompt: string) => boolean } | null>(null);
+// How long `resign()` waits for the server's MATCH_RESULT before resolving anyway.
+const RESIGN_TIMEOUT_MS = 3000;
+
+type MatchValue = { state: State; submitPrompt: (prompt: string) => boolean; resign: () => Promise<void> };
+const MatchContext = createContext<MatchValue | null>(null);
 
 export function MatchProvider({ matchId, children }: { matchId: string; children: ReactNode }) {
   const [state, dispatch] = useReducer(reducer, initialState);
   const socket = useRef<WebSocket | null>(null);
   const submitted = useRef(false);
+  // Resolves a pending `resign()` once the match ends or the socket closes.
+  const settleResign = useRef<(() => void) | null>(null);
 
   useEffect(() => {
     let disposed = false;
@@ -64,7 +70,7 @@ export function MatchProvider({ matchId, children }: { matchId: string; children
         try {
           const message = parseMatchMessage(event.data);
           if (message.type === "HEARTBEAT") { ws.send(JSON.stringify(message)); return; }
-          if (message.type === "MATCH_RESULT") completed = true;
+          if (message.type === "MATCH_RESULT") { completed = true; settleResign.current?.(); }
           if (message.type === "ERROR" && ["PROMPT_TOO_LONG", "BAD_MESSAGE"].includes(message.payload.code)) submitted.current = false;
           dispatch(message);
         } catch {
@@ -74,6 +80,7 @@ export function MatchProvider({ matchId, children }: { matchId: string; children
       };
       ws.onclose = () => {
         clearTimeout(heartbeatTimer);
+        settleResign.current?.();
         if (!disposed && !completed) dispatch({ type: "DISCONNECTED", message: "This debate is unavailable or the connection was lost. Return to the lobby to try again." });
       };
       ws.onerror = () => {
@@ -90,7 +97,17 @@ export function MatchProvider({ matchId, children }: { matchId: string; children
     dispatch({ type: "SUBMITTED", prompt });
     return true;
   }, []);
-  const value = useMemo(() => ({ state, submitPrompt }), [state, submitPrompt]);
+  // Forfeits the match. Resolves once the server confirms the result (so the lobby stops
+  // reporting this match), or after a timeout if the connection is gone.
+  const resign = useCallback(() => new Promise<void>((resolve) => {
+    const ws = socket.current;
+    if (ws?.readyState !== WebSocket.OPEN) { resolve(); return; }
+    const timer = setTimeout(done, RESIGN_TIMEOUT_MS);
+    function done() { clearTimeout(timer); settleResign.current = null; resolve(); }
+    settleResign.current = done;
+    ws.send(JSON.stringify({ type: "RESIGN", payload: {} }));
+  }), []);
+  const value = useMemo(() => ({ state, submitPrompt, resign }), [state, submitPrompt, resign]);
   return <MatchContext.Provider value={value}>{children}</MatchContext.Provider>;
 }
 

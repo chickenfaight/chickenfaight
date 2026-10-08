@@ -14,6 +14,7 @@ from app.api.users import router as users_router
 from app.api.friends import router as friends_router
 from app.api.arenas import router as arenas_router
 from app.config import settings
+from app.services.auth_session import SESSION_LIFETIME
 from app.db.migrate import migrate
 from app.db.session import engine
 from app.services.matchmaking import Matchmaker
@@ -43,7 +44,14 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             await engine.dispose()
 
 
-app = FastAPI(lifespan=lifespan)
+# Interactive API docs and the OpenAPI schema map every route, so serve them only in development.
+docs_enabled = settings.app_env == "development"
+app = FastAPI(
+    lifespan=lifespan,
+    docs_url="/docs" if docs_enabled else None,
+    redoc_url="/redoc" if docs_enabled else None,
+    openapi_url="/openapi.json" if docs_enabled else None,
+)
 
 register_exception_handlers(app)
 
@@ -53,6 +61,7 @@ register_exception_handlers(app)
 app.add_middleware(
     SessionMiddleware,
     secret_key=settings.session_secret,
+    max_age=int(SESSION_LIFETIME.total_seconds()),
     same_site="lax",
     https_only=settings.secure_cookies,
 )
