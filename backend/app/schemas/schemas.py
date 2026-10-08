@@ -9,6 +9,7 @@ class UserRead(BaseModel):
 
     id: UUID
     email: str | None
+    tag: str | None
     username: str | None
     avatar_url: str | None
     elo: int
@@ -19,6 +20,7 @@ class UserPublic(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
+    tag: str | None
     username: str | None
     avatar_url: str | None
 
@@ -43,12 +45,17 @@ class UserSearchPage(BaseModel):
     next_offset: int | None
 
 
-class UsernameUpdate(BaseModel):
+class TagUpdate(BaseModel):
     # Format rules are checked in the service so rejections use PROTOCOL error codes.
+    tag: str = Field(max_length=64)
+
+
+class UsernameUpdate(BaseModel):
+    # Length and content rules are checked in the service so rejections use PROTOCOL error codes.
     username: str = Field(max_length=64)
 
 
-class UsernameAvailability(BaseModel):
+class TagAvailability(BaseModel):
     available: bool
     code: str | None = None
     detail: str | None = None
@@ -62,11 +69,16 @@ class GoogleIdentity(BaseModel):
     picture: str | None = None
 
 
+class SignupData(BaseModel):
+    tag: str = Field(max_length=64)  # tag and username rules are checked by the service
+    username: str = Field(max_length=64)
+    email: str | None = Field(default=None, max_length=320)
+    password: str = Field(min_length=8, max_length=128)
+
+
 class LoginData(BaseModel):
-    username: str
-    email: str | None = None
-    password_salt: str | None = None
-    password_hash: str
+    tag: str = Field(max_length=64)
+    password: str = Field(min_length=1, max_length=128)
 
 
 class TopicRead(BaseModel):

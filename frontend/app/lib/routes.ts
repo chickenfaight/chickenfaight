@@ -1,5 +1,5 @@
-export function profileHref(username: string): string {
-  return `/profile/${encodeURIComponent(username)}`;
+export function profileHref(tag: string): string {
+  return `/profile/${encodeURIComponent(tag)}`;
 }
 
 export function searchHref(query: string): string {

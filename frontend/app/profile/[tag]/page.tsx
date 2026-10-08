@@ -5,7 +5,7 @@ import AddFriendButton from "../../components/add-friend";
 import Avatar from "../../components/avatar";
 import SiteHeader from "../../components/site-header";
 import { backendUrl } from "../../lib/auth";
-import { parseUser, parseUserPage, parseUserProfile, usernameFormatError, type UserPage, type UserProfile } from "../../lib/protocol";
+import { displayName, parseUser, parseUserPage, parseUserProfile, tagFormatError, type UserPage, type UserProfile } from "../../lib/protocol";
 import { profileHref } from "../../lib/routes";
 import { forwardedCookie } from "../../lib/server-session";
 
@@ -36,8 +36,8 @@ async function redirectToOwnProfile(): Promise<never> {
     const response = await backendGet("/auth/me");
     if (response.status === 401) target = "/login";
     else if (response.ok) {
-      const { username } = parseUser(await response.json());
-      if (username) target = profileHref(username);
+      const { tag } = parseUser(await response.json());
+      if (tag) target = profileHref(tag);
     }
   } catch {
     // Fall through to the lobby, which shows its own session error.
@@ -55,12 +55,12 @@ async function viewerId(): Promise<string | null> {
   }
 }
 
-async function lookUp(username: string): Promise<Lookup> {
+async function lookUp(tag: string): Promise<Lookup> {
   // A tag that breaks the format rule can't exist, so skip the request.
-  if (usernameFormatError(username)) return { status: "missing" };
+  if (tagFormatError(tag)) return { status: "missing" };
   let response: Response;
   try {
-    response = await backendGet(`/v1/users/by-username/${encodeURIComponent(username)}`);
+    response = await backendGet(`/v1/users/by-tag/${encodeURIComponent(tag)}`);
   } catch {
     return { status: "error" };
   }
@@ -97,9 +97,9 @@ function Friends({ friends }: { friends: UserPage | null }) {
           <ul className="grid grid-cols-2 gap-3 xl:grid-cols-3">
             {friends.items.map((friend) => (
               <li key={friend.id}>
-                <Link href={profileHref(friend.username)} className={`flex items-center gap-4 rounded-2xl border border-white/[0.07] p-3 hover:border-white/20 ${focus}`}>
-                  <Avatar username={friend.username} url={friend.avatar_url} size={40} />
-                  <span className="truncate text-sm font-bold">{friend.username}</span>
+                <Link href={profileHref(friend.tag)} className={`flex items-center gap-4 rounded-2xl border border-white/[0.07] p-3 hover:border-white/20 ${focus}`}>
+                  <Avatar name={displayName(friend)} url={friend.avatar_url} size={40} />
+                  <span className="min-w-0"><span className="block truncate text-sm font-bold">{displayName(friend)}</span><span className="block truncate text-xs text-zinc-500">{friend.tag}</span></span>
                 </Link>
               </li>
             ))}
@@ -125,10 +125,11 @@ function Profile({ profile, meId, friends }: ProfileProps) {
   return (
     <div className="grid grid-cols-[minmax(0,1fr)_320px] gap-5">
       <section aria-labelledby="profile-title" className={`${panel} flex items-center gap-7 p-9`}>
-        <Avatar username={profile.username} url={profile.avatar_url} size={112} />
+        <Avatar name={displayName(profile)} url={profile.avatar_url} size={112} />
         <div className="min-w-0">
           <p className="mb-1 text-[10px] font-semibold uppercase tracking-[0.2em] text-[#f37981]">Player</p>
-          <h1 id="profile-title" className="truncate text-4xl font-black tracking-[-0.045em]">{profile.username}</h1>
+          <h1 id="profile-title" className="truncate text-4xl font-black tracking-[-0.045em]">{displayName(profile)}</h1>
+          <p className="mt-1 truncate text-sm text-zinc-400"><span className="sr-only">Tag: </span>{profile.tag}</p>
           {meId && meId !== profile.id && <AddFriendButton userId={profile.id} initialIsFriend={profile.is_friend} />}
         </div>
       </section>
@@ -150,9 +151,9 @@ function Profile({ profile, meId, friends }: ProfileProps) {
   );
 }
 
-export default async function ProfilePage({ params }: PageProps<"/profile/[username]">) {
+export default async function ProfilePage({ params }: PageProps<"/profile/[tag]">) {
   // Tags are plain ASCII, so anything still percent-encoded fails the format check as a missing player.
-  const { username: tag } = await params;
+  const { tag } = await params;
   if (tag === "me") await redirectToOwnProfile();
   const [result, meId] = await Promise.all([lookUp(tag), viewerId()]);
   const friends = result.status === "found" && meId === result.profile.id ? await ownFriends() : null;

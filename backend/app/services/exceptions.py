@@ -43,7 +43,7 @@ class RateLimitedError(ServiceError):
         super().__init__(f"Rate limited; retry after {retry_after}s")
 
 
-class UsernameError(ServiceError):
+class TagError(ServiceError):
     """A user tag was rejected; `code`/`status_code`/`detail` map to PROTOCOL.md."""
     code: str
     status_code: int
@@ -52,37 +52,50 @@ class UsernameError(ServiceError):
     def __init__(self):
         super().__init__(self.detail)
 
+class UsernameError(TagError):
+    """A username (the changeable display name) was rejected; handled like tag errors."""
+
+
 class UsernameInvalidError(UsernameError):
     code = "USERNAME_INVALID"
     status_code = 422
-    detail = "Tags are 3–24 characters: letters, numbers, and underscores."
+    detail = "Usernames are 1–32 characters and can't be blank."
 
 class UsernameNotAllowedError(UsernameError):
     code = "USERNAME_NOT_ALLOWED"
     status_code = 422
+    detail = "That username isn't allowed. Try something else."
+
+class TagInvalidError(TagError):
+    code = "TAG_INVALID"
+    status_code = 422
+    detail = "Tags are 3–24 characters: letters, numbers, and underscores."
+
+class TagNotAllowedError(TagError):
+    code = "TAG_NOT_ALLOWED"
+    status_code = 422
     detail = "That tag isn't allowed. Try something else."
 
-class UsernameTakenError(UsernameError):
-    code = "USERNAME_TAKEN"
+class TagTakenError(TagError):
+    code = "TAG_TAKEN"
     status_code = 409
     detail = "That tag is already taken."
 
-class UsernameAlreadySetError(UsernameError):
-    code = "USERNAME_ALREADY_SET"
+class TagAlreadySetError(TagError):
+    code = "TAG_ALREADY_SET"
     status_code = 409
     detail = "Your tag is already set and can't be changed."
 
-class UsernameRequiredError(UsernameError):
-    code = "USERNAME_REQUIRED"
+class TagRequiredError(TagError):
+    code = "TAG_REQUIRED"
     status_code = 403
     detail = "Create your tag before joining a debate."
 
 
-class IncorrectPasswordError(ServiceError):
-    code = "PASSWORD_INVALID"
-    status_code = 401
-    detail = "The password is incorrect. Please try again."
+class InvalidCredentialsError(ServiceError):
+    """Wrong password, unknown tag, or an account without a password: one answer for all three,
+    so sign-in can't be used to discover which tags exist."""
 
     def __init__(self):
-        super().__init__(self.detail)
+        super().__init__("Incorrect tag or password.")
 

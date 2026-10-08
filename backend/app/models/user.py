@@ -12,14 +12,18 @@ class User(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
 
-    # `sub` is the unique, stable identifier for a Google account
-    google_sub: Mapped[str] = mapped_column(
+    # `sub` is the unique, stable identifier for a Google account; null for password-only accounts.
+    google_sub: Mapped[str | None] = mapped_column(
         String(255),
         unique=True,
         index=True,
+        nullable=True,
     )
     email: Mapped[str | None] = mapped_column(String(320), nullable=True)
-    username: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # Permanent unique identifier, set once (see app/services/tags.py).
+    tag: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # Changeable display name; not unique (see app/services/usernames.py).
+    username: Mapped[str | None] = mapped_column(String(32), nullable=True)
     password_salt: Mapped[str | None] = mapped_column(String(255), nullable=True)
     password_hash: Mapped[str | None] = mapped_column(Text, nullable=True)
     avatar_url: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -37,13 +41,13 @@ class User(Base):
 
 
 # Tags are unique regardless of case, so "Ryan" blocks "ryan".
-Index("uq_users_username_lower", func.lower(User.username), unique=True)
+Index("uq_users_tag_lower", func.lower(User.tag), unique=True)
 
 # Trigram index for player search: serves `LIKE '%q%'` and the fuzzy `%>` operator.
 # Needs the pg_trgm extension, which the migration creates.
 Index(
-    "ix_users_username_lower_trgm",
-    func.lower(User.username).label("username_lower"),
+    "ix_users_tag_lower_trgm",
+    func.lower(User.tag).label("tag_lower"),
     postgresql_using="gin",
-    postgresql_ops={"username_lower": "gin_trgm_ops"},
+    postgresql_ops={"tag_lower": "gin_trgm_ops"},
 )

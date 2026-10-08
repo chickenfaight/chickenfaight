@@ -17,6 +17,8 @@ PUBLIC = {
     ("GET", "/auth/google/login"),
     ("GET", "/auth/google/callback"),
     ("POST", "/auth/logout"),
+    ("POST", "/auth/signup"),
+    ("POST", "/auth/login"),
 }
 
 

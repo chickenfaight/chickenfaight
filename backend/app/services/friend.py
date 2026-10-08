@@ -35,7 +35,7 @@ class FriendService:
             raise FriendSelfError()
         # Untagged users are invisible elsewhere (search, profiles), so they can't be added either.
         friend = await self.users.get_by_uuid(friend_id)
-        if friend is None or friend.username is None:
+        if friend is None or friend.tag is None:
             raise UserNotFoundError("No player has that ID.")
         try:
             await self.friends.add(user.id, friend_id)

@@ -13,4 +13,4 @@ Before any frontend change, read [FRONTEND.md](FRONTEND.md) and the root [AGENTS
 Frontend pitfalls already hit in this repo:
 - Server Components that call the backend forward the browser's raw `Cookie` header with `forwardedCookie()` (`app/lib/server-session.ts`), never `cookies().toString()`, which URL-encodes the signed session cookie and breaks it.
 - Never trust a session on the client alone: pages check it with the backend (`serverSession()` or `/auth/me`). `/` and `/login` redirect on the server; `SessionProvider` redirects to `/login` when the session ends.
-- For buttons whose disabled state changes after load, use `aria-disabled` and guard the click instead of `disabled`: Firefox restores the old `disabled` state on reload and breaks hydration.
+- Firefox restores a form control's old `disabled` state on reload, before React loads, which breaks hydration. For buttons whose disabled state changes after load, use `aria-disabled` and guard the click; for `<select>` and `<input>`, add `autoComplete="off"` (React's types don't allow it on buttons).

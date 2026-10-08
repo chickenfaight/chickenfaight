@@ -36,11 +36,13 @@ Everything here is PLANNED unless marked **(implemented)**. Remove a PLANNED sta
 | `BAD_MESSAGE` | — | — | WS message failed validation (no close) |
 | `UNKNOWN_TYPE` | — | — | Unrecognized WS `type` (no close) |
 | `ALREADY_QUEUED`, `IN_MATCH` | 409 | — | Matchmaking conflicts |
-| `USERNAME_INVALID` | 422 | — | Tag breaks the format rule (implemented) |
-| `USERNAME_NOT_ALLOWED` | 422 | — | Tag fails the profanity filter (implemented) |
-| `USERNAME_TAKEN` | 409 | — | Tag already used by someone, ignoring case (implemented) |
-| `USERNAME_ALREADY_SET` | 409 | — | Caller already has a tag; tags never change (implemented) |
-| `USERNAME_REQUIRED` | 403 | — | Caller must set a tag first (implemented) |
+| `TAG_INVALID` | 422 | — | Tag breaks the format rule (implemented) |
+| `TAG_NOT_ALLOWED` | 422 | — | Tag fails the profanity filter (implemented) |
+| `TAG_TAKEN` | 409 | — | Tag already used by someone, ignoring case (implemented) |
+| `TAG_ALREADY_SET` | 409 | — | Caller already has a tag; tags never change (implemented) |
+| `TAG_REQUIRED` | 403 | — | Caller must set a tag first (implemented) |
+| `USERNAME_INVALID` | 422 | — | Username is blank after trimming, over 32 characters, or contains control or invisible formatting characters (implemented) |
+| `USERNAME_NOT_ALLOWED` | 422 | — | Username fails the profanity filter (implemented) |
 | `BILC_OFFLINE`, `BILC_BUSY` | 409 | — | BYOM device can't take a match |
 | `PAIRING_CODE_INVALID` | 400 | — | Wrong, used, or expired pairing code |
 | `TOKEN_INVALID` | 401 | — | Bad/reused refresh token (reuse revokes the device) |
@@ -51,6 +53,7 @@ Everything here is PLANNED unless marked **(implemented)**. Remove a PLANNED sta
 | `HEARTBEAT_TIMEOUT` | — | 4408 | No message within the timeout |
 | `REPLACED` | — | 4409 | A newer connection for the same user+match or device |
 | `FRIEND_SELF` | 422 | — | Players can't add themselves as friends (implemented) |
+| `INVALID_CREDENTIALS` | 401 | — | Password sign-in failed. Same response for a wrong password, an unknown tag, or an account without a password (implemented) |
 | `RATE_LIMITED` | 429 | — | Too many requests; the response carries a `Retry-After` header in whole seconds (implemented) |
 | `INTERNAL` | 500 | 1011 | Server fault; never include internals in `detail` |
 
@@ -72,14 +75,16 @@ Server-side constants; clients read deadlines from messages rather than hard-cod
 | BILC access JWT / refresh token | 15 min / 30 days, rotated on every use |
 | Web session (implemented) | 14 days from sign-in, not extended by use; logout ends it immediately |
 | REST rate limits, per user (implemented) | Token buckets, each holding a burst and refilling steadily: search, profile lookup, tag availability, and friends list each allow a burst of 20 and 60/min; adding and removing friends share a burst of 10 and 20/min |
+| Sign-in and signup rate limits (implemented) | `POST /auth/login`: a burst of 10 and 10/min per client IP, plus a burst of 5 and 1/min per tag (ignoring case), so many IPs can't share the guessing. `POST /auth/signup`: a burst of 5 and 1/min per client IP |
 
-Rate limits apply per signed-in user, on routes that read other users' data or change the friends list. They're held in server memory, so they reset when the server restarts.
+Rate limits apply per signed-in user on routes that read other users' data or change the friends list, and per IP or tag on sign-in and signup. They're held in server memory, so they reset when the server restarts.
 
 ## Shared types
 
 ```
-UserRead         { id: uuid, email: str|null, username: str|null, avatar_url: str|null, elo: int }   (implemented; elo is removed when Rating ships; username is the user's tag, null until set)
-UserPublic       { id: uuid, username: str|null, avatar_url: str|null }   (implemented)
+UserRead         { id: uuid, email: str|null, tag: str|null, username: str|null, avatar_url: str|null, elo: int }   (implemented; elo is removed when Rating ships)
+UserPublic       { id: uuid, tag: str|null, username: str|null, avatar_url: str|null }   (implemented)
+                 `tag` is the permanent unique identifier, null until set and never changed. `username` is the changeable display name: not unique, null until set; clients show it, falling back to the tag.
 UserProfile      UserPublic + { ratings: [Rating], is_friend: bool }   (implemented; `ratings` is empty until ratings ship; `is_friend` is whether the caller has added this player)
 Rating           { ladder: str, elo: int, games_played: int, wins: int, losses: int }
 Ladder           { slug: str, display_name: str, kind: "cloud"|"byom" }
@@ -108,11 +113,14 @@ Player prompts are never returned by any endpoint or message except to their aut
 | GET | `/auth/google/login` | public | — | 302 to Google (implemented) |
 | GET | `/auth/google/callback` | public | OAuth params | Redirect to `FRONTEND_URL` on success; starts a server-side session and sets the session cookie. Cancelled or rejected OAuth and invalid identity data (including an unverified email) redirect to `FRONTEND_URL/login` without starting a session (implemented) |
 | GET | `/auth/me` | session | — | `UserRead`. This is how clients validate a stored session: 401 if the cookie is missing, forged, expired, or logged out (implemented) |
+| POST | `/auth/signup` | public | `{ tag: str, username: str, email?: str (≤ 320), password: str (8–128) }`. `tag` and `username` follow their rules above | 204 and sets the session cookie; `TAG_*` and `USERNAME_*` errors; 422 for a malformed body (implemented) |
+| POST | `/auth/login` | public | `{ tag: str (≤ 64, ignoring case), password: str (1–128) }`. Sign-in uses the tag, never the username, since usernames change and repeat | 204 and sets the session cookie; 401 `INVALID_CREDENTIALS` (implemented) |
 | POST | `/auth/logout` | public | — | 204; deletes the session server-side, so a copy of the old cookie stops working, and clears the cookie (implemented) |
-| PATCH | `/v1/users/me` | session | `{ username: str }` (3–24 chars, `[a-zA-Z0-9_]`, unique) | `UserRead` |
-| GET | `/v1/users/username-availability` | session | `?username=` (≤ 64 chars) | `{ available: bool, code: str\|null, detail: str\|null }`; `code` is one of the `USERNAME_*` errors above when unavailable (implemented) |
+| PUT | `/v1/users/me/tag` | session | `{ tag: str }` (3–24 chars, `[a-zA-Z0-9_]`, unique ignoring case) | `UserRead`; sets the tag once, then `TAG_ALREADY_SET` (implemented) |
+| PATCH | `/v1/users/me` | session | `{ username: str }` (1–32 chars after trimming; not unique) | `UserRead`; changes the username any number of times; `USERNAME_*` errors (implemented) |
+| GET | `/v1/users/tag-availability` | session | `?tag=` (≤ 64 chars) | `{ available: bool, code: str\|null, detail: str\|null }`; `code` is one of the `TAG_*` errors above when unavailable (implemented) |
 | GET | `/v1/users/search` | session | `?q=` (1–64 chars), `?limit=` (1–50, default 20), `?offset=` (≥ 0, default 0) | `{ items: [UserPublic], next_offset: int\|null }`; only users with a tag; ranked exact tag, then prefix, then contains, then fuzzy (trigram word similarity), all ignoring case; `next_offset` is null on the last page; a blank `q` returns no items (implemented) |
-| GET | `/v1/users/by-username/{username}` | session | `{username}`: tag, ignoring case | `UserProfile`; 404 `NOT_FOUND` if no user has that tag (implemented) |
+| GET | `/v1/users/by-tag/{tag}` | session | `{tag}`: ignoring case | `UserProfile`; 404 `NOT_FOUND` if no user has that tag (implemented) |
 | GET | `/v1/users/{id}` | session | `{id}: uuid` | `UserProfile` |
 | GET | `/v1/users/{id}/matches` | session | `{id}: uuid`, `?limit&offset` | `[MatchSummary]`, finished only |
 | GET | `/v1/friends` | session | `?limit=` (1–100, default 50), `?offset=` (≥ 0, default 0) | `{ items: [UserPublic], next_offset: int\|null }`: the caller's own friends only, ordered by tag ignoring case. No route lists another player's friends (implemented) |
@@ -132,11 +140,11 @@ Player prompts are never returned by any endpoint or message except to their aut
 
 `/health` and `/auth/*` stay unversioned: the OAuth redirect URI is registered with Google.
 
-The four `public` rows above are the only routes reachable without a session; `tests/integration/test_route_auth.py` enforces this for every route. FastAPI's `/docs`, `/redoc`, and `/openapi.json` exist only when `APP_ENV=development` (implemented).
+The six `public` rows above are the only routes reachable without a session; `tests/integration/test_route_auth.py` enforces this for every route. FastAPI's `/docs`, `/redoc`, and `/openapi.json` exist only when `APP_ENV=development` (implemented). Passwords are sent as typed, never hashed by the client (a client-side hash would itself be the password); the server stores only a salted scrypt hash. Use HTTPS outside local development.
 
 ### Current matchmaking integration
 
-The current session-authenticated `POST /v1/match/queue` requires `{ model_id: uuid }` from `GET /v1/arenas`; an unknown or inactive model returns 404 `NOT_FOUND`, and malformed input returns 422. It returns HTTP 202 queue status. `GET /v1/match/status` returns HTTP 200 queue status. Both return `{ status: "none"|"queued"|"matched", match_id?: uuid }`. Matchmaking uses independent FIFO queues keyed by model UUID. The matchmaker passes the selected model UUID to the engine, which resolves its exact `api_model_id` and display name before inference. The client still uses the configured OpenRouter base URL and API key; provider-specific connection settings remain pending. The frontend integration is implemented: the lobby loads the arena catalog, displays model names, and sends the selected UUID in the required body. Selection stays locked during queue operations; recovered queues have an unknown model until `MATCH_STATE` arrives. Catalog failures do not block queue cancellation. `POST /v1/match/queue` returns 403 `USERNAME_REQUIRED` until the caller has a tag. `DELETE /v1/match/queue` (session, no body) cancels the caller’s queue entry in its selected model queue and returns HTTP 204, including if already absent; an existing match returns HTTP 409 `IN_MATCH`. The versioned routes above remain the target contract. The lobby polls until matched, then navigates to `/match/[match_id]`, where the arena opens the match WebSocket.
+The current session-authenticated `POST /v1/match/queue` requires `{ model_id: uuid }` from `GET /v1/arenas`; an unknown or inactive model returns 404 `NOT_FOUND`, and malformed input returns 422. It returns HTTP 202 queue status. `GET /v1/match/status` returns HTTP 200 queue status. Both return `{ status: "none"|"queued"|"matched", match_id?: uuid }`. Matchmaking uses independent FIFO queues keyed by model UUID. The matchmaker passes the selected model UUID to the engine, which resolves its exact `api_model_id` and display name before inference. The client still uses the configured OpenRouter base URL and API key; provider-specific connection settings remain pending. The frontend integration is implemented: the lobby loads the arena catalog, displays model names, and sends the selected UUID in the required body. Selection stays locked during queue operations; recovered queues have an unknown model until `MATCH_STATE` arrives. Catalog failures do not block queue cancellation. `POST /v1/match/queue` returns 403 `TAG_REQUIRED` until the caller has a tag. `DELETE /v1/match/queue` (session, no body) cancels the caller’s queue entry in its selected model queue and returns HTTP 204, including if already absent; an existing match returns HTTP 409 `IN_MATCH`. The versioned routes above remain the target contract. The lobby polls until matched, then navigates to `/match/[match_id]`, where the arena opens the match WebSocket.
 
 ## REST — BILC
 

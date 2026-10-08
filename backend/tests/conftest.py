@@ -60,8 +60,8 @@ MakeUser = Callable[..., Awaitable[User]]
 
 @pytest.fixture
 def make_user(db_session: AsyncSession) -> MakeUser:
-    async def make(username: str | None = None) -> User:
-        user = User(google_sub=f"test-{uuid4()}", username=username)
+    async def make(tag: str | None = None) -> User:
+        user = User(google_sub=f"test-{uuid4()}", tag=tag)
         db_session.add(user)
         # Commit (releases a savepoint) so a service's rollback can't undo seeded rows.
         await db_session.commit()

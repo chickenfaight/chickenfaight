@@ -42,7 +42,7 @@ async def test_valid_session_returns_user(client, make_user, db_session):
 
 async def test_google_sign_in_starts_a_session_that_auto_signs_in(client, db_session):
     google = SimpleNamespace(authorize_access_token=AsyncMock(return_value={
-        "userinfo": {"sub": "google-123", "email": "hen@example.com", "email_verified": True},
+        "userinfo": {"sub": "google-123", "email": "hen@example.com", "email_verified": True, "name": "Henrietta Hen"},
     }))
     with patch("app.api.auth.oauth") as oauth:
         oauth.create_client.return_value = google
@@ -50,6 +50,7 @@ async def test_google_sign_in_starts_a_session_that_auto_signs_in(client, db_ses
     assert response.status_code in (302, 307)
     user = await db_session.scalar(select(User).where(User.google_sub == "google-123"))
     assert await count_sessions(db_session, user) == 1
+    assert (user.username, user.tag) == ("Henrietta Hen", None)  # Google name starts the username; tag comes later
     # The cookie from sign-in alone is enough on the next visit.
     assert (await client.get(ME)).json()["id"] == str(user.id)
 

@@ -8,7 +8,7 @@ from app.db.session import get_session
 from app.schemas.schemas import QueueRequest
 from app.services.arena import ArenaService
 from app.services.matchmaking import Matchmaker
-from app.services.user import require_username
+from app.services.user import require_tag
 
 router = APIRouter(prefix="/match", tags=["match"])
 SessionDependency = Annotated[AsyncSession, Depends(get_session)]
@@ -22,7 +22,7 @@ async def queue_match(
     session: SessionDependency,
 ) -> dict[str, str]:
     """Registers user to the matchmaking queue."""
-    require_username(user)
+    require_tag(user)
     await ArenaService(session).require_active(body.model_id)
     matchmaker: Matchmaker = request.app.state.matchmaker
     matchmaker.register(user.id, body.model_id)

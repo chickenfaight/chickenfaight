@@ -6,18 +6,30 @@ from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.responses import RedirectResponse
 
+from app.api.rate_limit import TokenBucket, rate_limit_by_ip
 from app.auth.dependencies import CurrentUserDependency
 from app.auth.google import oauth
 from app.config import settings
 from app.db.session import get_session
-from app.schemas import GoogleIdentity, UserRead, LoginData
+from app.schemas import GoogleIdentity, LoginData, SignupData, UserRead
 from app.services.auth_session import SessionService
 from app.services.user import UserService
-from app.models.user import User
 
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 SessionDependency = Annotated[AsyncSession, Depends(get_session)]
+
+# Password guessing is limited per IP and, so many IPs can't share the work, per tag.
+login_ip_limit = rate_limit_by_ip(burst=10, per_minute=10)
+login_tag_limit = TokenBucket(burst=5, per_minute=1)
+signup_ip_limit = rate_limit_by_ip(burst=5, per_minute=1)
+
+
+def start_cookie_session(request: Request, token: str) -> None:
+    # Starlette's cookie is signed but readable, so store only the random session token
+    # (hashed in the database), never passwords, Google's tokens, or client credentials.
+    request.session.clear()
+    request.session["session_token"] = token
 
 
 @router.get("/google/login")
@@ -53,53 +65,27 @@ async def google_callback(
         return RedirectResponse(f"{settings.frontend_url.rstrip('/')}/login")
 
     user = await UserService(session).sign_in_with_google(identity)
-    token = await SessionService(session).start(user)
-
-    # Starlette's cookie is signed but readable, so store only the random session token
-    # (hashed in the database), never Google's tokens or client credentials.
-    request.session.clear()
-    request.session["session_token"] = token
+    start_cookie_session(request, await SessionService(session).start(user))
 
     return RedirectResponse(settings.frontend_url)
 
 
-@router.post("/signup", status_code=status.HTTP_204_NO_CONTENT)
-async def create_account(user_data: LoginData, request: Request, session: SessionDependency) -> Response:
-    """Attempt to create a new user account using user_data."""
-    if user_data.username is None or user_data.email is None or user_data.password_salt is None or user_data.password_hash is None:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Malformed user creation packet",
-        )
-
-    user = await UserService(session).create_account(user_data)
-    token = await SessionService(session).start(user)
-
-    # Starlette's cookie is signed but readable, so store only the random session token
-    # (hashed in the database), never Google's tokens or client credentials.
-    request.session.clear()
-    request.session["session_token"] = token
-
+@router.post("/signup", status_code=status.HTTP_204_NO_CONTENT, dependencies=[signup_ip_limit])
+async def create_account(data: SignupData, request: Request, session: SessionDependency) -> Response:
+    """Create a password account with its tag, and sign it in."""
+    user = await UserService(session).create_account(data)
+    start_cookie_session(request, await SessionService(session).start(user))
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
-@router.post("/login", status_code=status.HTTP_204_NO_CONTENT)
-async def password_login(user_data: LoginData, request: Request, session: SessionDependency) -> Response:
-    """Attempt to sign in to an account using user_data. Not compatible with Google-linked accounts."""
-    if user_data.username is None or user_data.password_hash is None:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Malformed sign-in packet",
-        )
-    user = await UserService(session).sign_in_with_password(user_data)
-    token = await SessionService(session).start(user)
-
-    # Starlette's cookie is signed but readable, so store only the random session token
-    # (hashed in the database), never Google's tokens or client credentials.
-    request.session.clear()
-    request.session["session_token"] = token
-
+@router.post("/login", status_code=status.HTTP_204_NO_CONTENT, dependencies=[login_ip_limit])
+async def password_login(data: LoginData, request: Request, session: SessionDependency) -> Response:
+    """Sign in with a tag and password. Google-only accounts have no password and always fail."""
+    login_tag_limit.check(data.tag.lower())
+    user = await UserService(session).sign_in_with_password(data)
+    start_cookie_session(request, await SessionService(session).start(user))
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
 
 @router.get("/me", response_model=UserRead)
 async def read_current_user(user: CurrentUserDependency) -> UserRead:

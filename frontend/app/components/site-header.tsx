@@ -34,8 +34,8 @@ export default function SiteHeader({ current, query }: { current?: "play"; query
       <UserSearch key={query} initialQuery={query} />
       <div className="relative" onMouseEnter={() => setMenu(true)} onMouseLeave={() => setMenu(false)} onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget)) setMenu(false); }} onKeyDown={(event) => { if (event.key === "Escape") { setMenu(false); profileButton.current?.focus(); } }}>
         <button ref={profileButton} aria-expanded={menu} aria-controls="profile-options" onClick={() => setMenu(true)} className={`flex items-center gap-3 rounded-xl px-2 py-2 text-left ${focus}`}>
-          <span className="flex h-10 w-10 items-center justify-center rounded-full border border-[#f04b58]/30 bg-[#f04b58]/10 text-sm font-bold text-[#ff7882]">{user?.username?.slice(0, 2).toUpperCase() || "CF"}</span>
-          <span><span className="block max-w-36 truncate text-xs font-bold">{user?.username || (session === "in" ? "Player" : "Guest player")}</span><span className="mt-1 block text-[10px] text-zinc-400">{session === "loading" ? "Checking session…" : session === "error" ? "Session unavailable" : user ? `${user.elo.toLocaleString()} Elo` : "Lobby preview"}</span></span>
+          <span className="flex h-10 w-10 items-center justify-center rounded-full border border-[#f04b58]/30 bg-[#f04b58]/10 text-sm font-bold text-[#ff7882]">{(user?.username || user?.tag)?.slice(0, 2).toUpperCase() || "CF"}</span>
+          <span><span className="block max-w-36 truncate text-xs font-bold">{user?.username || user?.tag || (session === "in" ? "Player" : "Guest player")}</span><span className="mt-1 block text-[10px] text-zinc-400">{session === "loading" ? "Checking session…" : session === "error" ? "Session unavailable" : user ? `${user.elo.toLocaleString()} Elo` : "Lobby preview"}</span></span>
           <Icon name="chevron" className="h-4 w-4 text-zinc-400" />
         </button>
         {menu && <div id="profile-options" className="absolute right-0 top-full w-56 pt-2"><div className={`${panel} p-2 text-sm`}>

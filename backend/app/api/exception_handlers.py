@@ -6,8 +6,9 @@ from app.services.exceptions import (
     AlreadyQueuedError,
     ArenaNotFoundError,
     FriendSelfError,
+    InvalidCredentialsError,
     RateLimitedError,
-    UsernameError,
+    TagError,
     UserNotFoundError,
 )
 
@@ -37,13 +38,23 @@ async def handle_already_matched(
     )
 
 
-async def handle_username_error(
+async def handle_tag_error(
         request: Request,
-        error: UsernameError,
+        error: TagError,
 ) -> JSONResponse:
     return JSONResponse(
         status_code=error.status_code,
         content={"code": error.code, "detail": error.detail},
+    )
+
+
+async def handle_invalid_credentials(
+        request: Request,
+        error: InvalidCredentialsError,
+) -> JSONResponse:
+    return JSONResponse(
+        status_code=401,
+        content={"code": "INVALID_CREDENTIALS", "detail": str(error)},
     )
 
 
@@ -92,9 +103,10 @@ EXCEPTION_HANDLERS = {
     AlreadyQueuedError: handle_already_queued,
     AlreadyMatchedError: handle_already_matched,
     ArenaNotFoundError: handle_arena_not_found,
-    UsernameError: handle_username_error,
+    TagError: handle_tag_error,
     UserNotFoundError: handle_user_not_found,
     FriendSelfError: handle_friend_self,
+    InvalidCredentialsError: handle_invalid_credentials,
     RateLimitedError: handle_rate_limited,
 }
 

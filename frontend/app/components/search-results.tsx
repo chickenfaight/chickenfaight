@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, ApiError } from "../lib/api";
-import { parseUserPage, type UserPublic } from "../lib/protocol";
+import { displayName, parseUserPage, type UserPublic } from "../lib/protocol";
 import { profileHref } from "../lib/routes";
 import Avatar from "./avatar";
 
@@ -79,9 +79,9 @@ export default function SearchResults({ query }: { query: string }) {
         <ul className="grid grid-cols-2 gap-3 xl:grid-cols-3">
           {items.map((user) => (
             <li key={user.id}>
-              <Link href={profileHref(user.username)} className={`flex items-center gap-4 rounded-3xl border border-white/[0.07] bg-[#202124] p-4 hover:border-white/20 ${focus}`}>
-                <Avatar username={user.username} url={user.avatar_url} size={44} />
-                <span className="truncate text-sm font-bold">{user.username}</span>
+              <Link href={profileHref(user.tag)} className={`flex items-center gap-4 rounded-3xl border border-white/[0.07] bg-[#202124] p-4 hover:border-white/20 ${focus}`}>
+                <Avatar name={displayName(user)} url={user.avatar_url} size={44} />
+                <span className="min-w-0"><span className="block truncate text-sm font-bold">{displayName(user)}</span><span className="block truncate text-xs text-zinc-500">{user.tag}</span></span>
               </Link>
             </li>
           ))}

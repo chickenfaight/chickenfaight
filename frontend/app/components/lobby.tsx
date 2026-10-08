@@ -6,7 +6,7 @@ import InfoDialog, { type DetailTitle } from "./info-dialog";
 import MatchmakingCard from "./matchmaking-card";
 import { useSession } from "./providers/session-provider";
 import SiteHeader from "./site-header";
-import UsernameDialog from "./username-dialog";
+import TagDialog from "./tag-dialog";
 
 const focus = "focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white";
 const panel = "rounded-3xl border border-white/[0.07] bg-[#202124]";
@@ -53,7 +53,7 @@ export default function Lobby() {
         </section>
         <footer className="flex shrink-0 items-center justify-between text-[10px] text-zinc-500"><span>All brains. A little bit of bird.</span><span>Chicken fAIght <span className="mx-2 text-zinc-700">/</span> Made for a good argument.</span></footer>
       </main>
-      {session === "in" && user?.username === null && <UsernameDialog onCreated={setUser} onSignOut={logout} signingOut={loggingOut} signOutError={logoutError} />}
+      {session === "in" && user?.tag === null && <TagDialog onCreated={setUser} onSignOut={logout} signingOut={loggingOut} signOutError={logoutError} />}
       <InfoDialog title={detail} onClose={() => setDetail(null)} />
     </div>
   );

@@ -1,39 +1,18 @@
-"""Format and content rules for user tags (`users.username`)."""
+"""Rules for usernames: the changeable display name (`users.username`). Unlike tags, they aren't unique."""
 
-import re
-
-from better_profanity import profanity
+import unicodedata
 
 from app.services.exceptions import UsernameInvalidError, UsernameNotAllowedError
+from app.services.tags import is_profane
 
-
-USERNAME_PATTERN = re.compile(r"[A-Za-z0-9_]{3,24}")
-
-profanity.load_censor_words()
-
-# better-profanity only matches whole words, but tags glue words together
-# ("bigshit"), so these unambiguous stems are also blocked as substrings.
-# Words that appear inside innocent ones (ass/class, rape/grape, spic/spice)
-# stay whole-word only.
-BLOCKED_SUBSTRINGS = (
-    "fuck", "shit", "bitch", "cunt", "nigg", "faggot", "whore", "slut",
-    "pussy", "porn", "kike", "chink", "tranny",
-)
-LEETSPEAK = str.maketrans("013457@$!", "oieastasi")
-
-
-def is_profane(username: str) -> bool:
-    words = re.sub(r"(?<=[a-z])(?=[A-Z])", " ", username).replace("_", " ")
-    words_without_digits = re.sub(r"(?<=[A-Za-z])(?=\d)|(?<=\d)(?=[A-Za-z])", " ", words)
-    if profanity.contains_profanity(words) or profanity.contains_profanity(words_without_digits):
-        return True
-
-    squashed = username.lower().translate(LEETSPEAK).replace("_", "")
-    return any(stem in squashed for stem in BLOCKED_SUBSTRINGS)
+MAX_LENGTH = 32
 
 
 def validate_username(username: str) -> str:
-    if not USERNAME_PATTERN.fullmatch(username):
+    """Returns the username with surrounding whitespace removed, or raises."""
+    username = username.strip()
+    # Control and other invisible format characters could make names look blank or spoof others.
+    if not 1 <= len(username) <= MAX_LENGTH or any(unicodedata.category(ch) in ("Cc", "Cf") for ch in username):
         raise UsernameInvalidError()
     if is_profane(username):
         raise UsernameNotAllowedError()

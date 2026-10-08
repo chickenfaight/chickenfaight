@@ -126,7 +126,7 @@ export default function MatchmakingCard() {
           setCatalogPhase("loading");
           setCatalogAttempt(value => value + 1);
           setError("That arena is no longer available. Choose an arena from the refreshed list.");
-        } else if (err instanceof ApiError && err.code === "USERNAME_REQUIRED") {
+        } else if (err instanceof ApiError && err.code === "TAG_REQUIRED") {
           setPhase("idle");
           setError("Create your tag to join the queue.");
         } else {
@@ -181,7 +181,9 @@ export default function MatchmakingCard() {
       <h3 className={`text-sm font-bold ${queued ? "text-[#f04b58]" : "text-[#f5f3ef]"}`}>{title}</h3>
     </div>
     <label htmlFor="queue-model" className="mb-2 block text-[10px] font-semibold uppercase tracking-widest text-zinc-400">AI model</label>
-    <select id="queue-model" value={showQueue ? "" : selectedId} onChange={event => setSelectedId(event.target.value)} disabled={selectionLocked} className={`h-12 w-full rounded-xl border border-white/10 bg-[#242529] px-3 text-sm text-zinc-300 disabled:text-zinc-400 ${focus}`}>
+    {/* autoComplete="off": on reload, Firefox restores the previous page's enabled/disabled state
+        before React loads, which no longer matches the server HTML and breaks hydration. */}
+    <select id="queue-model" autoComplete="off" value={showQueue ? "" : selectedId} onChange={event => setSelectedId(event.target.value)} disabled={selectionLocked} className={`h-12 w-full rounded-xl border border-white/10 bg-[#242529] px-3 text-sm text-zinc-300 disabled:text-zinc-400 ${focus}`}>
       {showQueue ? <option value="">{queuedModel?.display_name ?? "Existing queue · model unknown"}</option> : <>
         {!selectedId && <option value="">{signedOut ? "Sign in to choose an arena" : catalogPhase === "loading" ? "Loading arenas…" : "Choose an arena"}</option>}
         {arenas.map(arena => <option key={arena.id} value={arena.id} disabled={arena.kind === "byom"}>{arena.display_name}{arena.kind === "byom" ? " (coming soon)" : ""}</option>)}

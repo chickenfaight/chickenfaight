@@ -29,7 +29,7 @@ Dependency direction: `api → services → repositories → models`. `engine` u
 
 Rules:
 - Routers declare `response_model` (or a return type) and never return ORM objects.
-- Services open transactions with `async with self.session.begin():` (see `UserService.sign_in_with_google`). Exception: on routes using `CurrentUserDependency`, loading the user already began the session's transaction, so the service ends it with `commit()`/`rollback()` instead (see `UserService.claim_username`).
+- Services open transactions with `async with self.session.begin():` (see `UserService.sign_in_with_google`). Exception: on routes using `CurrentUserDependency`, loading the user already began the session's transaction, so the service ends it with `commit()`/`rollback()` instead (see `UserService.claim_tag`).
 - New env vars go in `Settings` and `.env.example` together; missing required vars fail at startup.
 
 ## Auth
@@ -40,9 +40,10 @@ State the auth of every endpoint explicitly; PROTOCOL.md lists which are public.
 - **WebSockets:** authenticate and authorize *before* `accept()`.
 - **Ownership** (own device, participant in match) is checked in services, not routers. Return 404 for other users' private resources.
 - **Rate limits:** routes that read other users' data or change the friends list add `dependencies=[rate_limit(burst=..., per_minute=...)]` (`app/api/rate_limit.py`), an in-memory token bucket per signed-in user that raises `RateLimitedError` (429 `RATE_LIMITED` with `Retry-After`). Each `rate_limit(...)` call is its own bucket; reuse the returned dependency to share one across routes. Values are listed in PROTOCOL.md.
+- **Passwords** (`app/auth/passwords.py`): scrypt (N=2^14, r=8, p=1) with a random 16-byte salt per user, compared with `hmac.compare_digest`. Sign-in does the same hashing work for unknown tags and Google-only accounts, and raises one `InvalidCredentialsError` for every failure, so it reveals neither which tags exist nor which accounts have passwords. Signed-out routes use `rate_limit_by_ip`; login also uses a per-tag `TokenBucket`.
 - Pairing codes and refresh tokens: generate with `secrets`, store only SHA-256 hashes, compare with `hmac.compare_digest`.
 
-## Game engine (PLANNED)
+## Game engine (partially built)
 
 `app/engine/` — one `GameEngine` instance per match, run as its own asyncio task started by the matchmaker. It owns the match's in-memory state and both player sockets, and follows the match flow and failure table in PROTOCOL.md.
 
@@ -64,13 +65,13 @@ OpenRouter is the selected cloud inference provider: it offers a single platform
 
 Live state (matchmaking queues, running engines, connected BILC devices) is in-memory in one server process. Running multiple processes would need a shared store; out of scope.
 
-## User tags
+## Tags and usernames
 
-`users.username` is the player's public tag, null until set (PROTOCOL.md: `PATCH /v1/users/me`). Rules live in `app/services/usernames.py`:
-- Format `[A-Za-z0-9_]{3,24}`; uniqueness ignores case (unique index `uq_users_username_lower`) but the typed casing is kept.
+`users.tag` is the player's permanent unique identifier, null until set (PROTOCOL.md: `PUT /v1/users/me/tag`). `users.username` is a separate, changeable display name (`PATCH /v1/users/me`): not unique, 1–32 characters after trimming, no control or invisible formatting characters, and the same profanity check (`app/services/usernames.py`). Google sign-in fills it from the Google name only when creating the account; password signup requires it. Tag rules live in `app/services/tags.py`:
+- Format `[A-Za-z0-9_]{3,24}`; uniqueness ignores case (unique index `uq_users_tag_lower`) but the typed casing is kept.
 - Profanity: `better-profanity` whole-word check (also split on `_`, camelCase, and letter/digit boundaries), plus a short list of severe stems matched as substrings after undoing leetspeak, because tags glue words together. Ambiguous short words stay whole-word only (`class`, `grape` pass; `Scunthorpe` is a known false positive).
-- Search (`UserRepository.search_by_username`): tagged users whose lowercased tag contains the query (LIKE wildcards escaped) or is trigram-similar to it (`%>`, pg_trgm's word similarity ≥ 0.6). Ordered exact, prefix, contains, then word similarity, tag length, tag, and `id`, so offset pages are stable.
-- Set once: `UPDATE ... WHERE username IS NULL` makes the write atomic, and nothing else writes the column (sign-in never touches it). Matchmaking refuses users without a tag.
+- Search (`UserRepository.search_by_tag`): tagged users whose lowercased tag contains the query (LIKE wildcards escaped) or is trigram-similar to it (`%>`, pg_trgm's word similarity ≥ 0.6). Ordered exact, prefix, contains, then word similarity, tag length, tag, and `id`, so offset pages are stable.
+- Set once: `UPDATE ... WHERE tag IS NULL` makes the write atomic, and nothing else writes the column (sign-in never touches it). Matchmaking refuses users without a tag.
 
 ## Friends
 
@@ -91,7 +92,7 @@ Postgres. Constraint and index names come from the naming convention in `app/db/
 
 | Table | Columns | Notes |
 |---|---|---|
-| `users` (implemented) | `id` UUID, `google_sub` unique, `email?`, `username?` unique on `lower(username)` plus a `pg_trgm` GIN index on `lower(username)` for search, `avatar_url?`, `updated_at` | Drop `elo` when `ratings` ships; `username` is the user's tag (see below) |
+| `users` (implemented) | `id` UUID, `google_sub?` unique (null for password-only accounts), `password_salt?`, `password_hash?` (scrypt, hex; null for Google-only accounts), `email?`, `tag?` unique on `lower(tag)` plus a `pg_trgm` GIN index on `lower(tag)` for search, `username?` (≤ 32, not unique), `avatar_url?`, `updated_at` | Drop `elo` when `ratings` ships; `tag` is permanent and `username` changeable (see below) |
 | `providers` (implemented) | `id` UUID, `slug` unique, `display_name`, `base_url`, `adapter`, `is_active`, `updated_at` | `adapter` uses `InferenceAdapter`, stored as VARCHAR + CHECK; currently only `openai_compatible`. Credentials and inference wiring remain in server configuration / PLANNED integration |
 | `models` (implemented) | `id` UUID, `provider_id`, `api_model_id`, `display_name`, `input_cost?`, `output_cost?`, `cached_input_cost?`, `pricing_updated_at?`, `context_window?`, `max_output_tokens?`, `is_active`, `provider_metadata` JSONB, `updated_at` | Unique `(provider_id, api_model_id)`; costs are nonnegative NUMERIC(20,10) USD per million tokens (null = unknown, zero = free); token limits are positive when set. UUID-based argument model selection is implemented; provider-specific connection settings remain PLANNED |
 | `ladders` | `id` UUID, `slug` unique, `display_name`, `kind` (`cloud`/`byom`), `provider_model_id?`, `is_active`, `provider_metadata` JSONB | Exactly one `byom` row |

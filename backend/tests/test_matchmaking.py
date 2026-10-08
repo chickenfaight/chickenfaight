@@ -186,7 +186,7 @@ class QueueApiTests(unittest.TestCase):
         from app.models import Model, User
 
         self.model_id = uuid4()
-        self.user = User(id=uuid4(), google_sub='queue-test', username='QueueUser')
+        self.user = User(id=uuid4(), google_sub='queue-test', tag='QueueUser')
         self.matchmaker = Matchmaker()
         self.session = AsyncMock()
         self.result = MagicMock()
@@ -233,11 +233,11 @@ class QueueApiTests(unittest.TestCase):
         self.session.execute.assert_not_awaited()
         self.assertFalse(self.matchmaker.queued_users)
 
-    def test_queue_requires_username(self):
-        self.user.username = None
+    def test_queue_requires_tag(self):
+        self.user.tag = None
         response = self.client.post('/v1/match/queue', json={'model_id': str(self.model_id)})
         self.assertEqual(response.status_code, 403)
-        self.assertEqual(response.json()['code'], 'USERNAME_REQUIRED')
+        self.assertEqual(response.json()['code'], 'TAG_REQUIRED')
         self.session.execute.assert_not_awaited()
 
     def test_duplicate_queue_request_preserves_original_arena(self):

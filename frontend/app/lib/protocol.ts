@@ -1,25 +1,35 @@
-export type User = { id: string; username: string | null; elo: number };
+// `tag` is the permanent unique identifier (set once); `username` is the changeable display name.
+export type User = { id: string; tag: string | null; username: string | null; elo: number };
+
+function optionalString(value: unknown): value is string | null {
+  return value === null || typeof value === "string";
+}
 
 export function parseUser(data: unknown): User {
-  if (typeof data !== "object" || data === null || !("id" in data) || !("elo" in data) || !("username" in data)
+  if (typeof data !== "object" || data === null || !("id" in data) || !("elo" in data) || !("tag" in data) || !("username" in data)
     || typeof data.id !== "string" || typeof data.elo !== "number"
-    || !(data.username === null || typeof data.username === "string")) {
+    || !optionalString(data.tag) || !optionalString(data.username)) {
     throw new Error("Invalid user");
   }
-  return { id: data.id, username: data.username, elo: data.elo };
+  return { id: data.id, tag: data.tag, username: data.username, elo: data.elo };
+}
+
+// What to call a player: their username, or their tag if they haven't set one.
+export function displayName(user: { tag: string; username: string | null }): string {
+  return user.username || user.tag;
 }
 
 // Mirrors the server's tag format rule; the server re-checks it and adds profanity and uniqueness checks.
-export function usernameFormatError(value: string): string | null {
+export function tagFormatError(value: string): string | null {
   if (value.length < 3) return "Use at least 3 characters.";
   if (value.length > 24) return "Use 24 characters or fewer.";
   if (!/^[A-Za-z0-9_]+$/.test(value)) return "Use only letters, numbers, and underscores.";
   return null;
 }
 
-export type UsernameAvailability = { available: true } | { available: false; detail: string };
+export type TagAvailability = { available: true } | { available: false; detail: string };
 
-export function parseUsernameAvailability(data: unknown): UsernameAvailability {
+export function parseTagAvailability(data: unknown): TagAvailability {
   if (typeof data !== "object" || data === null || !("available" in data)) throw new Error("Invalid availability");
   if (data.available === true) return { available: true };
   if (data.available === false && "detail" in data && typeof data.detail === "string") {
@@ -60,19 +70,19 @@ export function parseQueueStatus(data: unknown): QueueStatus {
   throw new Error("Invalid queue status");
 }
 
-export type UserPublic = { id: string; username: string; avatar_url: string | null };
+export type UserPublic = { id: string; tag: string; username: string | null; avatar_url: string | null };
 
 function isObject(data: unknown): data is Record<string, unknown> {
   return typeof data === "object" && data !== null;
 }
 
-// Search and profiles only ever return tagged users, so `username` is required here.
+// Search and profiles only ever return tagged users, so `tag` is required here.
 export function parseUserPublic(data: unknown): UserPublic {
-  if (!isObject(data) || typeof data.id !== "string" || typeof data.username !== "string"
-    || !(data.avatar_url === null || typeof data.avatar_url === "string")) {
+  if (!isObject(data) || typeof data.id !== "string" || typeof data.tag !== "string"
+    || !optionalString(data.username) || !optionalString(data.avatar_url)) {
     throw new Error("Invalid user");
   }
-  return { id: data.id, username: data.username, avatar_url: data.avatar_url };
+  return { id: data.id, tag: data.tag, username: data.username, avatar_url: data.avatar_url };
 }
 
 // A page of players, as returned by search and the friends list.

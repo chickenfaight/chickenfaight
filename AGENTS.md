@@ -56,8 +56,9 @@ bilc/              PLANNED — BYOM Interface Layer Client (Go CLI)
 | Models | Database-selected argument model and independently configured judge, never `openrouter/free`; OpenRouter-only options sent only to OpenRouter | Random routing hit safety classifiers and reasoning models; other providers reject unknown options |
 | Model failures | Retry a turn or verdict once, then void the match | The platform's fault, so no Elo change |
 | Web sessions | Random token in a signed HTTP-only cookie; only its SHA-256 hash is stored server-side; 14 days; logout deletes it | Logout and expiry really end a session; `/auth/me` validates it |
-| Public routes | Allowlist of 4 (`/health`, Google login/callback, logout), enforced by `tests/integration/test_route_auth.py`; API docs only in development | A new route can't ship public by accident |
-| Rate limits | In-memory token bucket per signed-in user on routes that read other users' data or edit friends | Slows scraping; one process, like matchmaking |
+| Public routes | Allowlist of 6 (`/health`, Google login/callback, password signup/login, logout), enforced by `tests/integration/test_route_auth.py`; API docs only in development | A new route can't ship public by accident |
+| Rate limits | In-memory token buckets: per signed-in user on routes that read other users' data or edit friends; per IP and per tag on password sign-in and signup | Slows scraping and password guessing; one process, like matchmaking |
+| Passwords | Sent as typed over HTTPS; the server stores a salted scrypt hash (stdlib); one generic error for every failed sign-in | A client-side hash would itself be the password; no account enumeration |
 | Friends | One-way adds; each list visible only to its owner | No approval flow; no scraping friend graphs |
 | Match concurrency | One asyncio task per match (the design doc's "thread") | No OS threads in an async server |
 | Live output | Provider → server via SSE; server → browser/BILC via WebSocket | Players watch the debate stream |
@@ -68,6 +69,8 @@ bilc/              PLANNED — BYOM Interface Layer Client (Go CLI)
 Use these terms exactly, in code and docs.
 
 - **match** — one debate between two players. Use "debate" only in UI copy.
+- **tag** — a user's permanent unique identifier (`users.tag`), set once. Used in URLs, search, and password sign-in.
+- **username** — a user's changeable display name (`users.username`); not unique. Never use it to identify a user.
 - **player** — a user in a match; each is assigned a **side**: `pro` or `con`.
 - **turn** — one model generation for one side in one **phase** (`opening`, `rebuttal`, `closing`).
 - **ladder** — a model's separate Elo pool; the BYOM arena is one ladder.

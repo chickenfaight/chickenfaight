@@ -11,6 +11,7 @@ type Session = {
   user: User | null;
   status: SessionStatus;
   setUser: (user: User) => void;
+  refresh: () => Promise<SessionStatus>; // re-checks `/auth/me`, e.g. after signing in
   logout: () => Promise<boolean>; // true once signed out
   loggingOut: boolean;
   logoutError: string;
@@ -28,26 +29,34 @@ export default function SessionProvider({ children }: { children: React.ReactNod
   const [loggingOut, setLoggingOut] = useState(false);
   const [logoutError, setLogoutError] = useState("");
   const logoutController = useRef<AbortController | null>(null);
+  const loadController = useRef<AbortController | null>(null);
   const router = useRouter();
   const pathname = usePathname();
 
-  useEffect(() => {
-    const controller = new AbortController();
-    async function load() {
-      try {
-        const res = await fetch(`${backendUrl}/auth/me`, { credentials: "include", cache: "no-store", signal: AbortSignal.any([controller.signal, AbortSignal.timeout(5000)]) });
-        if (res.status === 401) { setStatus("out"); return; }
-        if (!res.ok) throw new Error("Session unavailable");
-        setUserState(parseUser(await res.json())); setStatus("in");
-      } catch { if (!controller.signal.aborted) setStatus("error"); }
-    }
-    void load();
-    return () => { controller.abort(); logoutController.current?.abort(); };
+  // Asks the backend whether the session cookie is valid; the client never decides on its own.
+  const refresh = useCallback(async (): Promise<SessionStatus> => {
+    loadController.current?.abort();
+    const controller = new AbortController(); loadController.current = controller;
+    let next: SessionStatus;
+    try {
+      const res = await fetch(`${backendUrl}/auth/me`, { credentials: "include", cache: "no-store", signal: AbortSignal.any([controller.signal, AbortSignal.timeout(5000)]) });
+      if (res.status === 401) { setUserState(null); next = "out"; }
+      else if (!res.ok) throw new Error("Session unavailable");
+      else { setUserState(parseUser(await res.json())); next = "in"; }
+    } catch { next = "error"; }
+    if (!controller.signal.aborted) setStatus(next);
+    return next;
   }, []);
+
+  useEffect(() => {
+    async function load() { await refresh(); }
+    void load();
+    return () => { loadController.current?.abort(); logoutController.current?.abort(); };
+  }, [refresh]);
 
   // No valid session (expired, invalid, or just logged out): send the visitor to log in.
   useEffect(() => {
-    if (status === "out" && !PUBLIC_PATHS.includes(pathname)) { router.replace("/login"); setStatus("loading"); }
+    if (status === "out" && !PUBLIC_PATHS.includes(pathname)) router.replace("/login");
   }, [status, pathname, router]);
 
   const setUser = useCallback((next: User) => { setUserState(next); setStatus("in"); }, []);
@@ -65,8 +74,8 @@ export default function SessionProvider({ children }: { children: React.ReactNod
   }, []);
 
   const value = useMemo(
-    () => ({ user, status, setUser, logout, loggingOut, logoutError }),
-    [user, status, setUser, logout, loggingOut, logoutError],
+    () => ({ user, status, setUser, refresh, logout, loggingOut, logoutError }),
+    [user, status, setUser, refresh, logout, loggingOut, logoutError],
   );
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;
 }

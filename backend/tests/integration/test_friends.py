@@ -6,13 +6,13 @@ from sqlalchemy import func, select
 from app.models import Friendship
 
 FRIENDS = "/v1/friends"
-PROFILE = "/v1/users/by-username/"
+PROFILE = "/v1/users/by-tag/"
 
 
 async def friend_tags(client, **params) -> list[str]:
     response = await client.get(FRIENDS, params=params)
     assert response.status_code == 200
-    return [item["username"] for item in response.json()["items"]]
+    return [item["tag"] for item in response.json()["items"]]
 
 
 # PUT /v1/friends/{user_id}
@@ -127,7 +127,7 @@ async def test_list_returns_only_public_fields(client, log_in, make_user, db_ses
     await client.put(f"{FRIENDS}/{target.id}")
     response = await client.get(FRIENDS)
     assert response.json() == {
-        "items": [{"id": str(target.id), "username": "Rooster_42", "avatar_url": None}],
+        "items": [{"id": str(target.id), "tag": "Rooster_42", "username": None, "avatar_url": None}],
         "next_offset": None,
     }
 
@@ -146,10 +146,10 @@ async def test_list_paginates(client, log_in, make_user):
     for hen in hens:
         await client.put(f"{FRIENDS}/{hen.id}")
     first = (await client.get(FRIENDS, params={"limit": 2})).json()
-    assert [item["username"] for item in first["items"]] == ["hen_0", "hen_1"]
+    assert [item["tag"] for item in first["items"]] == ["hen_0", "hen_1"]
     assert first["next_offset"] == 2
     last = (await client.get(FRIENDS, params={"limit": 2, "offset": 4})).json()
-    assert [item["username"] for item in last["items"]] == ["hen_4"]
+    assert [item["tag"] for item in last["items"]] == ["hen_4"]
     assert last["next_offset"] is None
 
 

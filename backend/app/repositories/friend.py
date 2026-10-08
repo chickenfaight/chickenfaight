@@ -41,7 +41,7 @@ class FriendRepository:
             select(User)
             .join(Friendship, Friendship.friend_id == User.id)
             .where(Friendship.user_id == user_id)
-            .order_by(func.lower(User.username), User.id)
+            .order_by(func.lower(User.tag), User.id)
             .limit(limit)
             .offset(offset)
         )

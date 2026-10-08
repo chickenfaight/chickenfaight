@@ -58,7 +58,7 @@ export default function MatchArena() {
   const [leaving, setLeaving] = useState(false);
   const [draft, setDraft] = useState("");
   const [tab, setTab] = useState<"you" | "opponent">("you");
-  const [username, setUsername] = useState("You");
+  const [name, setName] = useState("You");
   const textarea = useRef<HTMLTextAreaElement>(null);
   const promptText = useRef<HTMLParagraphElement>(null);
   const promptOrigin = useRef<DOMRect | null>(null);
@@ -69,7 +69,7 @@ export default function MatchArena() {
   useEffect(() => {
     const controller = new AbortController();
     api("/auth/me", controller.signal).then(data => {
-      if (!controller.signal.aborted) setUsername(parseUser(data).username || "You");
+      if (!controller.signal.aborted) { const me = parseUser(data); setName(me.username || me.tag || "You"); }
     }).catch(() => {});
     return () => controller.abort();
   }, []);
@@ -148,7 +148,7 @@ export default function MatchArena() {
             {(["you", "opponent"] as const).map(value => <button key={value} id={`${value}-tab`} role="tab" aria-selected={tab === value} aria-controls="argument-panel" tabIndex={tab === value ? 0 : -1} onClick={() => setTab(value)} onKeyDown={event => { if (["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) { event.preventDefault(); const next = event.key === "Home" ? "you" : event.key === "End" ? "opponent" : tab === "you" ? "opponent" : "you"; setTab(next); document.getElementById(`${next}-tab`)?.focus(); } }} className={`min-h-14 border-b-2 text-center text-base font-semibold transition-colors ${focus} ${tab === value ? "border-[#e53848] text-[#f5f3ef]" : "border-transparent text-[#9da7b4] hover:text-white"}`}>{value === "you" ? "Your argument" : "Opponent’s argument"}</button>)}
           </div>
           <div role="tabpanel" id="argument-panel" aria-labelledby={`${tab}-tab`} tabIndex={0} className={`pt-5 ${focus}`}>
-            <div className="mb-5 flex items-center gap-3 text-sm font-semibold"><span aria-hidden="true" className={`flex h-9 w-9 items-center justify-center rounded-full border border-current text-xs ${sideColor(viewedSide)}`}>{tab === "you" ? username.slice(0, 2).toUpperCase() : "OP"}</span><span>{tab === "you" ? username : "Opponent"}</span><span className="font-normal text-[#68717c]">|</span><span className={`text-xs uppercase tracking-wider ${sideColor(viewedSide)}`}>{viewedSide}</span></div>
+            <div className="mb-5 flex items-center gap-3 text-sm font-semibold"><span aria-hidden="true" className={`flex h-9 w-9 items-center justify-center rounded-full border border-current text-xs ${sideColor(viewedSide)}`}>{tab === "you" ? name.slice(0, 2).toUpperCase() : "OP"}</span><span>{tab === "you" ? name : "Opponent"}</span><span className="font-normal text-[#68717c]">|</span><span className={`text-xs uppercase tracking-wider ${sideColor(viewedSide)}`}>{viewedSide}</span></div>
             {tab === "you" && state.prompt !== null && <div className="mb-4 border-b border-[#353b43] pb-4"><h3 className={`${eyebrow} text-[10px]`}>Your prompt</h3><p className="mt-1 whitespace-pre-wrap break-words text-base leading-relaxed">{state.prompt}</p></div>}
             <h3 className={`${eyebrow} text-[10px]`}>{tab === "you" ? "Your AI’s argument" : "Opponent’s AI’s argument"}</h3>
             <div className="mt-2 space-y-3 text-[17px] leading-relaxed">{(result.arguments[viewedSide] || "No argument was generated.").split(/\n\s*\n/).map((paragraph, index) => <p key={index} className="whitespace-pre-wrap break-words">{paragraph}</p>)}</div>

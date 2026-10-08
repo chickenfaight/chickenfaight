@@ -3,7 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useId, useState } from "react";
 import { api, ApiError } from "../lib/api";
-import { parseUserPage, type UserPublic } from "../lib/protocol";
+import { displayName, parseUserPage, type UserPublic } from "../lib/protocol";
 import { profileHref, searchHref } from "../lib/routes";
 import Avatar from "./avatar";
 
@@ -65,7 +65,7 @@ export default function UserSearch({ initialQuery = "" }: { initialQuery?: strin
       setActive(-1);
     } else if (event.key === "Enter") {
       event.preventDefault();
-      if (active >= 0 && active < items.length) go(profileHref(items[active].username));
+      if (active >= 0 && active < items.length) go(profileHref(items[active].tag));
       else if (trimmed) go(searchHref(trimmed));
     }
   }
@@ -102,12 +102,12 @@ export default function UserSearch({ initialQuery = "" }: { initialQuery?: strin
                   role="option"
                   aria-selected={index === active}
                   onMouseDown={(event) => event.preventDefault()}
-                  onClick={() => go(profileHref(user.username))}
+                  onClick={() => go(profileHref(user.tag))}
                   onMouseEnter={() => setActive(index)}
                   className={`flex cursor-pointer items-center gap-3 rounded-xl px-3 py-2 ${index === active ? "bg-white/5" : ""}`}
                 >
-                  <Avatar username={user.username} url={user.avatar_url} size={28} />
-                  <span className="truncate font-semibold">{user.username}</span>
+                  <Avatar name={displayName(user)} url={user.avatar_url} size={28} />
+                  <span className="min-w-0 truncate"><span className="font-semibold">{displayName(user)}</span> <span className="text-xs text-zinc-500">{user.tag}</span></span>
                 </li>
               ))}
             </ul>

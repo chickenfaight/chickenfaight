@@ -2,10 +2,10 @@
 
 import { type FormEvent, useEffect, useRef, useState } from "react";
 import { api, ApiError } from "../lib/api";
-import { parseUser, parseUsernameAvailability, type User, type UsernameAvailability, usernameFormatError } from "../lib/protocol";
+import { parseUser, parseTagAvailability, type User, type TagAvailability, tagFormatError } from "../lib/protocol";
 
 const focus = "focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white";
-type Check = UsernameAvailability | "error";
+type Check = TagAvailability | "error";
 
 type Props = {
   onCreated: (user: User) => void;
@@ -14,7 +14,7 @@ type Props = {
   signOutError: string;
 };
 
-export default function UsernameDialog({ onCreated, onSignOut, signingOut, signOutError }: Props) {
+export default function TagDialog({ onCreated, onSignOut, signingOut, signOutError }: Props) {
   const dialog = useRef<HTMLDialogElement>(null);
   const created = useRef(false);
   const submitController = useRef<AbortController | null>(null);
@@ -29,12 +29,12 @@ export default function UsernameDialog({ onCreated, onSignOut, signingOut, signO
   }, []);
 
   useEffect(() => {
-    if (usernameFormatError(value)) return;
+    if (tagFormatError(value)) return;
     const controller = new AbortController();
     const timer = setTimeout(async () => {
       try {
-        const data = await api(`/v1/users/username-availability?username=${encodeURIComponent(value)}`, controller.signal);
-        setChecked({ value, check: parseUsernameAvailability(data) });
+        const data = await api(`/v1/users/tag-availability?tag=${encodeURIComponent(value)}`, controller.signal);
+        setChecked({ value, check: parseTagAvailability(data) });
       } catch {
         if (!controller.signal.aborted) setChecked({ value, check: "error" });
       }
@@ -42,7 +42,7 @@ export default function UsernameDialog({ onCreated, onSignOut, signingOut, signO
     return () => { controller.abort(); clearTimeout(timer); };
   }, [value]);
 
-  const formatError = value ? usernameFormatError(value) : null;
+  const formatError = value ? tagFormatError(value) : null;
   const check = checked?.value === value ? checked.check : null;
   const taken = check !== null && check !== "error" && !check.available;
   const canSubmit = value !== "" && !formatError && !taken && !submitting;
@@ -62,14 +62,14 @@ export default function UsernameDialog({ onCreated, onSignOut, signingOut, signO
     const controller = new AbortController();
     submitController.current = controller;
     try {
-      const user = parseUser(await api("/v1/users/me", controller.signal, "PATCH", { username: value }));
+      const user = parseUser(await api("/v1/users/me/tag", controller.signal, "PUT", { tag: value }));
       created.current = true;
       dialog.current?.close();
       onCreated(user);
     } catch (err) {
       if (controller.signal.aborted) return;
       setSubmitting(false);
-      if (err instanceof ApiError && err.code === "USERNAME_ALREADY_SET") {
+      if (err instanceof ApiError && err.code === "TAG_ALREADY_SET") {
         setSubmitError("Your tag is already set. Reload the page to continue.");
       } else if (err instanceof ApiError && err.detail && (err.status === 409 || err.status === 422)) {
         setChecked({ value, check: { available: false, detail: err.detail } });
