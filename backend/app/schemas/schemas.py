@@ -83,3 +83,11 @@ class Verdict(BaseModel):
 class FriendsPage(BaseModel):
     items: list[UserPublic]
     next_offset: int | None
+
+
+class ArenaRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    display_name: str
+    kind: Literal["provided", "byom"] = "provided" # TODO default to provided before BYOM is implemented

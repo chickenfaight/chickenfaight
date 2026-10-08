@@ -82,6 +82,7 @@ UserPublic       { id: uuid, username: str|null, avatar_url: str|null }   (imple
 UserProfile      UserPublic + { ratings: [Rating], is_friend: bool }   (implemented; `ratings` is empty until ratings ship; `is_friend` is whether the caller has added this player)
 Rating           { ladder: str, elo: int, games_played: int, wins: int, losses: int }
 Ladder           { slug: str, display_name: str, kind: "cloud"|"byom" }
+ArenaRead        { id: uuid, display_name: str, kind: "provided"|"byom" } (implemented; id is the model's UUID; kind currently defaults to "provided")
 Side             "pro" | "con"
 Phase            "opening" | "rebuttal" | "closing"
 MatchStatus      "waiting_for_players" | "awaiting_prompts" | "in_progress" | "judging"
@@ -117,6 +118,7 @@ Player prompts are never returned by any endpoint or message except to their aut
 | PUT | `/v1/friends/{user_id}` | session | `{user_id}: uuid` | 204, also if already a friend. Adding is one-way; the other player doesn't approve it. 404 `NOT_FOUND` if no tagged player has that ID; 422 `FRIEND_SELF` for the caller's own ID (implemented) |
 | DELETE | `/v1/friends/{user_id}` | session | `{user_id}: uuid` | 204, also if not a friend (implemented) |
 | GET | `/v1/ladders` | session | — | `[Ladder]` (active only) |
+| GET | `/v1/arenas` | session | — | `[ArenaRead]` (active models only; implemented) |
 | GET | `/v1/ladders/{slug}/leaderboard` | session | `?limit&offset` | `[{ rank, user: UserPublic, rating: Rating }]` |
 | POST | `/v1/matchmaking/queue` | session | `{ ladder: str, bilc_id?: uuid }` (`bilc_id` required iff ladder is BYOM, must be caller's online idle device) | 202 `{ status: "queued" }` |
 | GET | `/v1/matchmaking/queue` | session | — | `{ status: "none"|"queued"|"matched", match_id?: uuid }` |

@@ -12,6 +12,7 @@ from app.api.matchmaking import router as matchmaking_router
 from app.api.game import router as game_router
 from app.api.users import router as users_router
 from app.api.friends import router as friends_router
+from app.api.arenas import router as arenas_router
 from app.config import settings
 from app.db.migrate import migrate
 from app.db.session import engine
@@ -71,6 +72,7 @@ app.include_router(matchmaking_router, prefix="/v1")
 app.include_router(game_router, prefix="/v1")
 app.include_router(users_router, prefix="/v1")
 app.include_router(friends_router, prefix="/v1")
+app.include_router(arenas_router, prefix="/v1")
 
 
 @app.get("/health")

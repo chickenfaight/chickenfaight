@@ -78,6 +78,8 @@ Adding a friend is one-way: `friendships` rows mean `user_id` added `friend_id`,
 
 ## Matchmaking and Elo
 
+The arena repository lists active `models` rows. `ArenaService.list_active()` validates each row as `ArenaRead`, returning the model's UUID `id`, `display_name`, and `kind` defaulted to `provided`. `GET /v1/arenas` exposes this list to signed-in users; BYOM remains PLANNED.
+
 - One queue per ladder. Pair the two closest-rated players within ±100 Elo; the window widens by 50 every 10 s waited. BYOM players queue only with an online, idle device.
 - Elo per `(user, ladder)`: start 1000, K = 32, expected score `1 / (1 + 10^((Rb − Ra)/400))`. Forfeits update Elo as losses; voids don't. Update both ratings in the same transaction as the match result.
 
