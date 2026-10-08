@@ -133,7 +133,7 @@ Player prompts are never returned by any endpoint or message except to their aut
 
 ### Current matchmaking integration
 
-The current session-authenticated `POST /v1/match/queue` requires `{ model_id: uuid }` from `GET /v1/arenas`; an unknown or inactive model returns 404 `NOT_FOUND`, and malformed input returns 422. It returns HTTP 202 queue status. `GET /v1/match/status` returns HTTP 200 queue status. Both return `{ status: "none"|"queued"|"matched", match_id?: uuid }`. Matchmaking uses independent FIFO queues keyed by model UUID. Inference selection remains pending: engines still use the hardcoded `openrouter/free` model regardless of the queue. The frontend does not yet send the required body, so joining from the lobby remains pending integration. `POST /v1/match/queue` returns 403 `USERNAME_REQUIRED` until the caller has a tag. `DELETE /v1/match/queue` (session, no body) cancels the caller’s queue entry in its selected model queue and returns HTTP 204, including if already absent; an existing match returns HTTP 409 `IN_MATCH`. The versioned routes above remain the target contract. The lobby polls until matched, then navigates to `/match/[match_id]`, where the arena opens the match WebSocket.
+The current session-authenticated `POST /v1/match/queue` requires `{ model_id: uuid }` from `GET /v1/arenas`; an unknown or inactive model returns 404 `NOT_FOUND`, and malformed input returns 422. It returns HTTP 202 queue status. `GET /v1/match/status` returns HTTP 200 queue status. Both return `{ status: "none"|"queued"|"matched", match_id?: uuid }`. Matchmaking uses independent FIFO queues keyed by model UUID. The matchmaker passes the selected model UUID to the engine, which resolves its exact `api_model_id` and display name before inference. The client still uses the configured OpenRouter base URL and API key; provider-specific connection settings remain pending. The frontend does not yet send the required body, so joining from the lobby remains pending integration. `POST /v1/match/queue` returns 403 `USERNAME_REQUIRED` until the caller has a tag. `DELETE /v1/match/queue` (session, no body) cancels the caller’s queue entry in its selected model queue and returns HTTP 204, including if already absent; an existing match returns HTTP 409 `IN_MATCH`. The versioned routes above remain the target contract. The lobby polls until matched, then navigates to `/match/[match_id]`, where the arena opens the match WebSocket.
 
 ## REST — BILC
 
@@ -181,7 +181,7 @@ Current prompt readiness and generation (implemented): after both player sockets
 
 Until the full snapshot/turn contract above ships, the arena uses these payloads:
 
-- `MATCH_STATE`: `{ match_id, topic: { category, topic, pro_position, con_position }, you, participants: [{ user_id, side }], deadline }`. `deadline` is an ISO UTC timestamp, established once both players connect using the server's 120-second prompt window.
+- `MATCH_STATE`: `{ match_id, model_display_name, topic: { category, topic, pro_position, con_position }, you, participants: [{ user_id, side }], deadline }`. `model_display_name` is the selected model's database display name. `deadline` is an ISO UTC timestamp, established once both players connect using the server's 120-second prompt window.
 - `TURN_DELTA`: `{ delta }`, sent only to the author of the generating side.
 - `TURN_END`: `{}`, sent to that same player once their opening argument finishes.
 - `MATCH_RESULT`: `{ winner: "pro"|"con"|null, reason, status: "completed"|"forfeited"|"voided", end_reason: "judged"|"no_prompt", arguments: { pro, con } }`. Only generated arguments are shared; player prompts remain private. A missed prompt deadline forfeits to the side that submitted; if neither submitted, the match is void. These outcomes do not yet persist results or update Elo.
@@ -213,6 +213,13 @@ Disconnecting after submitting a prompt does not affect the match; turns keep ru
 ## Inference
 
 Cloud inference uses OpenRouter to access various models, including free models, through one platform with OpenAI-compatible endpoints. Its base URL is `https://openrouter.ai/api/v1`; authenticate with the server's `INFERENCE_API_KEY`.
+
+The model seed utility reads the public `GET https://openrouter.ai/api/v1/models`
+catalogue without authentication or inference calls (implemented). Its `data` entries
+supply `id`, `name`, `pricing` (USD per token/request/unit), `context_length`, and
+`top_provider.max_completion_tokens`; additional metadata is retained. Only explicitly
+zero-priced entries are imported, excluding the `openrouter/free` router. Every imported model references the single
+`openrouter` provider row, regardless of the model's author.
 
 Both the server (cloud models) and BILC (local model) speak the OpenAI Chat Completions API: `POST {base_url}/chat/completions` with `stream: true`, consuming SSE `choices[0].delta.content` chunks. Nothing else about a provider may be assumed.
 

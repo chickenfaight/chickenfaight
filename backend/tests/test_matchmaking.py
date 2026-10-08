@@ -148,7 +148,7 @@ class PairingTests(unittest.IsolatedAsyncioTestCase):
             await matchmaker.match_available_players()
         pairs = [call.args[1] for call in engine.call_args_list]
         self.assertEqual(pairs, [(users[0], users[2]), (users[4], users[6]), (users[1], users[3])])
-        self.assertEqual([call.kwargs['model_id'] for call in engine.call_args_list], [model_a, model_a, model_b])
+        self.assertEqual([call.args[2] for call in engine.call_args_list], [model_a, model_a, model_b])
         self.assertEqual(matchmaker.queued_users, {users[5]: model_b})
         self.assertEqual(list(matchmaker.queues[model_b]), [users[5]])
         self.assertEqual(len(matchmaker.engines), 3)

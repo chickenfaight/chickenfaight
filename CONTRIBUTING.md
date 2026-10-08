@@ -36,6 +36,19 @@ uv run python -m app.db.seed topics.example.txt
 
 Each line of the file is `category | topic | pro position | con position`; `#` lines and blank lines are ignored. Re-running is safe: topics already in the database are skipped. Add `--inactive` to load topics that won't be picked for matches yet. Details are in [backend/BACKEND.md](backend/BACKEND.md), under "Changing the schema".
 
+**Free OpenRouter models**
+
+After migrations have run, populate the model catalogue from OpenRouter:
+
+```bash
+cd backend
+uv run python -m app.db.seed_models
+```
+
+Re-running updates existing models without duplicates. All imported models belong
+to a single provider row with slug `openrouter`; model authors are not providers.
+See [backend/BACKEND.md](backend/BACKEND.md) for filtering and update behavior.
+
 **Frontend** (http://localhost:3000)
 
 ```bash
