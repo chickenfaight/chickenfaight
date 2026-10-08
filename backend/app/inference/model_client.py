@@ -45,6 +45,9 @@ class OpenAIModelClient(ModelClient):
             model=self.model,
             max_completion_tokens=max_tokens,
             stream=True,
+            extra_body={
+                "reasoning": {"enabled": False, "exclude": True},
+            },
         )
 
         async with completion:
