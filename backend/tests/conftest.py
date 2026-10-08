@@ -12,7 +12,7 @@ from app.config import settings
 from app.db.migrate import migrate, reset
 from app.db.session import get_session
 from app.main import app
-from app.models import User
+from app.models import InferenceAdapter, Model, Provider, User
 from app.services.matchmaking import Matchmaker
 
 
@@ -82,6 +82,30 @@ async def client(db_session: AsyncSession) -> AsyncIterator[AsyncClient]:
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as http:
         yield http
     app.dependency_overrides.clear()
+
+
+@pytest.fixture
+def make_model(db_session: AsyncSession) -> Callable[..., Awaitable[Model]]:
+    async def make(is_active: bool = True) -> Model:
+        provider = Provider(
+            slug=f'test-{uuid4()}',
+            display_name='Test provider',
+            base_url='https://example.invalid/v1',
+            adapter=InferenceAdapter.OPENAI_COMPATIBLE,
+        )
+        db_session.add(provider)
+        await db_session.flush()
+        model = Model(
+            provider_id=provider.id,
+            api_model_id=f'test-{uuid4()}',
+            display_name='Test model',
+            is_active=is_active,
+        )
+        db_session.add(model)
+        await db_session.commit()
+        return model
+
+    return make
 
 
 @pytest.fixture

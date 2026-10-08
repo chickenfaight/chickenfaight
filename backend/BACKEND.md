@@ -80,6 +80,8 @@ Adding a friend is one-way: `friendships` rows mean `user_id` added `friend_id`,
 
 The arena repository lists active `models` rows. `ArenaService.list_active()` validates each row as `ArenaRead`, returning the model's UUID `id`, `display_name`, and `kind` defaulted to `provided`. `GET /v1/arenas` exposes this list to signed-in users; BYOM remains PLANNED.
 
+Current matchmaking pairs FIFO within each model UUID queue. `Matchmaker.register(user_id, model_id)` accepts a model UUID; the HTTP service checks that the model is active before registering. `queued_users` maps user UUIDs to model UUIDs for duplicate checks and cancellation; a user can occupy only one queue or match. Model selection for inference remains PLANNED: engines still receive `openrouter/free`.
+
 - One queue per ladder. Pair the two closest-rated players within ±100 Elo; the window widens by 50 every 10 s waited. BYOM players queue only with an online, idle device.
 - Elo per `(user, ladder)`: start 1000, K = 32, expected score `1 / (1 + 10^((Rb − Ra)/400))`. Forfeits update Elo as losses; voids don't. Update both ratings in the same transaction as the match result.
 

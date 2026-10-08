@@ -16,6 +16,7 @@ from app.inference.model_client import *
 from app.models import Topic
 from app.repositories.topic import TopicRepository
 from app.schemas.schemas import TopicRead, PromptSubmission
+from app.services.arena import ArenaService
 
 Side = Literal["pro", "con"]
 
@@ -35,11 +36,11 @@ class GameEngine:
     MAX_TOKENS = 400
     JUDGE_MODEL = "nvidia/nemotron-3-super-120b-a12b:free" # free via OpenRouter, supports response schema enforcement
 
-    def __init__(self, match_id: UUID, players: tuple[UUID, UUID], model: str):
-        # TODO figure out LLM identifier strategy
+    def __init__(self, match_id: UUID, players: tuple[UUID, UUID], model_id: UUID):
         self.players = players
         self.match_id = match_id
-        self.model = model
+        self.model_id = model_id
+        self.model_display_name: str | None = None
         self.topic: Topic | None = None
 
         pro, con = random.sample(players, k=2)
@@ -70,6 +71,9 @@ class GameEngine:
         client: ModelClient | None = None
         try:
             async with SessionFactory() as session:
+                model = await ArenaService(session).get_active(self.model_id)
+                api_model_id = model.api_model_id
+                self.model_display_name = model.display_name
                 topics = TopicRepository(session)
                 self.topic = await topics.get_random_active()
                 if self.topic is None:
@@ -80,13 +84,9 @@ class GameEngine:
             self.prompt_deadline = datetime.now(timezone.utc) + timedelta(seconds=self.PROMPT_WINDOW_SECONDS)
             await self.broadcast_initial_game_state()
 
-            if self.model == "byom":
-                # TODO separate model clients for BYOM ig
-                pass
-            else:
-                client = OpenAIModelClient(model=self.model)
-                for player in self.players:
-                    self.model_clients[player] = client
+            client = OpenAIModelClient(model=api_model_id)
+            for player in self.players:
+                self.model_clients[player] = client
 
             prompt_expired = False
             try:
@@ -131,7 +131,7 @@ class GameEngine:
                 await self.judge_clients.client.close()
 
     async def broadcast_initial_game_state(self) -> None:
-        if self.topic is None:
+        if self.topic is None or self.model_display_name is None:
             raise RuntimeError("Topic has not been loaded when broadcasting")
 
         topic = TopicRead.model_validate(self.topic).model_dump(mode="json")
@@ -146,6 +146,7 @@ class GameEngine:
                 "type": "MATCH_STATE",
                 "payload": {
                     "match_id": str(self.match_id),
+                    "model_display_name": self.model_display_name,
                     "topic": topic,
                     "you": self.sides[player],
                     "participants": participants,

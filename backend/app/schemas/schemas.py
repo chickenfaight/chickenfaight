@@ -91,3 +91,7 @@ class ArenaRead(BaseModel):
     id: UUID
     display_name: str
     kind: Literal["provided", "byom"] = "provided" # TODO default to provided before BYOM is implemented
+
+
+class QueueRequest(BaseModel):
+    model_id: UUID

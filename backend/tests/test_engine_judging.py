@@ -4,13 +4,14 @@ from unittest.mock import AsyncMock, patch
 from uuid import uuid4
 
 from app.engine.game_engine import GameEngine
+from test_engine_prompt import RecordingClient
 
 
 class EngineJudgingTests(unittest.IsolatedAsyncioTestCase):
     async def check_judging(self, disconnect=False):
         players = (uuid4(), uuid4())
         with patch("app.engine.game_engine.OpenAIModelClient"):
-            engine = GameEngine(uuid4(), players, "byom")
+            engine = GameEngine(uuid4(), players, uuid4())
         engine.both_connected.set()
         generated = set()
         events = []
@@ -43,11 +44,16 @@ class EngineJudgingTests(unittest.IsolatedAsyncioTestCase):
         )
         with (
             patch("app.engine.game_engine.SessionFactory", return_value=AsyncMock()),
+            patch("app.engine.game_engine.ArenaService") as arenas,
             patch("app.engine.game_engine.TopicRepository") as repository,
+            patch("app.engine.game_engine.OpenAIModelClient", RecordingClient),
             patch.object(engine, "broadcast_initial_game_state", new=AsyncMock()),
             patch.object(engine, "generate_arguments", side_effect=generate),
             patch.object(engine, "broadcast_verdict", new=AsyncMock()) as result,
         ):
+            arenas.return_value.get_active = AsyncMock(return_value=SimpleNamespace(
+                api_model_id="test-model", display_name="Test model",
+            ))
             repository.return_value.get_random_active = AsyncMock(return_value=object())
             await engine.run()
 

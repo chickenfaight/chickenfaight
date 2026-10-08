@@ -4,6 +4,7 @@ from fastapi.responses import JSONResponse
 from app.services.exceptions import (
     AlreadyMatchedError,
     AlreadyQueuedError,
+    ArenaNotFoundError,
     FriendSelfError,
     RateLimitedError,
     UsernameError,
@@ -56,6 +57,16 @@ async def handle_user_not_found(
     )
 
 
+async def handle_arena_not_found(
+        request: Request,
+        error: ArenaNotFoundError,
+) -> JSONResponse:
+    return JSONResponse(
+        status_code=404,
+        content={"code": "NOT_FOUND", "detail": "No active arena has that model ID."},
+    )
+
+
 async def handle_friend_self(
         request: Request,
         error: FriendSelfError,
@@ -80,6 +91,7 @@ async def handle_rate_limited(
 EXCEPTION_HANDLERS = {
     AlreadyQueuedError: handle_already_queued,
     AlreadyMatchedError: handle_already_matched,
+    ArenaNotFoundError: handle_arena_not_found,
     UsernameError: handle_username_error,
     UserNotFoundError: handle_user_not_found,
     FriendSelfError: handle_friend_self,

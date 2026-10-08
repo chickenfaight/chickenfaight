@@ -1,4 +1,5 @@
 import pytest
+from uuid import uuid4
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm.attributes import set_committed_value
@@ -157,15 +158,16 @@ async def test_availability_rejects_oversized_query(client, log_in, make_user):
 async def test_queue_requires_tag(client, log_in, make_user):
     user = await make_user()
     log_in(user)
-    response = await client.post("/v1/match/queue")
+    response = await client.post("/v1/match/queue", json={"model_id": str(uuid4())})
     assert response.status_code == 403
     assert response.json()["code"] == "USERNAME_REQUIRED"
     assert (await client.get("/v1/match/status")).json() == {"status": "none"}
 
 
-async def test_queue_allowed_with_tag(client, log_in, make_user):
+async def test_queue_allowed_with_tag(client, log_in, make_user, make_model):
     log_in(await make_user("queuer"))
-    response = await client.post("/v1/match/queue")
+    model = await make_model()
+    response = await client.post("/v1/match/queue", json={"model_id": str(model.id)})
     assert response.status_code == 202
     assert response.json() == {"status": "queued"}
 

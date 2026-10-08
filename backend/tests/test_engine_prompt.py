@@ -7,7 +7,9 @@ from app.engine.game_engine import GameEngine
 
 
 class RecordingClient:
-    def __init__(self):
+    def __init__(self, model=None):
+        self.model = model
+        self.client = SimpleNamespace(close=AsyncMock())
         self.calls = []
 
     async def stream(self, messages, max_tokens):
@@ -20,7 +22,7 @@ class EnginePromptTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         self.players = (uuid4(), uuid4())
         with patch("app.engine.game_engine.OpenAIModelClient"):
-            self.engine = GameEngine(uuid4(), self.players, "test-model")
+            self.engine = GameEngine(uuid4(), self.players, uuid4())
         self.engine.sides = dict(zip(self.players, ("pro", "con")))
         self.engine.topic = SimpleNamespace(
             topic="Should cities expand public transport?",
