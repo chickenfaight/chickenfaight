@@ -11,9 +11,24 @@ permissions:
 
 jobs:
   backend-unit-tests:
-    name: Backend unit tests
-    runs-on: ubuntu-latest
+    name: Backend tests
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
+
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_USER: ci
+          POSTGRES_PASSWORD: ci
+          POSTGRES_DB: chickenfaight_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U ci -d chickenfaight_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
 
     defaults:
       run:
@@ -21,6 +36,7 @@ jobs:
 
     env:
       POSTGRES_URL: postgresql://ci:ci@localhost:5432/chickenfaight_unused
+      TEST_POSTGRES_URL: postgresql://ci:ci@localhost:5432/chickenfaight_test
       GOOGLE_CLIENT_ID: ci-placeholder
       GOOGLE_CLIENT_SECRET: ci-placeholder
       SESSION_SECRET: ci-only-session-secret
@@ -40,5 +56,5 @@ jobs:
       - name: Install dependencies
         run: uv sync --locked
 
-      - name: Run unit tests
-        run: uv run --no-sync pytest tests/unit -v
+      - name: Run backend tests
+        run: uv run --no-sync pytest -v -rs
