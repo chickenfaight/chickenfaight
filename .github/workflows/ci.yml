@@ -1,0 +1,44 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main, ci-setup]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  backend-unit-tests:
+    name: Backend unit tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    defaults:
+      run:
+        working-directory: backend
+
+    env:
+      POSTGRES_URL: postgresql://ci:ci@localhost:5432/chickenfaight_unused
+      GOOGLE_CLIENT_ID: ci-placeholder
+      GOOGLE_CLIENT_SECRET: ci-placeholder
+      SESSION_SECRET: ci-only-session-secret
+      INFERENCE_BASE_URL: https://example.invalid/v1
+      INFERENCE_API_KEY: ci-placeholder
+      APP_ENV: test
+
+    steps:
+      - name: Download repository
+        uses: actions/checkout@v7
+
+      - name: Install uv and Python
+        uses: astral-sh/setup-uv@v10
+        with:
+          python-version: "3.14"
+
+      - name: Install dependencies
+        run: uv sync --locked
+
+      - name: Run unit tests
+        run: uv run --no-sync pytest tests/unit -v
