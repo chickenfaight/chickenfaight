@@ -75,16 +75,27 @@ Check the connection at http://localhost:3000/health.
 
 ## Backend image releases
 
-After CI passes for the commit you want to release, tag that commit and push the tag:
+From `backend/`, increment the version with uv instead of editing version files manually:
+
+```bash
+uv version --bump patch --no-sync
+```
+
+Use `--bump minor` or `--bump major` for larger releases, or `uv version 0.1.0 --no-sync`
+to set an exact version. These commands update both `pyproject.toml` and `uv.lock`;
+`--no-sync` skips installing dependencies locally. Commit both files and push the
+commit. After CI passes, tag that commit with the same version and push the tag
+(for example, if uv set the version to `0.1.0`):
 
 ```bash
 git tag backend/v0.1.0
 git push origin backend/v0.1.0
 ```
 
-The `Publish backend image` workflow builds `backend/Dockerfile` and pushes a
+The `Build` workflow builds `backend/Dockerfile` and pushes a
 Linux amd64 image to `ghcr.io/chickenfaight/backend:0.1.0`.
-It uses the built-in `GITHUB_TOKEN`; no registry secret needs to be added. Tags must
-use `backend/vMAJOR.MINOR.PATCH`. Ordinary branch pushes and `bilc/v*` tags do not
-publish backend images. The tag supplies the image version independently of
-`pyproject.toml`; the workflow does not check CI results or deploy the image.
+Tags must use `backend/vMAJOR.MINOR.PATCH`. Ordinary branch pushes and `bilc/v*` tags do not
+publish backend images. Keep the version in `pyproject.toml` and `uv.lock` consistent
+with the Git tag: version `0.1.0` uses `backend/v0.1.0` and publishes image tag `0.1.0`.
+The workflow derives the image version from the Git tag; it does not check version
+agreement or CI results, or deploy the image.
