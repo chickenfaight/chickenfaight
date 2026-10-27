@@ -68,6 +68,26 @@ No test framework has been chosen. Don't add one without team agreement. Until t
 
 Use the standard `testing` package; run with `go test -race ./...` from `bilc/`.
 
+The `BILC checks` job in `.github/workflows/ci.yml` runs alongside frontend and
+backend checks on pull requests, pushes to `main`, and manual runs. It uses the
+Go version from `bilc/go.mod`. Run the same checks locally from `bilc/`:
+
+```bash
+test -z "$(gofmt -l .)"
+go vet ./...
+go test -v -race -count=1 -timeout=5m ./...
+go build ./...
+```
+
+The formatting check fails if any Go file needs formatting; `go vet` checks for
+likely mistakes. Tests run with race detection, without cached results, and with
+a five-minute timeout per package. No Ollama installation, models, backend, or
+credentials are required.
+
+- **Implemented CLI/lifecycle:** help/version and argument errors; reuse of an existing Ollama service without starting or stopping it; owned process readiness and cancellation; early/unexpected process exit; readiness timeout cleanup; missing executable; rejecting a non-Ollama HTTP response. Use an `httptest.Server` and test subprocesses, without requiring a real Ollama installation or loading models.
+
+The model interface exists, but its OpenAI implementation and all connection/match tests below are still planned. Match-handler tests should inject a fake `model.Model` (scripted chunks, completion, errors, and cancellation), independently of the real inference client. Test that a final chunk's text is forwarded, unexpected channel closure fails the turn, and cancelled turns cannot send late output. The real model client's tests must cover setup versus mid-stream errors, terminal chunk/channel closure, and cancellation while blocked on HTTP reads or chunk delivery. Normal tests require neither Ollama, production credentials, nor a running backend.
+
 - **Fake local model:** an `httptest.Server` serving scripted OpenAI-compatible SSE streams (normal, slow, error status, malformed chunk, hang).
 - **Fake server:** an `httptest.Server` WebSocket endpoint that runs scripted PROTOCOL exchanges and records what BILC sends.
 - **Must cover:** `HELLO` first and version fields; heartbeat echo; reconnect with backoff; JWT refresh before expiry and on 4401; credential wipe on `TOKEN_INVALID`/4403; `TURN_REQUEST` → streamed `MATCH_RESPONSE` ending in `done: true`; each model failure → the right `ERROR` code; `MATCH_END`/`FORFEIT` cancels an in-flight turn; `BILC_BUSY` on a second `MATCH_ASSIGN`; update verification rejects a bad checksum or signature.
