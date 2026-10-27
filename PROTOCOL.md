@@ -249,6 +249,14 @@ zero-priced entries are imported, excluding the `openrouter/free` router. Every 
 
 Both the server (cloud models) and BILC (local model) speak the OpenAI Chat Completions API: `POST {base_url}/chat/completions` with `stream: true`, consuming SSE `choices[0].delta.content` chunks. Nothing else about a provider may be assumed.
 
+BILC initially supports local Ollama only. Service startup/readiness uses
+`GET http://127.0.0.1:11434/api/version` (implemented), requiring HTTP 200 and
+a JSON object with a nonempty `version` string. This local Ollama endpoint
+requires no authentication and is used only to recognize a running service;
+no model inference is performed. If unreachable, BILC starts the installed
+`ollama serve` process on that same loopback address. Ollama lifecycle details
+are in [BILC.md](bilc/BILC.md); model inference and server integration remain planned.
+
 Server config (env): `INFERENCE_BASE_URL`, `INFERENCE_API_KEY`, `INFERENCE_JUDGE_MODEL`. Argument models use the selected row's `api_model_id` in the `models` table; there is no global player-model override.
 
 Current judge client: `judge(topic, pro, con)` accepts a topic and the two sides' generated transcripts (never player prompts). It sends a fixed system instruction and a JSON user message containing `topic`, `pro_position`, `con_position`, `pro`, and `con`. This non-streaming call requests structured output using the current `Verdict` schema (`winner`, `reason`); the engine integration and target `reasoning` field below remain pending.

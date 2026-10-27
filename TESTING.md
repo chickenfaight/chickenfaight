@@ -68,6 +68,8 @@ No test framework has been chosen. Don't add one without team agreement. Until t
 
 Use the standard `testing` package; run with `go test -race ./...` from `bilc/`.
 
+- **Implemented CLI/lifecycle:** help/version and argument errors; reuse of an existing Ollama service without starting or stopping it; owned process readiness and cancellation; early/unexpected process exit; readiness timeout cleanup; missing executable; rejecting a non-Ollama HTTP response. Use an `httptest.Server` and test subprocesses, without requiring a real Ollama installation or loading models.
+
 - **Fake local model:** an `httptest.Server` serving scripted OpenAI-compatible SSE streams (normal, slow, error status, malformed chunk, hang).
 - **Fake server:** an `httptest.Server` WebSocket endpoint that runs scripted PROTOCOL exchanges and records what BILC sends.
 - **Must cover:** `HELLO` first and version fields; heartbeat echo; reconnect with backoff; JWT refresh before expiry and on 4401; credential wipe on `TOKEN_INVALID`/4403; `TURN_REQUEST` → streamed `MATCH_RESPONSE` ending in `done: true`; each model failure → the right `ERROR` code; `MATCH_END`/`FORFEIT` cancels an in-flight turn; `BILC_BUSY` on a second `MATCH_ASSIGN`; update verification rejects a bad checksum or signature.

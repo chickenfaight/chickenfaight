@@ -2,7 +2,7 @@
 
 A Go CLI on the user's machine that connects their local LLM to the server so it can compete in the BYOM arena. It keeps one WebSocket open to the server and forwards each `TURN_REQUEST` to the local model, streaming the output back. Every message and endpoint it uses is defined in [PROTOCOL.md](../PROTOCOL.md). Do not invent any others.
 
-Nothing is built yet; this doc is the spec. Remove the PLANNED tag once `bilc run` works end to end.
+The CLI foundation and Ollama lifecycle are implemented: help, version output (`dev`), `run` argument parsing, service reuse/startup, and cancellation/cleanup. `bilc run` ensures Ollama is ready, then waits for Ctrl-C or SIGTERM. Inference and server integration remain planned. Remove the PLANNED tag once `bilc run` works end to end.
 
 ## Principles
 
@@ -16,6 +16,8 @@ Nothing is built yet; this doc is the spec. Remove the PLANNED tag once `bilc ru
 ```
 bilc/
   cmd/bilc/main.go        CLI entry: parses commands, wires components
+  cmd/bilc/run.go         signal context and Ollama lifecycle coordination
+  internal/ollama/        local service readiness and owned process cleanup
   internal/config/        config file load/save
   internal/auth/          Auth
   internal/conn/          ConnectionManager
@@ -46,7 +48,9 @@ type Model interface {
 }
 ```
 
-The default `Model` is an OpenAI Chat Completions client (`POST {base_url}/chat/completions`, `stream: true`). That covers Ollama, LM Studio, llama.cpp server, and vLLM. Other backends are new implementations of `Model`; nothing else changes.
+Initial scope is local Ollama only, accessed through OpenAI Chat Completions (`POST {base_url}/chat/completions`, `stream: true`). Other inference backends are deferred. On startup, reuse a responding local Ollama service; otherwise start the installed `ollama serve` executable and wait for readiness. Stop only a process BILC started when shutting down. Installing Ollama and downloading models are outside the initial scope.
+
+Implemented lifecycle: check `http://127.0.0.1:11434/api/version` with a 500 ms request timeout; otherwise start `ollama serve` from PATH. The child inherits local settings such as `OLLAMA_MODELS`, with `OLLAMA_HOST` pinned to `127.0.0.1:11434`; custom hosts are deferred. Startup has a 15 s deadline. Invalid HTTP responses fail explicitly. BILC detects an owned process exiting, and always waits for it during cleanup. Cancellation sends an interrupt where supported, falling back to a kill on unsupported platforms or after 3 s. Existing services are never stopped. These readiness checks do not load a model or run inference.
 
 Error mapping: model unreachable → `MODEL_UNAVAILABLE`; non-2xx or malformed stream → `MODEL_ERROR`; deadline passed → `MODEL_TIMEOUT`. `MATCH_ASSIGN` while busy → `BILC_BUSY`.
 
@@ -54,14 +58,17 @@ Error mapping: model unreachable → `MODEL_UNAVAILABLE`; non-2xx or malformed s
 
 | Command | Does |
 |---|---|
+| `bilc help`, `bilc --help`, `bilc -h`, or no arguments | Show help (implemented) |
+| `bilc version`, `bilc --version` | Print version (implemented; currently `dev`) |
+| `bilc run --help` | Show command usage and flags (implemented) |
 | `bilc pair <code>` | Register with a code from the web app's `/bilc` page |
 | `bilc model set --url <base_url> --model <name>` | Configure the local model; verifies it responds |
-| `bilc run` | Connect and serve matches until Ctrl-C (sends `DISCONNECT`, then exits) |
+| `bilc run` | Ensure local Ollama is ready and wait until Ctrl-C (implemented); connect and serve matches, sending `DISCONNECT` on exit (planned) |
 | `bilc status` | Paired?, model reachable?, server reachable?, version |
 | `bilc update` | Update now |
 | `bilc unpair` | Delete local credentials (revoke from the web app too) |
 
-Output is short, human-readable lines to stderr. Never print tokens, codes after use, or prompt contents (log sizes and IDs only). `--verbose` adds timings.
+Help and version go to stdout; progress and errors go to stderr. Invalid commands, flags, and unexpected positional arguments exit nonzero. Ctrl-C and SIGTERM perform cleanup and exit successfully; startup failure or an unexpected owned process exit returns nonzero. Output is short and human-readable. Never print tokens, codes after use, or prompt contents (log sizes and IDs only). `bilc run --verbose` adds startup timing. Raw Ollama process logs are not forwarded.
 
 ## Pairing and auth flow
 
