@@ -70,7 +70,7 @@ jobs:
       GOOGLE_CLIENT_ID: ci-placeholder
       GOOGLE_CLIENT_SECRET: ci-placeholder
       SESSION_SECRET: ci-only-session-secret
-      BILC_JWT_SECRET: ci-only-bilc-jwt-secret
+      BILC_JWT_SECRET: ci-only-bilc-jwt-secret-not-for-production
       INFERENCE_BASE_URL: https://example.invalid/v1
       INFERENCE_API_KEY: ci-placeholder
       APP_ENV: test

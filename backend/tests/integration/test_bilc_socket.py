@@ -45,11 +45,22 @@ def say_hello(socket) -> dict:
     return socket.receive_json()
 
 
+def hang_up(socket) -> None:
+    """End like a real client and wait for the server to close. Leaving the `with` block while the
+    server still runs makes TestClient cancel it, which now and then escapes as a CancelledError."""
+    socket.send_json({"type": "DISCONNECT", "payload": {"reason": "done"}})
+    with pytest.raises(WebSocketDisconnect) as closed:
+        while True:  # frames already in flight (heartbeats, errors) may arrive first
+            socket.receive_json()
+    assert closed.value.code == 1000
+
+
 def test_hello_is_acknowledged_and_recorded(socket_client, identity, connections):
     with socket_client.websocket_connect(WS) as socket:
         assert say_hello(socket) == {"type": "HELLO_ACK", "payload": {"protocol_version": 1, "heartbeat_interval_s": 15}}
         assert connections.online(identity.user_id) == {identity.device_id}
         assert connections.online(uuid4()) == set()
+        hang_up(socket)
     device_id, hello = connections.record_hello.await_args.args
     assert device_id == identity.device_id
     assert hello == Hello.model_validate(HELLO["payload"])
@@ -58,10 +69,7 @@ def test_hello_is_acknowledged_and_recorded(socket_client, identity, connections
 def test_device_goes_offline_when_it_disconnects(socket_client, identity, connections):
     with socket_client.websocket_connect(WS) as socket:
         say_hello(socket)
-        socket.send_json({"type": "DISCONNECT", "payload": {"reason": "shutting down"}})
-        with pytest.raises(WebSocketDisconnect) as closed:
-            socket.receive_json()
-        assert closed.value.code == 1000
+        hang_up(socket)
     assert connections.online(identity.user_id) == set()
 
 
@@ -70,6 +78,7 @@ def test_hello_must_come_first(socket_client):
         socket.send_json({"type": "HEARTBEAT", "payload": {"ts": 1}})
         assert socket.receive_json()["payload"]["code"] == "BAD_MESSAGE"
         assert say_hello(socket)["type"] == "HELLO_ACK"
+        hang_up(socket)
 
 
 @pytest.mark.parametrize("frame", [
@@ -83,6 +92,7 @@ def test_malformed_frames_get_bad_message_without_closing(socket_client, frame):
         socket.send_text(frame)
         assert socket.receive_json()["payload"]["code"] == "BAD_MESSAGE"
         assert say_hello(socket)["type"] == "HELLO_ACK"
+        hang_up(socket)
 
 
 @pytest.mark.parametrize("payload", [
@@ -95,6 +105,7 @@ def test_invalid_hello_is_rejected(socket_client, connections, payload):
     with socket_client.websocket_connect(WS) as socket:
         socket.send_json({"type": "HELLO", "payload": payload})
         assert socket.receive_json()["payload"]["code"] == "BAD_MESSAGE"
+        hang_up(socket)  # also before HELLO
     connections.record_hello.assert_not_awaited()
 
 
@@ -113,6 +124,7 @@ def test_unknown_type_does_not_close(socket_client):
         assert socket.receive_json()["payload"]["code"] == "UNKNOWN_TYPE"
         socket.send_json({"type": "HELLO", "payload": HELLO["payload"]})
         assert socket.receive_json()["payload"]["code"] == "BAD_MESSAGE"
+        hang_up(socket)
 
 
 def test_newer_connection_replaces_older(socket_client, identity, connections):
@@ -124,6 +136,7 @@ def test_newer_connection_replaces_older(socket_client, identity, connections):
                 first.receive_json()
             assert closed.value.code == 4409
             assert connections.online(identity.user_id) == {identity.device_id}
+            hang_up(second)
 
 
 def test_heartbeats_are_sent_and_echoes_keep_it_open(socket_client, connections):
@@ -135,6 +148,7 @@ def test_heartbeats_are_sent_and_echoes_keep_it_open(socket_client, connections)
             beat = socket.receive_json()
             assert beat["type"] == "HEARTBEAT"
             socket.send_json(beat)
+        hang_up(socket)
 
 
 def test_silence_closes_4408(socket_client, connections):

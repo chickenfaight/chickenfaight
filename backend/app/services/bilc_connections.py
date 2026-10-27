@@ -290,6 +290,9 @@ class BilcConnections:
                     except BadFrame as problem:
                         await connection.error("BAD_MESSAGE", str(problem))
                         continue
+                    if type_ == "DISCONNECT":
+                        await connection.close(1000, "Disconnected")
+                        return None
                     if type_ != "HELLO":
                         await connection.error("BAD_MESSAGE", "Send HELLO first")
                         continue
