@@ -88,3 +88,34 @@ jobs:
 
       - name: Run backend tests
         run: uv run --no-sync pytest -v -rs
+
+  bilc-checks:
+    name: BILC checks
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+
+    defaults:
+      run:
+        working-directory: bilc
+
+    steps:
+      - name: Download repository
+        uses: actions/checkout@v7
+
+      - name: Install Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: bilc/go.mod
+          cache-dependency-path: bilc/go.mod
+
+      - name: Check formatting
+        run: test -z "$(gofmt -l .)"
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Run BILC tests
+        run: go test -v -race -count=1 -timeout=5m ./...
+
+      - name: Build
+        run: go build ./...

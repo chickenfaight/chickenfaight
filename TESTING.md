@@ -68,6 +68,22 @@ No test framework has been chosen. Don't add one without team agreement. Until t
 
 Use the standard `testing` package; run with `go test -race ./...` from `bilc/`.
 
+The `BILC checks` job in `.github/workflows/ci.yml` runs alongside frontend and
+backend checks on pull requests, pushes to `main`, and manual runs. It uses the
+Go version from `bilc/go.mod`. Run the same checks locally from `bilc/`:
+
+```bash
+test -z "$(gofmt -l .)"
+go vet ./...
+go test -v -race -count=1 -timeout=5m ./...
+go build ./...
+```
+
+The formatting check fails if any Go file needs formatting; `go vet` checks for
+likely mistakes. Tests run with race detection, without cached results, and with
+a five-minute timeout per package. No Ollama installation, models, backend, or
+credentials are required.
+
 - **Implemented CLI/lifecycle:** help/version and argument errors; reuse of an existing Ollama service without starting or stopping it; owned process readiness and cancellation; early/unexpected process exit; readiness timeout cleanup; missing executable; rejecting a non-Ollama HTTP response. Use an `httptest.Server` and test subprocesses, without requiring a real Ollama installation or loading models.
 
 The model interface exists, but its OpenAI implementation and all connection/match tests below are still planned. Match-handler tests should inject a fake `model.Model` (scripted chunks, completion, errors, and cancellation), independently of the real inference client. Test that a final chunk's text is forwarded, unexpected channel closure fails the turn, and cancelled turns cannot send late output. The real model client's tests must cover setup versus mid-stream errors, terminal chunk/channel closure, and cancellation while blocked on HTTP reads or chunk delivery. Normal tests require neither Ollama, production credentials, nor a running backend.
