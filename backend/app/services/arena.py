@@ -7,6 +7,11 @@ from app.repositories.arena import ArenaRepository
 from app.schemas.schemas import ArenaRead
 from app.services.exceptions import ArenaNotFoundError
 
+# The BYOM arena isn't a `models` row: each player brings their own model through BILC. Its ID is
+# fixed so clients can queue for it like any arena (PROTOCOL.md, "BYOM arena").
+BYOM_ARENA_ID = UUID("6f1c9a52-3d8e-4b7a-9e21-b10c0000b10c")
+BYOM_ARENA = ArenaRead(id=BYOM_ARENA_ID, display_name="Bring your own model", kind="byom")
+
 
 class ArenaService:
     def __init__(self, session: AsyncSession):
@@ -15,7 +20,7 @@ class ArenaService:
 
     async def list_active(self) -> list[ArenaRead]:
         arenas: list[Model] = await self.arenas.get_active_arenas()
-        return [ArenaRead.model_validate(arena) for arena in arenas]
+        return [ArenaRead.model_validate(arena) for arena in arenas] + [BYOM_ARENA]
 
     async def require_active(self, model_id: UUID) -> None:
         await self.get_active(model_id)

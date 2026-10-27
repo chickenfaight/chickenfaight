@@ -18,6 +18,15 @@ from .schemas import (
     UserSearchPage,
     Verdict,
 )
+from .bilc import (
+    BilcDeviceRead,
+    BilcRegister,
+    BilcRegistered,
+    BilcTokenRequest,
+    BilcTokens,
+    Hello,
+    PairingCodeRead,
+)
 
 __all__ = [
     "FriendsPage",
@@ -38,4 +47,11 @@ __all__ = [
     "TipsTip",
     "UserSearchPage",
     "Verdict",
+    "BilcDeviceRead",
+    "BilcRegister",
+    "BilcRegistered",
+    "BilcTokenRequest",
+    "BilcTokens",
+    "Hello",
+    "PairingCodeRead",
 ]

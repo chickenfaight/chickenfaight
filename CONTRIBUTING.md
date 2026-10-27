@@ -4,7 +4,7 @@ Read [AGENTS.md](AGENTS.md) first. Its "Required reading" table and guardrails a
 
 ## Setup
 
-Prerequisites: Python ≥ 3.14, [uv](https://docs.astral.sh/uv/), Node.js LTS, pnpm, PostgreSQL. Go is needed only for `bilc/`.
+Prerequisites: Python ≥ 3.14, [uv](https://docs.astral.sh/uv/), Node.js LTS, pnpm, PostgreSQL. For `bilc/` and the BYOM arena only: Go (the version in `bilc/go.mod`) and [Ollama](https://ollama.com).
 
 **Database**
 
@@ -17,13 +17,17 @@ createdb chickenfaight_test   # for `uv run pytest`; tables are created by the t
 
 ```bash
 cd backend
-cp .env.example .env        # fill in Postgres credentials, Google OAuth, SESSION_SECRET, INFERENCE_API_KEY
+cp .env.example .env        # fill in Postgres credentials, Google OAuth, SESSION_SECRET, BILC_JWT_SECRET, INFERENCE_API_KEY
 uv run fastapi dev app/main.py
 ```
 
 `uv run` installs dependencies from `uv.lock`, and startup applies database migrations, so this one command is also how you catch up after every `git pull`. If startup reports a reset or a schema problem, see "Changing the schema" in [backend/BACKEND.md](backend/BACKEND.md).
 
-Google OAuth: create an OAuth 2.0 Web client in Google Cloud Console with redirect URI `http://localhost:8000/auth/google/callback`. Generate `SESSION_SECRET` with `openssl rand -hex 32`.
+Google OAuth: create an OAuth 2.0 Web client in Google Cloud Console with redirect URI `http://localhost:8000/auth/google/callback`. Generate `SESSION_SECRET` and `BILC_JWT_SECRET` (a different value) each with `openssl rand -hex 32`. Startup fails without them.
+
+The judge must be a free OpenRouter model that supports structured outputs, and OpenRouter's free list changes. If every match is voided with "the judge failed" and the log shows a 404 such as "This model is unavailable for free", set `INFERENCE_JUDGE_MODEL` in `.env` (e.g. `nvidia/nemotron-3.5-super-vl:free`) and restart. To find candidates, look for `:free` models whose `supported_parameters` include `structured_outputs` at https://openrouter.ai/api/v1/models.
+
+`BILC_MIN_SUPPORTED_VERSION` (optional, default `0.1.0`) refuses older BILC clients. Locally built BILC reports version `dev`, which is accepted only with `APP_ENV=development`.
 
 **Debate topics**
 
@@ -72,6 +76,24 @@ Check the connection at http://localhost:3000/health.
   - `main` is merged into the branch and `uv run pytest` passes (it fails on missing or unmerged migrations).
   - Tests per TESTING.md pass, and UI changes were used in a browser.
   - No secrets, `.env` files, or generated files (`.next/`, `.venv/`, `__pycache__/`) are committed.
+
+## BILC
+
+Run a local BYOM match against yourself, with the backend and frontend running:
+
+```bash
+ollama pull llama3.2:3b              # llama3.2:1b often refuses to argue; try 3B or larger
+cd bilc && go build -o bilc ./cmd/bilc   # bilc/bilc is gitignored
+./bilc pair <code>                   # code from http://localhost:3000/bilc; server defaults to http://localhost:8000
+./bilc model set --model llama3.2:3b
+./bilc run                           # leave running; the BILC page shows the device online
+```
+
+A match needs two players, each with their own device. Sign up a second account in a private window, and give its device a separate config directory: on Linux, prefix each command for it with `XDG_CONFIG_HOME=/tmp/bilc-b`. Then pick **Bring your own model** in both lobbies and join. Clean up with `./bilc unpair` (and Revoke on the BILC page).
+
+Credentials go in the system keychain, or `credentials.json` (mode 0600) in the config directory when there is none. Run `go test -race ./...` from `bilc/` before a PR; [TESTING.md](TESTING.md) has the full checks.
+
+To release, tag a commit on `main` that passed CI and push the tag: `git tag bilc/v0.1.0 && git push origin bilc/v0.1.0`. The `BILC release` workflow builds the binaries and publishes a GitHub Release, which `bilc/install.sh` installs from. Set the repository variable `BILC_SERVER_URL` once the server is deployed, so release builds default to it.
 
 ## Backend image releases
 

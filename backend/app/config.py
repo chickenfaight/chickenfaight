@@ -33,6 +33,10 @@ class Settings:
     google_client_id: str
     google_client_secret: str
     session_secret: str
+    # Signs BILC access JWTs (HS256); see PROTOCOL.md, "REST — BILC".
+    bilc_jwt_secret: str
+    # Older BILC clients are refused on connect (close 4426 `BILC_OUTDATED`).
+    bilc_min_supported_version: str
     frontend_url: str
     secure_cookies: bool
     # "development" lets startup reset an unrecoverable local database.
@@ -57,6 +61,8 @@ class Settings:
             google_client_id=required_environment_variable("GOOGLE_CLIENT_ID"),
             google_client_secret=required_environment_variable("GOOGLE_CLIENT_SECRET"),
             session_secret=required_environment_variable("SESSION_SECRET"),
+            bilc_jwt_secret=required_environment_variable("BILC_JWT_SECRET"),
+            bilc_min_supported_version=os.getenv("BILC_MIN_SUPPORTED_VERSION", "0.1.0"),
             frontend_url=os.getenv("FRONTEND_URL", "http://localhost:3000"),
             secure_cookies=os.getenv("SECURE_COOKIES", "false").lower() == "true",
             app_env=os.getenv("APP_ENV", "production"),

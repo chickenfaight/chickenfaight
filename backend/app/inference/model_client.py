@@ -1,7 +1,8 @@
 from abc import ABC, abstractmethod
 from collections.abc import AsyncIterator
 import json
-from typing import Literal, TypedDict
+from typing import Literal, Protocol, TypedDict
+from uuid import UUID
 
 from openai import AsyncOpenAI
 
@@ -87,5 +88,29 @@ class OpenAIModelClient(ModelClient):
         return message.parsed
 
 
-class BYOMClient(ModelClient):
-    pass
+class DeviceTurnError(Exception):
+    """A BILC device failed a turn: it reported an `ERROR`, was offline, or disconnected mid-turn."""
+
+    def __init__(self, code: str, message: str):
+        self.code = code
+        super().__init__(f"{code}: {message}")
+
+
+class DeviceLink(Protocol):
+    """Where BILC turns are sent (`BilcConnections`); a protocol so tests can fake a device."""
+
+    def turn(self, device_id: UUID, match_id: UUID, messages: list[Message], max_tokens: int) -> AsyncIterator[str]:
+        ...
+
+
+class BilcModelClient(ModelClient):
+    """A player's own model: each turn is a `TURN_REQUEST` to their BILC device, and its
+    `MATCH_RESPONSE` deltas are yielded as they arrive (PROTOCOL.md, "WebSocket — BILC")."""
+
+    def __init__(self, devices: DeviceLink, device_id: UUID, match_id: UUID):
+        self.devices = devices
+        self.device_id = device_id
+        self.match_id = match_id
+
+    def stream(self, messages: list[Message], max_tokens: int = 400) -> AsyncIterator[str]:
+        return self.devices.turn(self.device_id, self.match_id, messages, max_tokens)

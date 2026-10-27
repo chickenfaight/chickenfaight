@@ -48,13 +48,13 @@ Everything here is PLANNED unless marked **(implemented)**. Remove a PLANNED sta
 | `MODEL_UNAVAILABLE` | 502 | — | The tips model failed or sent nothing within 30 s (implemented) |
 | `USERNAME_INVALID` | 422 | — | Username is blank after trimming, over 32 characters, or contains control or invisible formatting characters (implemented) |
 | `USERNAME_NOT_ALLOWED` | 422 | — | Username fails the profanity filter (implemented) |
-| `BILC_OFFLINE`, `BILC_BUSY` | 409 | — | BYOM device can't take a match |
-| `PAIRING_CODE_INVALID` | 400 | — | Wrong, used, or expired pairing code |
-| `TOKEN_INVALID` | 401 | — | Bad/reused refresh token (reuse revokes the device) |
+| `BILC_OFFLINE`, `BILC_BUSY` | 409 | — | BYOM device can't take a match: not connected, or already in one (implemented). BILC also sends `BILC_BUSY` as an `ERROR` for a second match or turn |
+| `PAIRING_CODE_INVALID` | 400 | — | Wrong, used, or expired pairing code (implemented) |
+| `TOKEN_INVALID` | 401 | — | Bad, reused, or expired refresh token, or a revoked or deleted device (reuse revokes the device) (implemented) |
 | `UNSUPPORTED_VERSION` | 426 | 4426 | `protocol_version` not supported |
-| `BILC_OUTDATED` | 426 | 4426 | `client_version` < `min_supported_version` |
+| `BILC_OUTDATED` | 426 | 4426 | `client_version` < `min_supported_version` (implemented on the socket: close reason `BILC_OUTDATED: run bilc update`) |
 | `PROMPT_ALREADY_SUBMITTED`, `PROMPT_TOO_LONG` | — | — | Prompt rejected (no close) |
-| `MODEL_UNAVAILABLE`, `MODEL_ERROR`, `MODEL_TIMEOUT` | — | — | Sent by BILC about the local model |
+| `MODEL_UNAVAILABLE`, `MODEL_ERROR`, `MODEL_TIMEOUT` | — | — | Sent by BILC about the local model (implemented) |
 | `HEARTBEAT_TIMEOUT` | — | 4408 | No message within the timeout |
 | `REPLACED` | — | 4409 | A newer connection for the same user+match or device |
 | `FRIEND_SELF` | 422 | — | Players can't add themselves as friends (implemented) |
@@ -76,8 +76,9 @@ Server-side constants; clients read deadlines from messages rather than hard-cod
 | Judge total | 120 s |
 | Heartbeat interval / timeout | 15 s / 45 s |
 | Queue poll interval | 2 s |
-| Pairing code TTL | 10 min, single use |
-| BILC access JWT / refresh token | 15 min / 30 days, rotated on every use |
+| Pairing code TTL (implemented) | 10 min, single use |
+| BILC access JWT / refresh token (implemented) | 15 min / 30 days, rotated on every use (each rotation restarts the 30 days) |
+| BILC rate limits (implemented) | `POST /v1/bilc/pairing-codes`: a burst of 5 and 5/min per user. `POST /v1/bilc/register`: a burst of 10 and 10/min per client IP. `POST /v1/bilc/token`: a burst of 20 and 20/min per client IP |
 | Web session (implemented) | 14 days from sign-in, not extended by use; logout ends it immediately |
 | REST rate limits, per user (implemented) | Token buckets, each holding a burst and refilling steadily: search, profile lookup, tag availability, and friends list each allow a burst of 20 and 60/min; adding and removing friends share a burst of 10 and 20/min |
 | Points and streaks (implemented) | Days are UTC. Only players who finished the match score: both in a judged match, only the winner of a forfeit, nobody in a void. +10 for finishing, +10 for winning, +50 for the day's challenge (once per UTC day, counted only if the match ends that same day), and +25 at every 7th consecutive day. A finished match on a new UTC day extends the streak if the previous one was within 48 h, and otherwise restarts it at 1 |
@@ -96,7 +97,7 @@ UserPublic       { id: uuid, tag: str|null, username: str|null, avatar_url: str|
 UserProfile      UserPublic + { ratings: [Rating], is_friend: bool, points: int, streak: int, rank: int|null }   (implemented; `ratings` is empty until ratings ship; `is_friend` is whether the caller has added this player; `streak` is already 0 if 48 h passed without a finished match; `rank` is the 1-based position by points among tagged players, ties sharing a rank)
 Rating           { ladder: str, elo: int, games_played: int, wins: int, losses: int }
 Ladder           { slug: str, display_name: str, kind: "cloud"|"byom" }
-ArenaRead        { id: uuid, display_name: str, kind: "provided"|"byom" } (implemented; id is the model's UUID; kind currently defaults to "provided")
+ArenaRead        { id: uuid, display_name: str, kind: "provided"|"byom" } (implemented; for "provided", id is the model's UUID; the one "byom" arena, listed last, has the fixed id in "BYOM arena" below)
 Side             "pro" | "con"
 Phase            "opening" | "rebuttal" | "closing"
 MatchStatus      "waiting_for_players" | "awaiting_prompts" | "in_progress" | "judging"
@@ -108,7 +109,8 @@ MatchSummary     { id: uuid, ladder: str, topic: str, status: MatchStatus, winne
                    participants: [Participant], ended_at: str|null }
 MatchRead        MatchSummary + { end_reason: EndReason|null, verdict_reasoning: str|null, turns: [Turn] }
 BilcDevice       { id: uuid, name: str, platform: str, client_version: str, model_name: str|null,
-                   online: bool, last_seen_at: str|null, created_at: str }
+                   size_class: "small"|"medium"|"large"|null, online: bool, status: "offline"|"idle"|"busy",
+                   last_seen_at: str|null, created_at: str }   (implemented; `model_name` is `HELLO.model.name`, null until the device first connects; `size_class` is from the live connection's `HELLO`, else the last one stored (see "BYOM arena"); `online` means its socket finished `HELLO`; `status` is `busy` while reserved for a match, which outlasts a dropped socket; `last_seen_at` is the last pairing, token refresh, or `HELLO`)
 ```
 
 Player prompts are never returned by any endpoint or message except to their author.
@@ -149,28 +151,37 @@ Player prompts are never returned by any endpoint or message except to their aut
 | DELETE | `/v1/matchmaking/queue` | session | — | 204 |
 | GET | `/v1/matches/{id}` | session | `{id}: uuid` | `MatchRead`; live matches visible to participants only |
 | POST | `/v1/matches/{id}/votes` | session | `{id}: uuid`, `{ side: Side }` | 204; finished matches, non-participants, one vote per user (upsert) |
-| POST | `/v1/bilc/pairing-codes` | session | — | `{ code: str (8 chars, A–Z 2–9), expires_at }` |
-| GET | `/v1/bilc/devices` | session | — | `[BilcDevice]` (caller's only) |
-| DELETE | `/v1/bilc/devices/{id}` | session | `{id}: uuid` | 204; revokes tokens, closes its socket 4403 |
+| POST | `/v1/bilc/pairing-codes` | session | — | `{ code: str (8 chars, A–Z 2–9), expires_at }`; also deletes the caller's used and expired codes (implemented) |
+| GET | `/v1/bilc/devices` | session | — | `[BilcDevice]` (caller's only, not revoked, newest first; implemented) |
+| DELETE | `/v1/bilc/devices/{id}` | session | `{id}: uuid` | 204; revokes tokens, closes its socket 4403; 404 `NOT_FOUND` for another user's, revoked, or unknown device (implemented) |
 
 `/health` and `/auth/*` stay unversioned: the OAuth redirect URI is registered with Google.
 
-The six `public` rows above are the only routes reachable without a session; `tests/integration/test_route_auth.py` enforces this for every route. FastAPI's `/docs`, `/redoc`, and `/openapi.json` exist only when `APP_ENV=development` (implemented). Passwords are sent as typed, never hashed by the client (a client-side hash would itself be the password); the server stores only a salted scrypt hash. Use HTTPS outside local development.
+The six `public` rows above, plus `POST /v1/bilc/register` and `POST /v1/bilc/token` below (whose credential is the pairing code or refresh token in the body), are the only routes reachable without a session; `tests/integration/test_route_auth.py` enforces this for every route. FastAPI's `/docs`, `/redoc`, and `/openapi.json` exist only when `APP_ENV=development` (implemented). Passwords are sent as typed, never hashed by the client (a client-side hash would itself be the password); the server stores only a salted scrypt hash. Use HTTPS outside local development.
+
+### BYOM arena (implemented)
+
+The BYOM arena is `ArenaRead { id: "6f1c9a52-3d8e-4b7a-9e21-b10c0000b10c", display_name: "Bring your own model", kind: "byom" }`, always listed last by `GET /v1/arenas`. Each player plays with their own BILC device, so it has no `models` row, and matches record `model_id` null.
+
+- **Queueing:** `POST /v1/match/queue` with that `model_id` and `bilc_id`: one of the caller's own unrevoked devices (else 404 `NOT_FOUND`), connected (else 409 `BILC_OFFLINE`, whose `detail` says to run `bilc run`) and idle (else 409 `BILC_BUSY`). A missing `bilc_id` or `daily: true` is 422 `VALIDATION_ERROR`: the daily challenge isn't played here.
+- **Size classes:** from `HELLO.model.metadata.parameter_size` (Ollama's format, e.g. `"8.0B"`): `small` under 8B parameters, `medium` 8B–30B, `large` over 30B. The size is self-reported. An unknown size counts as `large`, so hiding a size can't place a big model among small ones.
+- **Pairing:** every second, longest-waiting players first, each is paired with the oldest queued player of the same class; once either of the two has waited 30 s, a neighboring class (small–medium, medium–large) is allowed too, never small–large. Players whose device is offline or busy at that moment stay queued but aren't paired. Pairing reserves both devices (`busy`) until the match ends.
+- **In the match:** `MATCH_STATE.model_display_name` is `"Your model: <HELLO.model.name>"`, each player's own. Each side's turns go to its player's device; failures follow the BYOM row of "Failure outcomes".
 
 ### Current matchmaking integration
 
-The current session-authenticated `POST /v1/match/queue` requires `{ model_id: uuid, daily?: bool }` from `GET /v1/arenas`. `daily: true` joins today's daily-challenge queue for that model, separate from the regular queue, and returns 409 `CHALLENGE_ALREADY_COMPLETED` once the caller has completed today's challenge (implemented); an unknown or inactive model returns 404 `NOT_FOUND`, and malformed input returns 422. It returns HTTP 202 queue status. `GET /v1/match/status` returns HTTP 200 queue status. Both return `{ status: "none"|"queued"|"matched", match_id?: uuid }`. Matchmaking uses independent FIFO queues keyed by model UUID. The matchmaker passes the selected model UUID to the engine, which resolves its exact `api_model_id` and display name before inference. The client still uses the configured OpenRouter base URL and API key; provider-specific connection settings remain pending. The frontend integration is implemented: the lobby loads the arena catalog, displays model names, and sends the selected UUID in the required body. Selection stays locked during queue operations; recovered queues have an unknown model until `MATCH_STATE` arrives. Catalog failures do not block queue cancellation. `POST /v1/match/queue` returns 403 `TAG_REQUIRED` until the caller has a tag. `DELETE /v1/match/queue` (session, no body) cancels the caller’s queue entry in its selected model queue and returns HTTP 204, including if already absent; an existing match returns HTTP 409 `IN_MATCH`. The versioned routes above remain the target contract. The lobby polls until matched, then navigates to `/match/[match_id]`, where the arena opens the match WebSocket.
+The current session-authenticated `POST /v1/match/queue` requires `{ model_id: uuid, daily?: bool, bilc_id?: uuid }` from `GET /v1/arenas`. `bilc_id` is required for the BYOM arena and refused (422 `VALIDATION_ERROR`) otherwise; see "BYOM arena" (implemented). `daily: true` joins today's daily-challenge queue for that model, separate from the regular queue, and returns 409 `CHALLENGE_ALREADY_COMPLETED` once the caller has completed today's challenge (implemented); an unknown or inactive model returns 404 `NOT_FOUND`, and malformed input returns 422. It returns HTTP 202 queue status. `GET /v1/match/status` returns HTTP 200 queue status. Both return `{ status: "none"|"queued"|"matched", match_id?: uuid }`. Matchmaking uses independent FIFO queues keyed by model UUID. The matchmaker passes the selected model UUID to the engine, which resolves its exact `api_model_id` and display name before inference. The client still uses the configured OpenRouter base URL and API key; provider-specific connection settings remain pending. The frontend integration is implemented: the lobby loads the arena catalog, displays model names, and sends the selected UUID in the required body. Selection stays locked during queue operations; recovered queues have an unknown model until `MATCH_STATE` arrives. Catalog failures do not block queue cancellation. `POST /v1/match/queue` returns 403 `TAG_REQUIRED` until the caller has a tag. `DELETE /v1/match/queue` (session, no body) cancels the caller’s queue entry in its selected model queue and returns HTTP 204, including if already absent; an existing match returns HTTP 409 `IN_MATCH`. The versioned routes above remain the target contract. The lobby polls until matched, then navigates to `/match/[match_id]`, where the arena opens the match WebSocket.
 
 ## REST — BILC
 
 | Method | Path | Auth | Request | Response |
 |---|---|---|---|---|
-| POST | `/v1/bilc/register` | pairing code in body | `{ pairing_code, device_name, platform, client_version }` | `{ bilc_id: uuid, refresh_token: str }` |
-| POST | `/v1/bilc/token` | refresh token in body | `{ bilc_id, refresh_token }` | `{ access_token, expires_at, refresh_token }` |
-| GET | `/v1/bilc/releases/latest` | public | — | `{ version, min_supported_version, protocol_version, assets: [{ platform, arch, url, sha256 }] }` |
+| POST | `/v1/bilc/register` | pairing code in body | `{ pairing_code: str (≤ 16; case, spaces, and hyphens ignored), device_name: str (1–64), platform: str (1–32), client_version: str (1–32) }`; text fields are trimmed and can't contain control or invisible formatting characters | `{ bilc_id: uuid, refresh_token: str }`; 400 `PAIRING_CODE_INVALID`; 422 for a malformed body (implemented) |
+| POST | `/v1/bilc/token` | refresh token in body | `{ bilc_id: uuid, refresh_token: str (≤ 128) }` | `{ access_token, expires_at, refresh_token }`; 401 `TOKEN_INVALID` (implemented) |
+| GET | `/v1/bilc/releases/latest` | public | — | `{ version, min_supported_version, protocol_version, assets: [{ platform, arch, url, sha256 }] }` (PLANNED; `install.sh` reads GitHub Releases directly) |
 | GET | `/v1/bilc/download` | public | `?platform=mac|win|linux&arch=amd64|arm64` | 302 to the release asset |
 
-Access JWT: HS256 with `BILC_JWT_SECRET`, claims `sub` = `bilc_id` (uuid), `uid` = user id (uuid), `aud` = `"bilc"`, `exp`. Presenting an already-rotated refresh token revokes the device.
+Access JWT: HS256 with `BILC_JWT_SECRET`, claims `sub` = `bilc_id` (uuid), `uid` = user id (uuid), `aud` = `"bilc"`, `iat`, `exp` (implemented). Each refresh token works once. Presenting the one just replaced revokes the device and closes its socket 4403; any other wrong token gets `TOKEN_INVALID` without revoking.
 
 ## WebSocket envelope
 
@@ -221,9 +232,13 @@ Disconnecting after submitting a prompt does not affect the match; turns keep ru
 
 `GET /v1/bilc/ws`, header `Authorization: Bearer <access_token>`. The server tracks each device as online/idle/busy from this socket.
 
+Implemented: everything in the table below (for the opening phase), plus replacement (4409), revocation and account deletion (4403), `BAD_MESSAGE`, and `UNKNOWN_TYPE`. The server checks the token before accepting: an invalid or expired token or an unknown device is 4401, and a revoked device or one whose `uid` isn't its owner is 4403. Through uvicorn, a rejection before accepting reaches the client as an HTTP 403 handshake failure without the close code, so BILC refreshes its token on any rejection, and a revoked device then gets `TOKEN_INVALID` there. Until a valid `HELLO` arrives, other frames get `ERROR` `BAD_MESSAGE`; a `protocol_version` other than 1 closes 4426 (`UNSUPPORTED_VERSION`), and a `client_version` below `BILC_MIN_SUPPORTED_VERSION` (env, default `0.1.0`) closes 4426 with reason `BILC_OUTDATED: run bilc update`; unversioned `dev` builds pass only when `APP_ENV=development`. 45 s without a `HELLO` closes 4408. `HELLO.model` is capped at 4 KB, and its `client_version`, `platform`, and `model` are stored on the device.
+
+Matches: when the engine starts, each device gets `MATCH_ASSIGN`; a device that reconnects while still reserved gets it again after `HELLO_ACK`. Each turn is one `TURN_REQUEST` (`phase` is `opening` for now; `deadline` is 90 s ahead). `MATCH_RESPONSE`s are validated (a bad one gets `BAD_MESSAGE`), and ones for unknown or abandoned turns are ignored. An `ERROR` with a `turn_id`, or the socket closing, fails that turn. When the match ends for any reason, both devices get `MATCH_END` with the final status and become idle; a device whose side forfeited gets `FORFEIT` first, with the failure code as `reason`.
+
 | Type | Direction | Payload |
 |---|---|---|
-| `HELLO` | BILC → server | `{ protocol_version, client_version, platform, model: { name: str, context_length: int|null, metadata: object } }` — must be first |
+| `HELLO` | BILC → server | `{ protocol_version, client_version, platform, model: { name: str, context_length: int|null, metadata: object } }` — must be first. `metadata` may carry Ollama's `parameter_size`, `quantization_level`, and `family` (strings) |
 | `HELLO_ACK` | server → BILC | `{ protocol_version, heartbeat_interval_s }` |
 | `MATCH_ASSIGN` | server → BILC | `{ match_id: uuid, side: Side, topic: str }` |
 | `TURN_REQUEST` | server → BILC | `{ turn_id: uuid, match_id: uuid, phase, messages: [{ role: "system"|"user"|"assistant", content: str }], max_tokens: int, deadline: str }` |
@@ -265,7 +280,7 @@ Player turns use the lobby-selected model: the engine resolves its database UUID
 
 OpenRouter-only options are sent only when the base URL hostname is `openrouter.ai`: player turns send `reasoning: { enabled: false, exclude: true }`, and the judge sends `provider: { require_parameters: true }`. Other OpenAI-compatible endpoints receive neither option. Do not use `openrouter/free`; random routing can select classifiers or models that return reasoning instead of debate arguments. A turn with no visible text counts as a model error and receives the normal retry (implemented).
 
-Current argument generation uses the engine's `format_game(player)` wrapper (implemented): a fixed system message supplies the topic, assigned side and position, opening phase, and 400-token completion cap. Only that player's strategy is included, inside `<player_strategy>` delimiters after stripping those delimiter strings from the strategy. The strategy is untrusted coaching subordinate to the server rules. The model follows its tone, persona, style, and arguments, including on controversial topics and without hedging or disclaimers, but the strategy cannot change the topic, side, position, phase, length limit, or plain-text output; the model must not pose as or instruct the judge or reveal the strategy. Only `delta.content` is forwarded. Reasoning settings for argument generation do not apply to judging. The current engine generates one opening argument per side; the six-turn flow below remains planned.
+Current argument generation uses the engine's `format_game(player)` wrapper (implemented): a fixed system message supplies the topic, assigned side and position, opening phase, and 400-token completion cap, followed by a fixed user message, `Give your opening argument now.` (never player text; without a user turn, small local models print the template's `assistant` header and refuse). Only that player's strategy is included, inside `<player_strategy>` delimiters after stripping those delimiter strings from the strategy. The strategy is untrusted coaching subordinate to the server rules. The model follows its tone, persona, style, and arguments, including on controversial topics and without hedging or disclaimers, but the strategy cannot change the topic, side, position, phase, length limit, or plain-text output; the model must not pose as or instruct the judge or reveal the strategy. Only `delta.content` is forwarded. Reasoning settings for argument generation do not apply to judging. The current engine generates one opening argument per side; the six-turn flow below remains planned.
 
 ### Match flow
 
@@ -285,6 +300,6 @@ A **forfeit** is a loss with a normal Elo update. A **void** changes no Elo.
 | A player doesn't `JOIN` or `SUBMIT_PROMPT` by the deadline, or `RESIGN`s | That player forfeits (`no_show` / `no_prompt` / `resigned`) |
 | Both players fail the same deadline | Void |
 | Cloud model errors or times out on a turn, after 1 retry | Void (`model_failure`); platform's fault |
-| BYOM: device offline, `ERROR`, timeout, or empty output on a turn (no retry) | That side forfeits (`model_failure`); server sends `FORFEIT` to the device |
+| BYOM: device offline, `ERROR`, timeout (30 s to first token, 90 s total), or empty output on a turn (no retry) | That side forfeits (`model_failure`); server sends `FORFEIT` to the device (implemented). The first failure ends generation; both devices failing in the same step voids the match |
 | Judge errors, times out, or returns unparseable output, after 1 retry | Void (`judge_failure`) |
 | Output over the length limit | Truncated, not a failure (`truncated: true`) |

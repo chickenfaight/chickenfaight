@@ -14,6 +14,7 @@ from app.db.migrate import migrate, reset
 from app.db.session import get_session
 from app.main import app
 from app.models import InferenceAdapter, Model, Provider, User
+from app.services.bilc_connections import BilcConnections
 from app.services.matchmaking import Matchmaker
 
 
@@ -91,7 +92,8 @@ async def client(db_session: AsyncSession) -> AsyncIterator[AsyncClient]:
         yield db_session
 
     app.dependency_overrides[get_session] = test_session
-    app.state.matchmaker = Matchmaker()
+    app.state.bilc_connections = BilcConnections(record_hello=AsyncMock())
+    app.state.matchmaker = Matchmaker(bilc=app.state.bilc_connections)
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as http:
         yield http
     app.dependency_overrides.clear()

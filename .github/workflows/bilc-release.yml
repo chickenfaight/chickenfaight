@@ -1,0 +1,92 @@
+name: BILC release
+
+on:
+  push:
+    tags:
+      - "bilc/v*"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: bilc-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: write # create the GitHub Release
+
+    defaults:
+      run:
+        working-directory: bilc
+
+    steps:
+      - name: Download tagged source
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Check tag
+        id: version
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          if [[ ! "$RELEASE_TAG" =~ ^bilc/v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
+            echo "Expected a tag like bilc/v0.1.0" >&2
+            exit 1
+          fi
+          echo "version=${RELEASE_TAG#bilc/v}" >> "$GITHUB_OUTPUT"
+
+      - name: Install Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: bilc/go.mod
+          cache-dependency-path: bilc/go.sum
+
+      - name: Test
+        run: |
+          test -z "$(gofmt -l .)"
+          go vet ./...
+          go test -race -count=1 -timeout=5m ./...
+
+      # GoReleaser builds only; the free version can't parse bilc/-prefixed tags, so it
+      # gets the bare version and skips its git checks, and the next steps publish.
+      - name: Build archives and checksums
+        uses: goreleaser/goreleaser-action@v7
+        with:
+          distribution: goreleaser
+          version: v2.18.3
+          workdir: bilc
+          args: release --clean --skip=publish,validate
+        env:
+          GORELEASER_CURRENT_TAG: v${{ steps.version.outputs.version }}
+          # Optional repository variable: the production server BILC talks to by default.
+          BILC_SERVER_URL: ${{ vars.BILC_SERVER_URL }}
+
+      - name: Check the installer against the built files
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          python3 -m http.server 8799 --bind 127.0.0.1 --directory dist &
+          server=$!
+          sleep 1
+          BILC_DOWNLOAD_URL=http://127.0.0.1:8799 BILC_INSTALL_DIR="$RUNNER_TEMP/bin" sh install.sh
+          kill "$server"
+          test "$("$RUNNER_TEMP/bin/bilc" version)" = "bilc $VERSION"
+
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          gh release create "$RELEASE_TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --verify-tag \
+            --latest \
+            --title "BILC $VERSION" \
+            --notes "Install or update on Linux and macOS: \`curl -fsSL https://raw.githubusercontent.com/$GITHUB_REPOSITORY/main/bilc/install.sh | sh\`. Windows: download the zip for your CPU. Verify downloads against checksums.txt." \
+            dist/*.tar.gz dist/*.zip dist/checksums.txt install.sh uninstall.sh

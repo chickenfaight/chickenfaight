@@ -155,7 +155,7 @@ class PairingTests(unittest.IsolatedAsyncioTestCase):
             matchmaker.register(user, model_a if index % 2 == 0 else model_b)
 
         def fake_engine(match_id, players, model_id, challenge_day=None):
-            return SimpleNamespace(match_id=match_id, players=players, model_id=model_id, run=AsyncMock())
+            return SimpleNamespace(match_id=match_id, players=players, model_id=model_id, devices={}, run=AsyncMock())
 
         with patch('app.services.matchmaking.GameEngine', side_effect=fake_engine) as engine:
             await matchmaker.match_available_players()
@@ -246,3 +246,75 @@ class QueueApiTests(unittest.TestCase):
         self.assertEqual(response.status_code, 409)
         self.assertEqual(response.json()['code'], 'ALREADY_QUEUED')
         self.assertNotIn(self.model_id, self.matchmaker.queues)
+
+
+class ByomPairingTests(unittest.TestCase):
+    """`pair_byom`: same size class first, a neighboring class only after the wait, oldest first."""
+
+    def entry(self, size_class, joined_at=0.0):
+        from app.services.matchmaking import ByomEntry
+        return ByomEntry(uuid4(), uuid4(), size_class, joined_at)
+
+    def pair(self, entries, now):
+        from app.services.matchmaking import pair_byom
+        return pair_byom(entries, now, widen_after=30)
+
+    def test_same_class_is_preferred_over_a_neighbor(self):
+        small, medium, small_too = self.entry("small"), self.entry("medium"), self.entry("small", 5)
+        self.assertEqual(self.pair([small, medium, small_too], now=100), [(small, small_too)])
+
+    def test_neighbors_wait_before_pairing(self):
+        small, medium = self.entry("small", 0), self.entry("medium", 10)
+        self.assertEqual(self.pair([small, medium], now=29), [])
+        self.assertEqual(self.pair([small, medium], now=30), [(small, medium)])
+
+    def test_classes_two_apart_never_pair(self):
+        self.assertEqual(self.pair([self.entry("small"), self.entry("large")], now=10_000), [])
+
+    def test_longest_waiting_players_go_first(self):
+        oldest, middle, newest = self.entry("medium", 0), self.entry("medium", 1), self.entry("medium", 2)
+        self.assertEqual(self.pair([oldest, middle, newest], now=3), [(oldest, middle)])
+
+
+class ByomMatchmakingTests(unittest.IsolatedAsyncioTestCase):
+    def setUp(self):
+        from app.services.bilc_connections import BilcConnections
+        self.bilc = BilcConnections(record_hello=AsyncMock(), min_version="0.1.0", allow_dev=False)
+        self.matchmaker = Matchmaker(bilc=self.bilc)
+
+    def online(self, device_id):
+        self.bilc.connections[device_id] = SimpleNamespace(identity=None)
+
+    async def test_pairs_reserve_both_devices_and_start_a_byom_engine(self):
+        users, devices = [uuid4(), uuid4()], [uuid4(), uuid4()]
+        for user, device in zip(users, devices):
+            self.online(device)
+            self.matchmaker.register_byom(user, device, "small")
+        with patch("app.services.matchmaking.GameEngine") as engine:
+            engine.return_value = SimpleNamespace(match_id=uuid4(), players=tuple(users), devices={}, run=AsyncMock())
+            await self.matchmaker.match_available_players()
+        kwargs = engine.call_args.kwargs
+        self.assertEqual(kwargs["devices"], dict(zip(users, devices)))
+        self.assertIs(kwargs["bilc"], self.bilc)
+        self.assertEqual({self.bilc.status(d) for d in devices}, {"busy"})
+        self.assertFalse(self.matchmaker.byom_queue)
+        self.assertEqual(self.matchmaker.get_status(users[0])["status"], "matched")
+
+    async def test_offline_devices_wait_unpaired(self):
+        users, devices = [uuid4(), uuid4()], [uuid4(), uuid4()]
+        for user, device in zip(users, devices):
+            self.matchmaker.register_byom(user, device, "small")
+        self.online(devices[0])  # the other went offline after queueing
+        with patch("app.services.matchmaking.GameEngine") as engine:
+            await self.matchmaker.match_available_players()
+        engine.assert_not_called()
+        self.assertEqual(self.matchmaker.get_status(users[1]), {"status": "queued"})
+
+    def test_byom_queue_can_be_cancelled(self):
+        user = uuid4()
+        self.matchmaker.register_byom(user, uuid4(), "large")
+        with self.assertRaises(AlreadyQueuedError):
+            self.matchmaker.register_byom(user, uuid4(), "large")
+        self.matchmaker.cancel(user)
+        self.assertFalse(self.matchmaker.byom_queue)
+        self.assertEqual(self.matchmaker.get_status(user), {"status": "none"})

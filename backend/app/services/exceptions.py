@@ -123,6 +123,53 @@ class TagRequiredError(TagError):
     detail = "Create your tag before joining a debate."
 
 
+class PairingCodeInvalidError(TagError):
+    code = "PAIRING_CODE_INVALID"
+    status_code = 400
+    detail = "That pairing code is wrong, used, or expired. Get a new one from the BILC page."
+
+
+class TokenInvalidError(TagError):
+    code = "TOKEN_INVALID"
+    status_code = 401
+    detail = "This device isn't paired anymore. Run `bilc pair` with a new code."
+
+
+class TokenReusedError(TokenInvalidError):
+    """An already-rotated refresh token came back, so it may have leaked; the device is now revoked."""
+
+    def __init__(self, device_id: UUID):
+        self.device_id = device_id
+        super().__init__()
+
+
+class BilcDeviceNotFoundError(TagError):
+    code = "NOT_FOUND"
+    status_code = 404
+    detail = "You have no device with that ID."
+
+
+class BilcOfflineError(TagError):
+    code = "BILC_OFFLINE"
+    status_code = 409
+    detail = "That device isn't connected. Start it with `bilc run`, then try again."
+
+
+class BilcBusyError(TagError):
+    code = "BILC_BUSY"
+    status_code = 409
+    detail = "That device is already playing a debate."
+
+
+class ByomQueueInvalidError(TagError):
+    code = "VALIDATION_ERROR"
+    status_code = 422
+
+    def __init__(self, detail: str):
+        self.detail = detail
+        super().__init__()
+
+
 class InvalidCredentialsError(ServiceError):
     """Wrong password, unknown tag, or an account without a password: one answer for all three,
     so sign-in can't be used to discover which tags exist."""

@@ -19,6 +19,9 @@ PUBLIC = {
     ("POST", "/auth/logout"),
     ("POST", "/auth/signup"),
     ("POST", "/auth/login"),
+    # BILC has no session: the pairing code or refresh token in the body is its credential.
+    ("POST", "/v1/bilc/register"),
+    ("POST", "/v1/bilc/token"),
 }
 
 

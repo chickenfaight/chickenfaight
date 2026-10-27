@@ -4,7 +4,7 @@ FastAPI server: REST API, matchmaking, game engine, persistence. Contracts are i
 
 ## Stack
 
-Python ≥ 3.14 managed with `uv`; FastAPI; SQLAlchemy 2 async + psycopg 3; Alembic (migrations); Pydantic; Authlib (Google OIDC); `better-profanity` (tag filter); Pillow (re-encoding uploaded profile pictures); PostgreSQL. PLANNED additions: `openai` (inference client), `PyJWT` (BILC tokens).
+Python ≥ 3.14 managed with `uv`; FastAPI; SQLAlchemy 2 async + psycopg 3; Alembic (migrations); Pydantic; Authlib (Google OIDC); `better-profanity` (tag filter); Pillow (re-encoding uploaded profile pictures); `PyJWT` (BILC access tokens); PostgreSQL. PLANNED addition: `openai` (inference client).
 
 Use a tool's current idiomatic style: `Annotated` dependencies, `Mapped[...]`/`mapped_column`, Pydantic v2 `model_validate`, `async`/`await` everywhere. Never do blocking I/O in async code.
 
@@ -15,7 +15,7 @@ app/
   main.py         app, middleware, router registration
   config.py       Settings from env (only place that reads env)
   api/            routers — thin: parse, call a service, return a schema; rate_limit.py (per-user limits)
-  auth/           google.py, dependencies.py (session user), bilc.py (JWT, PLANNED)
+  auth/           google.py, dependencies.py (session user), bilc.py (BILC access JWTs and the socket's token check)
   services/       business logic; owns transactions and authorization checks
   repositories/   SQLAlchemy queries only, one class per table/aggregate
   models/         ORM classes, one file per aggregate, all exported in __init__.py
@@ -36,7 +36,7 @@ Rules:
 
 State the auth of every endpoint explicitly; PROTOCOL.md lists which are public.
 - **Web routes / match socket:** `CurrentUserDependency`. The signed session cookie holds only a random `session_token`; `SessionService` (`app/services/auth_session.py`) looks up its SHA-256 hash in `sessions`, rejecting unknown, expired, or logged-out tokens and clearing the stale cookie. Sign-in creates a row (and deletes that user's expired ones); logout deletes it. Sessions last `SESSION_LIFETIME` (14 days), which also sets the cookie's max-age.
-- **BILC routes / socket:** `BilcDependency` (PLANNED) validating the access JWT.
+- **BILC routes / socket:** `register` and `token` take their credential in the body (they're on the public allowlist). The socket uses `BilcIdentityDependency` (`app/auth/bilc.py`): it decodes the access JWT (HS256, `aud=bilc`, `exp` required) before touching the database, then rejects unknown devices (4401) and revoked devices or a `uid` that isn't the owner (4403), all before `accept()`. `BilcService` (`app/services/bilc.py`) owns pairing and rotation; `BilcConnections` (`app/services/bilc_connections.py`, on `app.state`) owns live sockets, and its HELLO recorder is injected so socket tests never write to `POSTGRES_URL`.
 - **WebSockets:** authenticate and authorize *before* `accept()`.
 - **Ownership** (own device, participant in match) is checked in services, not routers. Return 404 for other users' private resources.
 - **Rate limits:** routes that read other users' data or change the friends list add `dependencies=[rate_limit(burst=..., per_minute=...)]` (`app/api/rate_limit.py`), an in-memory token bucket per signed-in user that raises `RateLimitedError` (429 `RATE_LIMITED` with `Retry-After`). Each `rate_limit(...)` call is its own bucket; reuse the returned dependency to share one across routes. Values are listed in PROTOCOL.md.
@@ -46,6 +46,8 @@ State the auth of every endpoint explicitly; PROTOCOL.md lists which are public.
 ## Game engine (partially built)
 
 `app/engine/` — one `GameEngine` instance per match, run as its own asyncio task started by the matchmaker. It owns the match's in-memory state and both player sockets, and follows the match flow and failure table in PROTOCOL.md.
+
+**BYOM** (implemented): an engine created with `devices` (user → device ID) and `bilc` (`BilcConnections`) skips the model lookup, sends each device `MATCH_ASSIGN` once the topic is chosen, and gives each BYOM player a `BilcModelClient`, which sends `TURN_REQUEST`s through `BilcConnections.turn()` and yields the device's `MATCH_RESPONSE` deltas. Device turns get the same 30 s/90 s timeouts but no retry: any failure (`DeviceTurnError`, a model error, a timeout, empty output) raises `DeviceFailure`, the side forfeits, and its device gets `FORFEIT`. `run()`'s `finally` always sends both devices `MATCH_END` and frees them. `BilcConnections` holds each device's reservation (`assignments`), separate from its socket, so a device that reconnects mid-match keeps playing and is re-sent `MATCH_ASSIGN`.
 
 The current engine keeps one receiver and one heartbeat task per browser connection. Accepted prompts are stored separately so the receiver continues reading heartbeat replies. Heartbeats are sent every 15 seconds; 45 seconds without incoming activity closes that socket with 4408. These tasks stop on disconnect or engine completion. The browser echoes heartbeats. The engine supplies and enforces a shared 120-second prompt deadline after both players connect, sends `TURN_END` to the author, and includes both generated arguments (never private prompts) in `MATCH_RESULT`. Missing prompts produce a forfeit or void. `run()` races `play()` against `RESIGN`: the first outcome is recorded by `decide()`, and later ones are ignored. Cloud turns and the judge get one retry and PROTOCOL.md's timeouts, then void the match (`model_failure`/`judge_failure`); a turn that already streamed text isn't retried, and a turn with no visible text counts as a failure. Failures are logged with the match ID, and `Matchmaker.run_match` logs any crash so it isn't lost. Result persistence/Elo, join deadlines, and reconnect snapshots remain pending.
 
@@ -59,11 +61,11 @@ The current engine keeps one receiver and one heartbeat task per browser connect
 | `unlink_user(socket)` | Send `MATCH_RESULT` and close the socket |
 | `report_game()` | Records the decided result, points, and streaks via `record_match()` (`app/services/rewards.py`) in its own session; runs at most once, from `run()`'s `finally`, and logs instead of raising on failure (implemented; Elo PLANNED) |
 
-The engine never calls a provider directly. `app/inference/` exposes one `ModelClient` interface (`stream(messages, max_tokens) -> AsyncIterator[str]`) with `OpenAIModelClient` (cloud, `AsyncOpenAI` with `base_url`) and `BilcModelClient` (sends `TURN_REQUEST` to a device, yields `MATCH_RESPONSE` deltas). Tests use a fake implementation.
+The engine never calls a provider directly. `app/inference/` exposes one `ModelClient` interface (`stream(messages, max_tokens) -> AsyncIterator[str]`) with `OpenAIModelClient` (cloud, `AsyncOpenAI` with `base_url`) and `BilcModelClient` (implemented: sends `TURN_REQUEST` to a device, yields `MATCH_RESPONSE` deltas). `BilcModelClient` depends only on the `DeviceLink` protocol (`turn()`), so tests can use a fake. Tests use a fake implementation.
 
 OpenRouter is the selected cloud inference provider: it offers a single platform for accessing various models, including free models, through OpenAI-compatible endpoints. Configure `INFERENCE_BASE_URL=https://openrouter.ai/api/v1` and an OpenRouter `INFERENCE_API_KEY`; BILC continues to use the user's local OpenAI-compatible endpoint. The endpoint and judge come from env (`INFERENCE_BASE_URL`, `INFERENCE_API_KEY`, `INFERENCE_JUDGE_MODEL`); argument models come from the lobby-selected database row. There is no global player-model override. Development can use another OpenAI-compatible endpoint, but the selected database row must name a model that endpoint serves; provider-specific routing remains pending. `.env.example` has both endpoint setups. OpenRouter's free tier allows 50 requests a day across all free models, and one match uses 3 to 6. On GenAI Studio, use `mistral:latest`: most of its models queue concurrent requests, so simultaneous matches slow down and can hit the 30 s first-token timeout. Its per-key rate limit (HTTP 400, 'Rate limit exceeded') caps total throughput; failed requests get the normal retry.
 
-Live state (matchmaking queues, running engines, connected BILC devices) is in-memory in one server process. Running multiple processes would need a shared store; out of scope.
+Live state (matchmaking queues, running engines, connected BILC devices in `BilcConnections`) is in-memory in one server process. Running multiple processes would need a shared store; out of scope.
 
 ## Tags and usernames
 
@@ -91,10 +93,11 @@ Adding a friend is one-way: `friendships` rows mean `user_id` added `friend_id`,
 
 ## Matchmaking and Elo
 
-The arena repository lists active `models` rows. `ArenaService.list_active()` validates each row as `ArenaRead`, returning the model's UUID `id`, `display_name`, and `kind` defaulted to `provided`. `GET /v1/arenas` exposes this list to signed-in users; BYOM remains PLANNED.
+The arena repository lists active `models` rows. `ArenaService.list_active()` validates each row as `ArenaRead`, returning the model's UUID `id`, `display_name`, and `kind` defaulted to `provided`, then appends the BYOM arena (`BYOM_ARENA`, fixed `BYOM_ARENA_ID`, in `app/services/arena.py`). `GET /v1/arenas` exposes this list to signed-in users.
 
 Current matchmaking pairs FIFO within each model UUID queue. `Matchmaker.register(user_id, model_id)` accepts a model UUID; the HTTP service checks that the model is active before registering. `queued_users` maps user UUIDs to model UUIDs for duplicate checks and cancellation; a user can occupy only one queue or match. The matchmaker passes only the model UUID to the engine. At startup, the engine resolves it through `ArenaService.get_active()` in a short-lived session and copies the exact API model ID and display name before any socket or inference waits. Argument generation uses that API model ID; `MATCH_STATE` includes `model_display_name`. Provider-specific connection settings remain PLANNED; the client continues using the configured OpenRouter base URL and API key.
 
+- **BYOM queue** (implemented): `Matchmaker.byom_queue` holds `ByomEntry(user, device, size class, joined time)`, filled by `register_byom()` after the queue route checks the device (`app/api/matchmaking.py`). Each tick, `pair_byom()` (a pure function) pairs idle-device entries by size class (`app/services/bilc_rules.py`), widening to a neighboring class after `BYOM_WIDEN_AFTER` (30 s); the matchmaker reserves both devices before starting the engine, and `run_match` frees them again if the engine crashed. The `Matchmaker` and the app share one `BilcConnections`.
 - One queue per ladder. Pair the two closest-rated players within ±100 Elo; the window widens by 50 every 10 s waited. BYOM players queue only with an online, idle device.
 - Elo per `(user, ladder)`: start 1000, K = 32, expected score `1 / (1 + 10^((Rb − Ra)/400))`. Forfeits update Elo as losses; voids don't. Update both ratings in the same transaction as the match result.
 
@@ -118,8 +121,8 @@ Postgres. Constraint and index names come from the naming convention in `app/db/
 | `challenge_completions` (implemented) | PK(`user_id`, `day`), `match_id?` | Its primary key is what limits the challenge bonus to once per day, even when matches finish at the same moment |
 | `turns` | `id` UUID, `match_id`, `index` (unique with `match_id`), `side`, `phase`, `content`, `truncated`, `usage` JSONB | Written as each turn ends |
 | `votes` | PK(`match_id`, `user_id`), `side` | Community opinion; never affects Elo |
-| `bilc_devices` | `id` UUID, `user_id`, `name`, `platform`, `client_version`, `model_metadata` JSONB, `refresh_token_hash`, `last_seen_at?`, `revoked_at?` | |
-| `bilc_pairing_codes` | `code_hash` PK, `user_id`, `expires_at`, `used_at?` | |
+| `bilc_devices` (implemented) | `id` UUID, `user_id` (`CASCADE`), `name`, `platform`, `client_version`, `model_metadata?` JSONB, `refresh_token_hash?`, `previous_refresh_token_hash?`, `refresh_token_expires_at?`, `last_seen_at?`, `revoked_at?` | Token hashes are SHA-256 hex. The previous hash detects reuse of a rotated token, which revokes the device. Revoking keeps the row (for match history) and clears all three token columns |
+| `bilc_pairing_codes` (implemented) | `code_hash` PK, `user_id` (`CASCADE`), `expires_at`, `used_at?` | Used with one `UPDATE … WHERE used_at IS NULL AND expires_at > now() RETURNING`, so a code works once even under concurrent requests |
 
 `?` = nullable. All FKs are indexed.
 
