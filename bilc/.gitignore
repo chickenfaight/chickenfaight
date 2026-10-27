@@ -1,0 +1,3 @@
+# GoReleaser output and local builds
+/dist/
+/bilc

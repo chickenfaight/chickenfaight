@@ -5,5 +5,6 @@ from app.models.friend import Friendship
 from app.models.session import UserSession
 from app.models.avatar import Avatar
 from app.models.match import ChallengeCompletion, Match, MatchParticipant
+from app.models.bilc import BilcDevice, BilcPairingCode
 
-__all__ = ["User", "Topic", "Model", "Provider", "InferenceAdapter", "Friendship", "UserSession", "Avatar", "Match", "MatchParticipant", "ChallengeCompletion"]
+__all__ = ["User", "Topic", "Model", "Provider", "InferenceAdapter", "Friendship", "UserSession", "Avatar", "Match", "MatchParticipant", "ChallengeCompletion", "BilcDevice", "BilcPairingCode"]

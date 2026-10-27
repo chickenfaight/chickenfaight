@@ -75,6 +75,8 @@ async def delete_account(request: Request, user: CurrentUserDependency, session:
     the user and everything tied to it, and clear the session cookie."""
     request.app.state.matchmaker.remove_user(user.id)
     await UserService(session).delete_account(user)
+    # Deleting the user deleted their devices; drop any still connected.
+    await request.app.state.bilc_connections.close_user(user.id)
     request.session.clear()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 

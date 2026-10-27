@@ -1,6 +1,18 @@
 package model
 
-import "context"
+import (
+	"context"
+	"errors"
+)
+
+// Failures wrap one of these, so callers can tell them apart with errors.Is
+// (BILC.md, "Error mapping"). Context errors are kept as they are.
+var (
+	// ErrUnavailable: the model server couldn't be reached.
+	ErrUnavailable = errors.New("model server unreachable")
+	// ErrBadResponse: a non-2xx status, or a malformed or incomplete stream.
+	ErrBadResponse = errors.New("bad response from model server")
+)
 
 type Message struct {
 	Role    string `json:"role"`

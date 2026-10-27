@@ -15,10 +15,12 @@ from app.api.friends import router as friends_router
 from app.api.arenas import router as arenas_router
 from app.api.tips import router as tips_router
 from app.api.challenge import router as challenge_router
+from app.api.bilc import router as bilc_router
 from app.config import settings
 from app.services.auth_session import SESSION_LIFETIME
 from app.db.migrate import migrate
 from app.db.session import engine
+from app.services.bilc_connections import BilcConnections
 from app.services.matchmaking import Matchmaker
 
 
@@ -30,7 +32,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         allow_reset=settings.app_env == "development",
     )
 
-    matchmaker = Matchmaker()
+    bilc_connections = BilcConnections()
+    app.state.bilc_connections = bilc_connections
+    matchmaker = Matchmaker(bilc=bilc_connections)
     app.state.matchmaker = matchmaker
 
     task = asyncio.create_task(matchmaker.run())
@@ -86,6 +90,7 @@ app.include_router(friends_router, prefix="/v1")
 app.include_router(arenas_router, prefix="/v1")
 app.include_router(tips_router, prefix="/v1")
 app.include_router(challenge_router, prefix="/v1")
+app.include_router(bilc_router, prefix="/v1")
 
 
 @app.get("/health")

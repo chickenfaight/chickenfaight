@@ -1,0 +1,43 @@
+# Builds BILC release archives and checksums.txt (BILC.md, "Updates").
+# .github/workflows/bilc-release.yml runs this on bilc/v* tags and publishes
+# the files to a GitHub Release. Try it locally: goreleaser release --snapshot --clean
+version: 2
+project_name: bilc
+
+builds:
+  - id: bilc
+    main: ./cmd/bilc
+    binary: bilc
+    env:
+      - CGO_ENABLED=0 # static binaries
+    goos: [linux, darwin, windows]
+    goarch: [amd64, arm64]
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w -X main.version={{ .Version }}
+      # The release workflow sets BILC_SERVER_URL from a repository variable once the server is deployed.
+      - '{{ if index .Env "BILC_SERVER_URL" }}-X main.defaultServerURL={{ .Env.BILC_SERVER_URL }}{{ end }}'
+    mod_timestamp: "{{ .CommitTimestamp }}"
+
+archives:
+  - # No version in the name, so install.sh can find the latest release's asset.
+    name_template: "bilc_{{ .Os }}_{{ .Arch }}"
+    formats: [tar.gz]
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    files:
+      - none* # just the binary
+
+checksum:
+  name_template: checksums.txt
+  algorithm: sha256
+
+# Publishing is done by the workflow with `gh release`, since the bilc/ tag prefix
+# (shared with backend/ tags) needs GoReleaser Pro's monorepo support.
+release:
+  disable: true
+
+changelog:
+  disable: true

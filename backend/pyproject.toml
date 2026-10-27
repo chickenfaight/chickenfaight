@@ -13,6 +13,7 @@ dependencies = [
     "pillow>=12.3.0",
     "psycopg>=3.3.6",
     "psycopg-binary>=3.3.6",
+    "pyjwt>=2.15.1",
     "python-dotenv>=1.2.3",
     "sqlalchemy[asyncio]>=2.0.54",
     "websockets>=17.1",

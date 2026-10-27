@@ -39,6 +39,15 @@ class PromptDeadlineExpired(Exception):
 class ModelFailure(Exception):
     """A cloud model turn failed after its retry; the match is void (PROTOCOL.md, "Failure outcomes")."""
 
+
+class DeviceFailure(Exception):
+    """A player's own BILC device failed its turn (no retry); that side forfeits."""
+
+    def __init__(self, side: "Side", reason: str):
+        self.side = side
+        self.reason = reason
+        super().__init__(f"{side}: {reason}")
+
 @dataclass
 class ConnectionActivity:
     last_received: float = field(default_factory=time.monotonic)
@@ -54,10 +63,22 @@ class GameEngine:
     TURN_TIMEOUT = 90
     JUDGE_TIMEOUT = 120
 
-    def __init__(self, match_id: UUID, players: tuple[UUID, UUID], model_id: UUID, challenge_day: date | None = None):
+    def __init__(
+        self,
+        match_id: UUID,
+        players: tuple[UUID, UUID],
+        model_id: UUID,
+        challenge_day: date | None = None,
+        devices: dict[UUID, UUID] | None = None,
+        bilc=None,
+    ):
         self.players = players
         self.match_id = match_id
         self.model_id = model_id
+        # BYOM: each player's BILC device (dict[user_id, device_id]) and the registry that reaches it
+        # (`BilcConnections`). Their turns go to their own device instead of a cloud model.
+        self.devices: dict[UUID, UUID] = devices or {}
+        self.bilc = bilc
         # Set for a daily-challenge match: today's topic, and a twist every prompt must follow.
         self.challenge_day = challenge_day
         self.twist: Twist | None = twist_for(challenge_day) if challenge_day else None
@@ -97,15 +118,18 @@ class GameEngine:
     async def run(self):
         try:
             async with SessionFactory() as session:
-                model = await ArenaService(session).get_active(self.model_id)
-                self.api_model_id = model.api_model_id
-                self.model_display_name = model.display_name
+                if not self.devices:
+                    model = await ArenaService(session).get_active(self.model_id)
+                    self.api_model_id = model.api_model_id
+                    self.model_display_name = model.display_name
                 if self.challenge_day is not None:
                     self.topic = await topic_for(session, self.challenge_day)
                 else:
                     self.topic = await TopicRepository(session).get_random_active()
                 if self.topic is None:
                     raise RuntimeError("No active topic found")
+            for player, device_id in self.devices.items():
+                await self.bilc.assign(device_id, self.match_id, self.sides[player], self.topic.topic)
 
             # A resignation ends the match at any point before a result, so race it against play.
             play = asyncio.create_task(self.play())
@@ -128,8 +152,12 @@ class GameEngine:
                 await self.report_game()
             self.finished.set() # triggers connection cleanup
 
+            # Devices cancel anything still in flight and become idle again.
+            status = self.result["status"] if self.result is not None else "voided"
+            for device_id in self.devices.values():
+                await self.bilc.end_match(device_id, self.match_id, status)
+
             try:
-                # TODO close bilc model client
                 if self.cloud_client is not None:
                     await self.cloud_client.client.close()
             finally:
@@ -142,21 +170,31 @@ class GameEngine:
         self.prompt_deadline = datetime.now(timezone.utc) + timedelta(seconds=self.PROMPT_WINDOW_SECONDS)
         await self.broadcast_initial_game_state()
 
-        if self.api_model_id is None:
-            raise RuntimeError("Model has not been loaded before play")
-        self.cloud_client = OpenAIModelClient(model=self.api_model_id)
         for player in self.players:
-            self.model_clients[player] = self.cloud_client
+            if player in self.devices:
+                self.model_clients[player] = BilcModelClient(self.bilc, self.devices[player], self.match_id)
+            else:
+                if self.api_model_id is None:
+                    raise RuntimeError("Model has not been loaded before play")
+                if self.cloud_client is None:
+                    self.cloud_client = OpenAIModelClient(model=self.api_model_id)
+                self.model_clients[player] = self.cloud_client
 
         prompt_expired = model_failed = False
+        device_failures: list[DeviceFailure] = []
         try:
             async with asyncio.TaskGroup() as group:
                 for player in self.players:
                     group.create_task(self.generate_arguments(player))
         except* ModelFailure:
             model_failed = True
+        except* DeviceFailure as failures:
+            device_failures = list(failures.exceptions)
         except* PromptDeadlineExpired:
             prompt_expired = True
+        if device_failures:
+            await self.forfeit_devices(device_failures)
+            return
         # A model failure is the platform's fault, so it voids the match even if a deadline also passed.
         if model_failed:
             await self.broadcast_result({
@@ -206,8 +244,30 @@ class GameEngine:
         await self.broadcast_verdict()
 
 
+    async def forfeit_devices(self, failures: list["DeviceFailure"]) -> None:
+        """The sides whose device failed forfeit; if both failed, the match is void."""
+        failed = {failure.side for failure in failures}
+        winner = None if len(failed) == 2 else ("con" if "pro" in failed else "pro")
+        await self.broadcast_result({
+            "winner": winner,
+            "reason": (f"The {next(iter(failed)).upper()} side's own model failed to respond, so it forfeits."
+                       if winner else "Both players' own models failed to respond, so this match doesn't count."),
+            "status": "forfeited" if winner else "voided",
+            "end_reason": "model_failure",
+        })
+        for failure in failures:
+            player = next(player for player, side in self.sides.items() if side == failure.side)
+            await self.bilc.forfeit(self.devices[player], self.match_id, failure.reason)
+
+    def display_name(self, player: UUID) -> str | None:
+        """The model shown in the player's arena; in BYOM, their own device's model."""
+        if player in self.devices:
+            hello = self.bilc.hello(self.devices[player])
+            return f"Your model: {hello.model.name}" if hello else "Your own model"
+        return self.model_display_name
+
     async def broadcast_initial_game_state(self) -> None:
-        if self.topic is None or self.model_display_name is None:
+        if self.topic is None or (self.model_display_name is None and not self.devices):
             raise RuntimeError("Topic has not been loaded when broadcasting")
 
         topic = TopicRead.model_validate(self.topic).model_dump(mode="json")
@@ -222,7 +282,7 @@ class GameEngine:
                 "type": "MATCH_STATE",
                 "payload": {
                     "match_id": str(self.match_id),
-                    "model_display_name": self.model_display_name,
+                    "model_display_name": self.display_name(player),
                     "topic": topic,
                     "you": self.sides[player],
                     "participants": participants,
@@ -250,7 +310,8 @@ class GameEngine:
         self.reported = True
         try:
             report = MatchReport(
-                match_id=self.match_id, model_id=self.model_id,
+                # The BYOM arena has no `models` row: each player brought their own model.
+                match_id=self.match_id, model_id=None if self.devices else self.model_id,
                 topic_id=getattr(self.topic, "id", None),
                 challenge_day=self.challenge_day, sides=dict(self.sides),
                 result=self.result, ended_at=datetime.now(timezone.utc),
@@ -330,6 +391,11 @@ class GameEngine:
                 "part and follow the rest. Output only your argument.\n"
                 f"{start}\n{strategy}\n{end}"
             ),
+        }, {
+            # A fixed cue, never player text. Without a user turn, small local models (BYOM) tend to
+            # print the chat template's "assistant" header and refuse; some providers reject it outright.
+            "role": "user",
+            "content": "Give your opening argument now.",
         }]
 
     async def generate_arguments(self, player: UUID):
@@ -342,6 +408,27 @@ class GameEngine:
             raise PromptDeadlineExpired from exc
 
         side = self.sides[player]
+        if player in self.devices:
+            # The player's own model: one attempt, and a failure is theirs to forfeit.
+            try:
+                await self.stream_turn(player)
+            except (*MODEL_ERRORS, DeviceTurnError) as exc:
+                logger.warning("Match %s: %s device turn failed: %r", self.match_id, side, exc)
+                reason = exc.code if isinstance(exc, DeviceTurnError) else (
+                    "MODEL_TIMEOUT" if isinstance(exc, TimeoutError) else "MODEL_ERROR")
+                raise DeviceFailure(side, reason) from exc
+        else:
+            await self.generate_cloud_argument(player)
+
+        socket = self.connections.get(player)
+        if socket is not None:
+            try:
+                await socket.send_json({"type": "TURN_END", "payload": {}})
+            except (WebSocketDisconnect, OSError, RuntimeError):
+                pass
+
+    async def generate_cloud_argument(self, player: UUID) -> None:
+        side = self.sides[player]
         for attempt in range(1, self.MODEL_ATTEMPTS + 1):
             try:
                 await self.stream_turn(player)
@@ -352,13 +439,6 @@ class GameEngine:
                 if self.arguments[side].strip() or attempt == self.MODEL_ATTEMPTS:
                     raise ModelFailure(side) from exc
                 self.arguments[side] = ""
-
-        socket = self.connections.get(player)
-        if socket is not None:
-            try:
-                await socket.send_json({"type": "TURN_END", "payload": {}})
-            except (WebSocketDisconnect, OSError, RuntimeError):
-                pass
 
     async def stream_turn(self, player: UUID) -> None:
         """Stream one turn to its author, enforcing the first-token and total turn timeouts."""

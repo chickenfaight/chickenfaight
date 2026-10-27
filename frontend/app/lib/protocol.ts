@@ -198,3 +198,35 @@ export function parseMatchMessage(raw: string): MatchMessage {
   }
   throw new Error("Invalid match message");
 }
+
+// BILC pairing and devices (PROTOCOL.md, "REST — web client").
+export type PairingCode = { code: string; expires_at: string };
+
+export function parsePairingCode(data: unknown): PairingCode {
+  if (!isObject(data) || typeof data.code !== "string" || typeof data.expires_at !== "string") throw new Error("Invalid pairing code");
+  return { code: data.code, expires_at: data.expires_at };
+}
+
+export type SizeClass = "small" | "medium" | "large";
+export type DeviceStatus = "offline" | "idle" | "busy";
+export type BilcDevice = {
+  id: string; name: string; platform: string; client_version: string; model_name: string | null;
+  size_class: SizeClass | null; online: boolean; status: DeviceStatus; last_seen_at: string | null; created_at: string;
+};
+
+// PROTOCOL.md, "BYOM arena": classes by the model's parameter count.
+export const SIZE_CLASS_LABELS: Record<SizeClass, string> = { small: "under 8B", medium: "8B–30B", large: "over 30B" };
+
+export function parseBilcDevices(data: unknown): BilcDevice[] {
+  if (!Array.isArray(data)) throw new Error("Invalid device list");
+  return data.map((item) => {
+    if (!isObject(item) || [item.id, item.name, item.platform, item.client_version, item.created_at].some((value) => typeof value !== "string")
+      || typeof item.online !== "boolean" || !(item.model_name === null || typeof item.model_name === "string")
+      || !(item.size_class === null || ["small", "medium", "large"].includes(item.size_class as string))
+      || !["offline", "idle", "busy"].includes(item.status as string)
+      || !(item.last_seen_at === null || typeof item.last_seen_at === "string")) {
+      throw new Error("Invalid device");
+    }
+    return item as BilcDevice;
+  });
+}

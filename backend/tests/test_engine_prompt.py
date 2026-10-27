@@ -70,3 +70,17 @@ class EnginePromptTests(unittest.IsolatedAsyncioTestCase):
         self.engine.topic = None
         with self.assertRaisesRegex(RuntimeError, "Topic has not been loaded"):
             self.engine.format_game(self.players[0])
+
+
+class TurnShapeTests(unittest.TestCase):
+    def test_turn_ends_with_a_fixed_user_cue_without_player_text(self):
+        players = (uuid4(), uuid4())
+        with patch("app.engine.game_engine.OpenAIModelClient"):
+            engine = GameEngine(uuid4(), players, uuid4())
+        engine.sides = dict(zip(players, ("pro", "con")))
+        engine.topic = SimpleNamespace(topic="T", pro_position="P", con_position="C")
+        engine.prompts = {players[0]: "SECRET strategy"}
+        messages = engine.format_game(players[0])
+        self.assertEqual([m["role"] for m in messages], ["system", "user"])
+        self.assertEqual(messages[1]["content"], "Give your opening argument now.")
+        self.assertNotIn("SECRET", messages[1]["content"])

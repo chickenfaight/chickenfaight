@@ -456,3 +456,20 @@ async def test_report_game_records_once():
         await engine.report_game()
     record.assert_awaited_once()
     assert record.await_args.args[1].match_id == engine.match_id
+
+
+@pytest.mark.records_matches
+@pytest.mark.parametrize("byom", [False, True])
+async def test_report_names_the_model_except_in_byom(byom):
+    # The BYOM arena's ID isn't a `models` row, so recording it would violate the foreign key.
+    players = (uuid4(), uuid4())
+    devices = {player: uuid4() for player in players} if byom else None
+    with patch("app.engine.game_engine.OpenAIModelClient"):
+        engine = GameEngine(uuid4(), players, uuid4(), devices=devices, bilc=AsyncMock())
+    engine.result = {"status": "voided", "winner": None, "end_reason": "judge_failure", "reason": "x", "arguments": {}}
+    with (
+        patch("app.engine.game_engine.SessionFactory", return_value=AsyncMock()),
+        patch("app.engine.game_engine.record_match", new=AsyncMock()) as record,
+    ):
+        await engine.report_game()
+    assert record.await_args.args[1].model_id == (None if byom else engine.model_id)

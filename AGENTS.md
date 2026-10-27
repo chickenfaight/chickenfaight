@@ -28,15 +28,15 @@ PROTOCOL.md        every contract between components
 TESTING.md         test strategy per component
 backend/           FastAPI server: REST API, matchmaking, game engine, DB access (Python, uv)
 frontend/          Next.js web app (TypeScript, pnpm)
-bilc/              PLANNED — BYOM Interface Layer Client (Go CLI)
+bilc/              BYOM Interface Layer Client (Go CLI; partially built)
 ```
 
 ## Components
 
 - **Frontend web app** (`frontend/`): all player UI — login, game selection, live debate view, leaderboard, profile, BILC pairing. Talks to the server over REST and one WebSocket per match.
 - **API server** (`backend/`): accounts, Google OAuth, sessions, matchmaking, Elo, persistence, BILC pairing/tokens. Spawns one game engine per match.
-- **Game engine** (`backend/app/engine/`, partially built): runs one match — connects both players, collects prompts, alternates model turns, streams output, calls the judge, extracts the verdict, reports the result. Built so far: opening turns, judging, retries and void on model failure, and forfeit on resign; rebuttal/closing phases and persisting results/Elo remain PLANNED. Lives in the server process but is kept separate from general platform code.
-- **BILC** (`bilc/`, PLANNED): Go CLI on the user's machine. Holds a persistent WebSocket to the server and forwards turn requests to the user's local OpenAI-compatible model.
+- **Game engine** (`backend/app/engine/`, partially built): runs one match — connects both players, collects prompts, alternates model turns, streams output, calls the judge, extracts the verdict, reports the result. Built so far: opening turns (cloud, or each player's own BILC device in the BYOM arena), judging, retries and void on cloud model failure, forfeit on device failure or resign; rebuttal/closing phases and persisting results/Elo remain PLANNED. Lives in the server process but is kept separate from general platform code.
+- **BILC** (`bilc/`, partially built): Go CLI on the user's machine. Holds a persistent WebSocket to the server and forwards turn requests to the user's local OpenAI-compatible model. Built so far: pairing, token rotation, the connection, and playing opening turns from local Ollama.
 - **Database**: PostgreSQL, accessed only through the backend.
 - **External services**: Google OAuth; an OpenAI-compatible inference provider chosen by env: OpenRouter (the default) or Purdue GenAI Studio for development.
 
@@ -56,7 +56,7 @@ bilc/              PLANNED — BYOM Interface Layer Client (Go CLI)
 | Models | Database-selected argument model and independently configured judge, never `openrouter/free`; OpenRouter-only options sent only to OpenRouter | Random routing hit safety classifiers and reasoning models; other providers reject unknown options |
 | Model failures | Retry a turn or verdict once, then void the match | The platform's fault, so no Elo change |
 | Web sessions | Random token in a signed HTTP-only cookie; only its SHA-256 hash is stored server-side; 14 days; logout deletes it | Logout and expiry really end a session; `/auth/me` validates it |
-| Public routes | Allowlist of 6 (`/health`, Google login/callback, password signup/login, logout), enforced by `tests/integration/test_route_auth.py`; API docs only in development | A new route can't ship public by accident |
+| Public routes | Allowlist of 8 (`/health`, Google login/callback, password signup/login, logout, BILC register/token, which carry their credential in the body), enforced by `tests/integration/test_route_auth.py`; API docs only in development | A new route can't ship public by accident |
 | Rate limits | In-memory token buckets: per signed-in user on routes that read other users' data or edit friends; per IP and per tag on password sign-in and signup | Slows scraping and password guessing; one process, like matchmaking |
 | Passwords | Sent as typed over HTTPS; the server stores a salted scrypt hash (stdlib); one generic error for every failed sign-in | A client-side hash would itself be the password; no account enumeration |
 | Friends | One-way adds; each list visible only to its owner | No approval flow; no scraping friend graphs |
@@ -67,6 +67,8 @@ bilc/              PLANNED — BYOM Interface Layer Client (Go CLI)
 | Match concurrency | One asyncio task per match (the design doc's "thread") | No OS threads in an async server |
 | Live output | Provider → server via SSE; server → browser/BILC via WebSocket | Players watch the debate stream |
 | BILC language | Go, static binaries | Goroutines/timeouts, cross-platform |
+| BILC auth | One-time pairing code → device with a rotating refresh token (hash stored; reuse revokes) → 15-min HS256 access JWT for the socket | Revocable per device; a leaked token is caught when either copy is reused |
+| BILC releases | `bilc/v*` tag → GoReleaser builds + SHA-256 `checksums.txt` → GitHub Release; `install.sh` verifies and installs | No infrastructure of our own; signing PLANNED |
 
 ## Glossary
 
