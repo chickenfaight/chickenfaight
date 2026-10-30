@@ -318,6 +318,35 @@ class GameEngine:
             )
             async with SessionFactory() as session:
                 await record_match(session, report)
+                
+                if self.result["status"] == "completed":
+                    winner_side = self.result.get("winner")
+                    
+                    ladder_id = None
+                    if self.devices:
+                        ladder_id = (await session.execute(select(Ladder).where(Ladder.kind == "byom")).scalar())[0].id
+                    else:
+                        ladder_id = (await session.execute(select(Ladder).where(Ladder.provider_model_id == self.api_model_id)).scalar())[0].id
+                    
+                    if ladder_id:
+                        from app.services.rating import RatingService
+                        rating_service = RatingService(session)
+                        
+                        for user_id in self.players:
+                            opp_side = "con" if self.sides[user_id] == "pro" else "pro"
+                            opp_user_id = next(uid for uid, s in self.sides.items() if s == opp_side)
+                            
+                            opp_rating = rating_service.get_rating(opp_user_id, ladder_id)
+                            opp_elo = opp_rating.elo if opp_rating else 1000
+                            
+                            if winner_side == self.sides[user_id]:
+                                result_type = "win"
+                            elif winner_side is None:
+                                result_type = "draw"
+                            else:
+                                result_type = "loss"
+                            
+                            rating_service.calculate_and_update_elo(user_id, ladder_id, opp_elo, result_type)
         except Exception:
             logger.exception("Match %s: couldn't record the result", self.match_id)
 

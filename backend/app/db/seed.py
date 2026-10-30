@@ -2,6 +2,7 @@
 
 import argparse
 import asyncio
+import sys
 from pathlib import Path
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -59,6 +60,8 @@ async def main(path: Path, *, is_active: bool) -> None:
 
 
 if __name__ == "__main__":
+    if sys.platform == "win32":
+        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("path", type=Path)
     parser.add_argument("--inactive", action="store_true", help="Keep newly added topics inactive")

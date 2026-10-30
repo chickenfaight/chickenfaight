@@ -1,6 +1,7 @@
 """Populate free OpenRouter models: python -m app.db.seed_models."""
 
 import asyncio
+import sys
 from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Annotated, Any
@@ -140,4 +141,6 @@ async def main() -> None:
 
 
 if __name__ == "__main__":
+    if sys.platform == "win32":
+        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
     asyncio.run(main())
