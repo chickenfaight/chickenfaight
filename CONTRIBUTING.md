@@ -84,22 +84,29 @@ Run BILC from source, with the backend and frontend running. Get `<code>` from h
 ```bash
 ollama pull llama3.2:3b     # llama3.2:1b often refuses to argue; try 3B or larger
 cd bilc
+unset BILC_CONFIG_DIR      # first device uses the default config directory
 go run ./cmd/bilc pair <code>
 go run ./cmd/bilc model set --model llama3.2:3b
 go run ./cmd/bilc run       # leave running; the BILC page shows the device online
 ```
 
-**Two sessions on one machine.** A BYOM match needs two players, each with their own device, and a device is its config directory. `BILC_CONFIG_DIR` (an absolute path) gives a session its own, on any OS. Sign up a second account in a private window, get a code there, and in a second terminal run:
+**Two sessions on one machine (macOS and Linux).** A BYOM match needs two players, each with a separately paired device. `BILC_CONFIG_DIR` overrides the entire BILC config directory with an absolute path. On macOS, the default is `~/Library/Application Support/chickenfaight/bilc`; `XDG_CONFIG_HOME` has no effect. Use `BILC_CONFIG_DIR` for the second device on either OS.
+
+Sign up a second account in a private window, get a fresh pairing code there, and in a second terminal run from the repository root:
 
 ```bash
 cd bilc
-export BILC_CONFIG_DIR=/tmp/bilc-b     # only this terminal; keep it set for every bilc command here
+export BILC_CONFIG_DIR="$HOME/.bilc-b" # only this terminal; keep it set for every bilc command here
 go run ./cmd/bilc pair <code> --name device-b
 go run ./cmd/bilc model set --model llama3.2:3b
 go run ./cmd/bilc run
 ```
 
-Both sessions can share one Ollama and model. Pick **Bring your own model** in both windows and join. To clean up, run `go run ./cmd/bilc unpair` in each terminal, with the variable still set in the second, since that also removes its keychain entry. Then `rm -rf /tmp/bilc-b` and Revoke both devices on the BILC page.
+Leave `BILC_CONFIG_DIR` unset in the first terminal. When reopening the second terminal later, export the same path again before running BILC. Pair it separately; copying the first device's config would reuse its identity. Both devices can use macOS Keychain because tokens are stored under distinct device IDs.
+
+Both sessions can share one Ollama and model. Pick **Bring your own model** in both windows and join. To clean up, stop both runs and run `go run ./cmd/bilc unpair` in each terminal, with the variable still set in the second, since that also removes its keychain entry. Then remove `~/.bilc-b` if no longer needed, run `unset BILC_CONFIG_DIR` in the second terminal, and Revoke both devices on the BILC page.
+
+The commands above use the current source. If using `./bilc` instead, rebuild it after pulling this fix with `go build -o bilc ./cmd/bilc` from `bilc/`; an older binary will ignore the new variable.
 
 Credentials go in the system keychain, or `credentials.json` (mode 0600) in the config directory when there is none. Run `go test -race ./...` from `bilc/` before a PR; [TESTING.md](TESTING.md) has the full checks.
 

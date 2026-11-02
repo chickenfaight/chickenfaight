@@ -112,7 +112,14 @@ Help and version go to stdout; progress and errors go to stderr. Invalid command
 
 ## Config
 
-`config.json` (mode `0600`, directory `0700`) lives in `BILC_CONFIG_DIR` if set (an absolute path; a relative one is an error), else `os.UserConfigDir()/chickenfaight/bilc`. A device is its config directory, so the override is how one machine runs several devices, on any OS: macOS ignores `XDG_CONFIG_HOME`. It holds `server_url`, `model.base_url`, `model.name`, and `bilc_id`. It never holds secrets. `server_url` defaults to `main.defaultServerURL`: `http://localhost:8000`, or the `BILC_SERVER_URL` repository variable in release builds. If `model.base_url` is not a loopback address, warn on every start: prompts leave the machine. If `server_url` is plain `http://` to another machine, warn that credentials travel unencrypted.
+`config.json` (mode `0600`, directory `0700`) lives directly in `BILC_CONFIG_DIR` when nonempty (an absolute path; a relative one is an error). If unset or empty, it uses `os.UserConfigDir()/chickenfaight/bilc`:
+
+- **macOS:** `~/Library/Application Support/chickenfaight/bilc`. `XDG_CONFIG_HOME` is ignored.
+- **Linux:** `$XDG_CONFIG_HOME/chickenfaight/bilc`, or `~/.config/chickenfaight/bilc` when that variable is unset or empty.
+
+For a second device on either OS, export `BILC_CONFIG_DIR="$HOME/.bilc-b"` in a separate terminal and keep it set for all that device's commands (`pair`, `model set`, `run`, `status`, and `unpair`). Leave it unset for the first device. Pair each directory separately instead of copying an existing config: the stored `bilc_id` identifies the device, and keychain entries are keyed by that ID. See [CONTRIBUTING.md](../CONTRIBUTING.md#bilc) for the two-account walkthrough and rebuilding older binaries.
+
+The config holds `server_url`, `model.base_url`, `model.name`, and `bilc_id`. It never holds secrets. `server_url` defaults to `main.defaultServerURL`: `http://localhost:8000`, or the `BILC_SERVER_URL` repository variable in release builds. If `model.base_url` is not a loopback address, warn on every start: prompts leave the machine. If `server_url` is plain `http://` to another machine, warn that credentials travel unencrypted.
 
 ## Updates
 
