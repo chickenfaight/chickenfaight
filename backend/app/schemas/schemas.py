@@ -16,6 +16,14 @@ class UserRead(BaseModel):
     elo: int
 
 
+class ArenaStats(BaseModel):
+    points: int
+    debates_played: int
+    wins: int
+    win_rate: float | None
+    recent_form: list[Literal["W", "L"]]
+
+
 class UserPublic(BaseModel):
     """Fields anyone signed in may see. Never add email or other private data here."""
     model_config = ConfigDict(from_attributes=True)

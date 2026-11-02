@@ -95,6 +95,7 @@ UserRead         { id: uuid, email: str|null, tag: str|null, username: str|null,
 UserPublic       { id: uuid, tag: str|null, username: str|null, avatar_url: str|null }   (implemented)
                  `tag` is the permanent unique identifier, null until set and never changed. `username` is the changeable display name: not unique, null until set; clients show it, falling back to the tag.
 UserProfile      UserPublic + { ratings: [Rating], is_friend: bool, points: int, streak: int, rank: int|null }   (implemented; `ratings` is empty until ratings ship; `is_friend` is whether the caller has added this player; `streak` is already 0 if 48 h passed without a finished match; `rank` is the 1-based position by points among tagged players, ties sharing a rank)
+ArenaStats       { points: int, debates_played: int, wins: int, win_rate: float|null, recent_form: ["W"|"L"] } (implemented; all models and regular/daily matches combined; completed and forfeited matches count, voids do not; win_rate is a percentage, null with no counted matches; recent_form is the latest five counted results, newest first, ordered by ended_at then match ID descending)
 Rating           { ladder: str, elo: int, games_played: int, wins: int, losses: int }
 Ladder           { slug: str, display_name: str, kind: "cloud"|"byom" }
 ArenaRead        { id: uuid, display_name: str, kind: "provided"|"byom" } (implemented; for "provided", id is the model's UUID; the one "byom" arena, listed last, has the fixed id in "BYOM arena" below)
@@ -135,6 +136,7 @@ Player prompts are never returned by any endpoint or message except to their aut
 | GET | `/v1/users/tag-availability` | session | `?tag=` (≤ 64 chars) | `{ available: bool, code: str\|null, detail: str\|null }`; `code` is one of the `TAG_*` errors above when unavailable (implemented) |
 | GET | `/v1/users/search` | session | `?q=` (1–64 chars), `?limit=` (1–50, default 20), `?offset=` (≥ 0, default 0) | `{ items: [UserPublic], next_offset: int\|null }`; only users with a tag; ranked exact tag, then prefix, then contains, then fuzzy (trigram word similarity), all ignoring case; `next_offset` is null on the last page; a blank `q` returns no items (implemented) |
 | GET | `/v1/users/by-tag/{tag}` | session | `{tag}`: ignoring case | `UserProfile`; 404 `NOT_FOUND` if no user has that tag (implemented) |
+| GET | `/v1/users/me/arena-stats` | session | — | `ArenaStats`, for the caller only (implemented) |
 | GET | `/v1/users/{id}` | session | `{id}: uuid` | `UserProfile` |
 | GET | `/v1/users/{id}/matches` | session | `{id}: uuid`, `?limit&offset` | `[MatchSummary]`, finished only |
 | GET | `/v1/friends` | session | `?limit=` (1–100, default 50), `?offset=` (≥ 0, default 0) | `{ items: [UserPublic], next_offset: int\|null }`: the caller's own friends only, ordered by tag ignoring case. No route lists another player's friends (implemented) |

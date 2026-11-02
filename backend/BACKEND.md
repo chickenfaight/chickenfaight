@@ -91,6 +91,8 @@ Live state (matchmaking queues, running engines, connected BILC devices in `Bilc
 
 Adding a friend is one-way: `friendships` rows mean `user_id` added `friend_id`, and the other player doesn't approve it. All of `FriendService`'s methods act on the caller's own list. No route reveals another player's friends; profiles expose only `is_friend`, meaning whether the caller added that player. Only tagged players can be added. Adding twice and removing a non-friend both succeed without changing anything.
 
+The homepage reads `/v1/users/me/arena-stats` via `app/services/arena_stats.py`: caller-only points, completed/forfeited match totals, win percentage, and the latest five W/L results across all arenas. Voids are excluded; no matches yields a null percentage. No rating tables or schema changes are needed.
+
 ## Matchmaking and Elo
 
 The arena repository lists active `models` rows. `ArenaService.list_active()` validates each row as `ArenaRead`, returning the model's UUID `id`, `display_name`, and `kind` defaulted to `provided`, then appends the BYOM arena (`BYOM_ARENA`, fixed `BYOM_ARENA_ID`, in `app/services/arena.py`). `GET /v1/arenas` exposes this list to signed-in users.
