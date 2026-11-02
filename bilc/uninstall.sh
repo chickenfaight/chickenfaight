@@ -4,8 +4,9 @@
 #   sh uninstall.sh            remove the binary, keep config and credentials
 #   sh uninstall.sh --purge    also unpair and delete config and credentials
 #
-# Uses $BILC_INSTALL_DIR (default ~/.local/bin), like install.sh. Purging only
-# forgets the device on this machine; revoke it on the BILC page too.
+# Uses $BILC_INSTALL_DIR (default ~/.local/bin), like install.sh, and purges
+# $BILC_CONFIG_DIR's device if that is set. Purging only forgets the device on
+# this machine; revoke it on the BILC page too.
 set -eu
 
 INSTALL_DIR="${BILC_INSTALL_DIR:-$HOME/.local/bin}"
@@ -25,14 +26,21 @@ if [ "$purge" = true ]; then
     if [ -x "$target" ]; then
         "$target" unpair || say "warning: bilc unpair failed; check your keychain for a chickenfaight-bilc entry"
     fi
-    case "$(uname -s)" in
-        Darwin) config_dir="$HOME/Library/Application Support/chickenfaight" ;;
-        *) config_dir="${XDG_CONFIG_HOME:-$HOME/.config}/chickenfaight" ;;
-    esac
-    if [ -d "$config_dir/bilc" ]; then
-        rm -rf "$config_dir/bilc"
-        rmdir "$config_dir" 2>/dev/null || true
-        say "Deleted $config_dir/bilc."
+    if [ -n "${BILC_CONFIG_DIR:-}" ]; then
+        # It could point anywhere, so remove only BILC's own files.
+        rm -f "$BILC_CONFIG_DIR/config.json" "$BILC_CONFIG_DIR/credentials.json"
+        rmdir "$BILC_CONFIG_DIR" 2>/dev/null || true
+        say "Deleted BILC's files in $BILC_CONFIG_DIR."
+    else
+        case "$(uname -s)" in
+            Darwin) config_dir="$HOME/Library/Application Support/chickenfaight" ;;
+            *) config_dir="${XDG_CONFIG_HOME:-$HOME/.config}/chickenfaight" ;;
+        esac
+        if [ -d "$config_dir/bilc" ]; then
+            rm -rf "$config_dir/bilc"
+            rmdir "$config_dir" 2>/dev/null || true
+            say "Deleted $config_dir/bilc."
+        fi
     fi
 fi
 

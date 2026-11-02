@@ -227,6 +227,33 @@ func TestStatusForgetsARevokedDevice(t *testing.T) {
 	}
 }
 
+func TestConfigDirOverrideKeepsDevicesApart(t *testing.T) {
+	server := newFakeServer(t)
+	first, second := t.TempDir(), t.TempDir()
+	store := memStore{}
+	run := func(dir string, args ...string) {
+		t.Helper()
+		t.Setenv(config.DirEnv, dir)
+		c := &cli{stdout: &bytes.Buffer{}, stderr: &bytes.Buffer{}, store: store}
+		if err := c.run(args); err != nil {
+			t.Fatal(err)
+		}
+	}
+	run(first, "pair", "ABCD2345", "--server", server.URL)
+	run(second, "model", "set", "--model", "other")
+	if _, err := os.Stat(filepath.Join(first, "config.json")); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv(config.DirEnv, second)
+	cfg, _, err := (&cli{}).loadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.BilcID != "" || cfg.Model.Name != "other" {
+		t.Fatalf("second directory shares the first's device: %+v", cfg)
+	}
+}
+
 func TestModelSet(t *testing.T) {
 	h := newHarness(t)
 	if err := h.cli.run([]string{"model", "set", "--model", "llama3.2:3b"}); err != nil {

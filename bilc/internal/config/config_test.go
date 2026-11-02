@@ -6,6 +6,33 @@ import (
 	"testing"
 )
 
+func TestDirOverride(t *testing.T) {
+	// Beats every OS convention, which is what makes it work on macOS too.
+	t.Setenv("XDG_CONFIG_HOME", "/somewhere/else")
+	t.Setenv(DirEnv, "/tmp/bilc-b")
+	if dir, err := Dir(); err != nil || dir != "/tmp/bilc-b" {
+		t.Fatalf("Dir = %q, %v", dir, err)
+	}
+}
+
+func TestDirRejectsARelativeOverride(t *testing.T) {
+	t.Setenv(DirEnv, "bilc-b")
+	if _, err := Dir(); err == nil {
+		t.Fatal("expected an error")
+	}
+}
+
+func TestDirDefaultsToTheUserConfigDir(t *testing.T) {
+	t.Setenv(DirEnv, "")
+	base, err := os.UserConfigDir()
+	if err != nil {
+		t.Skip(err)
+	}
+	if dir, err := Dir(); err != nil || dir != filepath.Join(base, "chickenfaight", "bilc") {
+		t.Fatalf("Dir = %q, %v", dir, err)
+	}
+}
+
 func TestMissingFileGivesDefaults(t *testing.T) {
 	cfg, err := Load(filepath.Join(t.TempDir(), "config.json"), "http://server")
 	if err != nil {
