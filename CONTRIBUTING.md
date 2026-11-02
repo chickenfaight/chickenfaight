@@ -84,9 +84,9 @@ Run a local BYOM match against yourself, with the backend and frontend running:
 ```bash
 ollama pull llama3.2:3b              # llama3.2:1b often refuses to argue; try 3B or larger
 cd bilc && go build -o bilc ./cmd/bilc   # bilc/bilc is gitignored
-./bilc pair <code>                   # code from http://localhost:3000/bilc; server defaults to http://localhost:8000
-./bilc model set --model llama3.2:3b
-./bilc run                           # leave running; the BILC page shows the device online
+go run ./bilc pair <code>                   # code from http://localhost:3000/bilc; server defaults to http://localhost:8000
+go run ./bilc model set --model llama3.2:3b
+go run ./bilc run                           # leave running; the BILC page shows the device online
 ```
 
 A match needs two players, each with their own device. Sign up a second account in a private window, and give its device a separate config directory: on Linux, prefix each command for it with `XDG_CONFIG_HOME=/tmp/bilc-b`. Then pick **Bring your own model** in both lobbies and join. Clean up with `./bilc unpair` (and Revoke on the BILC page).

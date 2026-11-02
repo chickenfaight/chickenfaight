@@ -5,6 +5,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"net/http"
 	"net/url"
 	"os"
 	"os/signal"
@@ -19,6 +20,13 @@ import (
 	"github.com/chickenfaight/chickenfaight/bilc/internal/model"
 	"github.com/chickenfaight/chickenfaight/bilc/internal/ollama"
 	"github.com/chickenfaight/chickenfaight/bilc/internal/protocol"
+	"github.com/chickenfaight/chickenfaight/bilc/internal/update"
+)
+
+const (
+	installCommand = "curl -fsSL https://raw.githubusercontent.com/chickenfaight/chickenfaight/main/bilc/install.sh | sh"
+	// Starting to play matters more than this check, so it gets little time.
+	updateCheckTimeout = 5 * time.Second
 )
 
 func (c *cli) runCommand(args []string) error {
@@ -69,6 +77,10 @@ Example:
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+
+	if err := c.checkForUpdate(ctx, cfg.ServerURL, version, *verbose); err != nil {
+		return err
+	}
 
 	started := time.Now()
 	service, err := ollama.Ensure(ctx)
@@ -134,6 +146,28 @@ Example:
 		}
 	}
 	return err
+}
+
+// checkForUpdate prints a notice if a newer version exists, and returns
+// conn.ErrOutdated if this one is too old to play. If the check itself fails,
+// bilc runs anyway: the server still refuses outdated clients on connect.
+func (c *cli) checkForUpdate(ctx context.Context, serverURL, current string, verbose bool) error {
+	ctx, cancel := context.WithTimeout(ctx, updateCheckTimeout)
+	defer cancel()
+	result, err := update.Check(ctx, http.DefaultClient, serverURL, current)
+	if err != nil {
+		if verbose {
+			fmt.Fprintf(c.stderr, "Couldn't check for updates: %v\n", err)
+		}
+		return nil
+	}
+	switch result.Status {
+	case update.Unsupported:
+		return conn.ErrOutdated
+	case update.Available:
+		fmt.Fprintf(c.stderr, "BILC %s is available (you have %s). To update: %s\n", result.Latest, current, installCommand)
+	}
+	return nil
 }
 
 // socketURL is the server's /v1/bilc/ws, over wss:// for https:// servers.

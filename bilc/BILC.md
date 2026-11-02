@@ -2,7 +2,7 @@
 
 A Go CLI on the user's machine that connects their local LLM to the server so it can compete in the BYOM arena. It keeps one WebSocket open to the server and forwards each `TURN_REQUEST` to the local model, streaming the output back. Every message and endpoint it uses is defined in [PROTOCOL.md](../PROTOCOL.md). Do not invent any others.
 
-Implemented: the CLI, Ollama lifecycle, pairing and token rotation (`pair`, `unpair`, `status`), model config (`model set`), the connection, and match play: `bilc run` connects and plays its model's turns in BYOM matches until Ctrl-C. Also release builds and `install.sh`/`uninstall.sh`. Still planned: `bilc update`, signed releases, and phases after `opening` (the server only sends opening turns so far).
+Implemented: the CLI, Ollama lifecycle, pairing and token rotation (`pair`, `unpair`, `status`), model config (`model set`), the connection, and match play: `bilc run` connects and plays its model's turns in BYOM matches until Ctrl-C. Also release builds and `install.sh`/`uninstall.sh`. `bilc run` also checks for updates on start. Still planned: `bilc update`, signed releases, and phases after `opening` (the server only sends opening turns so far).
 
 ## Principles
 
@@ -24,7 +24,7 @@ bilc/
   internal/auth/          Auth: REST client, token rotation, credential store
   internal/conn/          ConnectionManager
   internal/match/         MatchHandler
-  internal/update/        PLANNED: UpdateManager
+  internal/update/        UpdateManager: the version check (self-update PLANNED)
   internal/protocol/      message structs mirroring PROTOCOL.md
   .goreleaser.yaml        release builds (see "Updates")
   install.sh              install or update on Linux/macOS
@@ -43,7 +43,7 @@ Responsibilities follow the design doc's class diagram. Package boundaries may f
 | **ConnectionManager** | Dial `/v1/bilc/ws` with the JWT, send `HELLO`, wait for `HELLO_ACK`, echo heartbeats, reconnect with exponential backoff (1 s → 30 s, with jitter), a single writer goroutine, close codes (implemented) | Interpret match messages |
 | **ModelInterface** | Talking to the local model (implemented) | Know about matches or the server |
 | **MatchHandler** | Handling `MATCH_ASSIGN`/`TURN_REQUEST`/`MATCH_END`/`FORFEIT`, one match at a time, per-turn deadlines, streaming `MATCH_RESPONSE`, mapping model failures to `ERROR` codes (implemented) | Retry a failed turn (the server decides outcomes) |
-| **UpdateManager** | Version checks and self-update | Update during a match |
+| **UpdateManager** | Version checks (implemented) and self-update (PLANNED) | Update during a match |
 
 ```go
 type Model interface {
@@ -120,7 +120,7 @@ GitHub Releases, built by GoReleaser. It's the common setup for Go CLIs and need
 
 - Release CI (implemented, `.github/workflows/bilc-release.yml`) runs on a `bilc/vMAJOR.MINOR.PATCH` tag: it runs the checks, builds `darwin|windows|linux` × `amd64|arm64` static binaries as `bilc_<os>_<arch>.tar.gz` (`.zip` on Windows) plus `checksums.txt`, checks `install.sh` against them, and publishes a GitHub Release with `gh`. GoReleaser only builds: its free version can't parse `bilc/`-prefixed tags, so the workflow passes it `v<version>`. To release, push a tag: `git tag bilc/v0.1.0 && git push origin bilc/v0.1.0`. Signing `checksums.txt` with an ed25519 key held in CI secrets, with the public key compiled into BILC, is PLANNED.
 - `install.sh` (implemented) detects Linux/macOS and amd64/arm64, downloads the latest release's archive and `checksums.txt` (or `BILC_VERSION`'s), verifies the SHA-256, and installs to `BILC_INSTALL_DIR` (default `~/.local/bin`) by renaming over the old binary. Re-running it updates; the same version is left alone. It assumes only BILC publishes GitHub Releases in this repo, so "latest" is BILC's. `uninstall.sh` removes the binary; `--purge` runs `bilc unpair` and deletes the config directory.
-- UpdateManager calls `GET /v1/bilc/releases/latest` on start and every 24 h. If the running version is below `min_supported_version`, refuse to serve matches and prompt `bilc update`. If it's only below `version`, print a notice.
+- `bilc run` calls `GET /v1/bilc/releases/latest` on start, before Ollama (implemented; repeating it every 24 h is PLANNED). If the running version is below `min_supported_version`, it exits and prompts `bilc update`. If it's only below `version`, it prints a notice with the install command and carries on. The check gets 5 s; if it fails, BILC runs anyway, since the server still refuses outdated clients on connect, and only `--verbose` mentions it. Unversioned `dev` builds skip it.
 - `bilc update` (via `go-selfupdate`) downloads the asset, verifies the signature on `checksums.txt` and the asset's SHA-256, then replaces the binary. Any verification failure aborts with no change.
 - Never update automatically mid-match. `bilc run` may update between matches only if the user passed `--auto-update`.
 - A 426 or `BILC_OUTDATED` from the server always means "run `bilc update`".

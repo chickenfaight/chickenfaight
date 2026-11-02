@@ -21,6 +21,7 @@ from app.services.auth_session import SESSION_LIFETIME
 from app.db.migrate import migrate
 from app.db.session import engine
 from app.services.bilc_connections import BilcConnections
+from app.services.bilc_releases import BilcReleases
 from app.services.matchmaking import Matchmaker
 
 
@@ -34,6 +35,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     bilc_connections = BilcConnections()
     app.state.bilc_connections = bilc_connections
+    app.state.bilc_releases = BilcReleases()
     matchmaker = Matchmaker(bilc=bilc_connections)
     app.state.matchmaker = matchmaker
 

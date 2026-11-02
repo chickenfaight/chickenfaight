@@ -15,6 +15,7 @@ from app.db.session import get_session
 from app.main import app
 from app.models import InferenceAdapter, Model, Provider, User
 from app.services.bilc_connections import BilcConnections
+from app.services.bilc_releases import BilcReleases
 from app.services.matchmaking import Matchmaker
 
 
@@ -93,6 +94,7 @@ async def client(db_session: AsyncSession) -> AsyncIterator[AsyncClient]:
 
     app.dependency_overrides[get_session] = test_session
     app.state.bilc_connections = BilcConnections(record_hello=AsyncMock())
+    app.state.bilc_releases = BilcReleases(fetch=AsyncMock(return_value=None))  # never calls GitHub
     app.state.matchmaker = Matchmaker(bilc=app.state.bilc_connections)
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as http:
         yield http
