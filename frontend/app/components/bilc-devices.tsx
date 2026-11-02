@@ -6,7 +6,6 @@ import { parseBilcDevices, parsePairingCode, SIZE_CLASS_LABELS, type BilcDevice,
 
 const focus = "focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white";
 const panel = "rounded-3xl border border-white/[0.07] bg-[#202124]";
-const inset = "rounded-xl border border-white/10 bg-black/40 px-4 py-3 font-mono text-sm";
 const MODEL = "llama3.2:3b";
 const INSTALL = "curl -fsSL https://raw.githubusercontent.com/chickenfaight/chickenfaight/main/bilc/install.sh | sh";
 // While a code is showing, look for the new device often; otherwise just keep online dots fresh.
@@ -27,12 +26,38 @@ function useCountdown(deadline: string | null): number {
   return deadline ? Math.max(0, Math.ceil((Date.parse(deadline) - now) / 1000)) : 0;
 }
 
+function CommandBlock({ command }: { command: string }) {
+  const [status, setStatus] = useState<"idle" | "copied" | "error">("idle");
+  useEffect(() => {
+    if (status !== "copied") return;
+    const timer = setTimeout(() => setStatus("idle"), 2000);
+    return () => clearTimeout(timer);
+  }, [status]);
+
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(command);
+      setStatus("copied");
+    } catch {
+      setStatus("error");
+    }
+  }
+
+  return <div className="rounded-xl border border-white/10 bg-black/40">
+    <div className="flex items-center justify-end gap-3 border-b border-white/10 px-3 py-2">
+      <span role="status" className="text-xs text-zinc-400">{status === "error" ? "Couldn’t copy. Select the commands below and copy manually." : status === "copied" ? "Copied!" : ""}</span>
+      <button type="button" onClick={() => void copy()} className={`shrink-0 rounded-xl border border-white/20 px-3 py-1 text-xs text-zinc-300 transition-colors hover:bg-white/10 hover:text-white ${focus}`}>Copy</button>
+    </div>
+    <pre tabIndex={0} className={`overflow-x-auto whitespace-pre px-4 py-3 font-mono text-sm ${focus}`}><code className="select-text">{command}</code></pre>
+  </div>;
+}
+
 // Each command both ways: with BILC installed, or from a checkout of the repo.
 function BilcCommands({ setup, args }: { setup?: string; args: string[] }) {
-  const block = (program: string) => <p className={`${inset} select-all`}>
-    {setup && <span className="block">{setup}</span>}
-    {args.map((arg) => <span key={arg} className="block">{program} {arg}</span>)}
-  </p>;
+  const block = (program: string) => {
+    const command = [...(setup ? [setup] : []), ...args.map((arg) => `${program} ${arg}`)].join("\n");
+    return <CommandBlock key={command} command={command} />;
+  };
   return <>
     {block("bilc")}
     <p className="mb-2 mt-3 text-zinc-300">Or from source, which needs Go, in the repo’s <span className="font-mono">bilc/</span> folder:</p>
@@ -47,8 +72,8 @@ function PairPanel({ code, error, creating, onCreate }: { code: PairingCode | nu
     <h2 id="pair-title" className="text-sm font-bold">Pair a device</h2>
     <p className="mt-2 max-w-2xl text-sm leading-relaxed text-zinc-400">BILC connects a model running on your computer to the BYOM arena.</p>
     <ol className="mt-5 grid gap-4 text-sm">
-      <li><p className="mb-2 text-zinc-300">1. Install <a href="https://ollama.com" target="_blank" rel="noreferrer" className={`underline ${focus}`}>Ollama</a> and get a model:</p><p className={`${inset} select-all`}>ollama pull {MODEL}</p></li>
-      <li><p className="mb-2 text-zinc-300">2. Install or update BILC (Linux and macOS). Skip this if you run it from source.</p><p className={`${inset} select-all break-all`}>{INSTALL}</p></li>
+      <li><p className="mb-2 text-zinc-300">1. Install <a href="https://ollama.com" target="_blank" rel="noreferrer" className={`underline ${focus}`}>Ollama</a> and get a model:</p><CommandBlock command={`ollama pull ${MODEL}`} /></li>
+      <li><p className="mb-2 text-zinc-300">2. Install or update BILC (Linux and macOS). Skip this if you run it from source.</p><CommandBlock command={INSTALL} /></li>
       <li>
         <p className="mb-2 text-zinc-300">3. Get a code, then run these three commands. Each code works once, for 10 minutes.</p>
         {active
