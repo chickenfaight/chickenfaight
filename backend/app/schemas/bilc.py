@@ -71,6 +71,20 @@ class BilcDeviceRead(BaseModel):
     created_at: datetime
 
 
+class BilcReleaseAsset(BaseModel):
+    platform: Literal["mac", "win", "linux"]
+    arch: Literal["amd64", "arm64"]
+    url: str
+    sha256: str
+
+
+class BilcRelease(BaseModel):
+    version: str | None  # null until a release is published or if GitHub has never answered
+    min_supported_version: str
+    protocol_version: int
+    assets: list[BilcReleaseAsset]
+
+
 class HelloModel(BaseModel):
     name: VisibleText = Field(max_length=128)
     context_length: int | None = Field(default=None, ge=1)
