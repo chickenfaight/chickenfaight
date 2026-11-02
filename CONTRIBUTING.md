@@ -79,17 +79,27 @@ Check the connection at http://localhost:3000/health.
 
 ## BILC
 
-Run a local BYOM match against yourself, with the backend and frontend running:
+Run BILC from source, with the backend and frontend running. Get `<code>` from http://localhost:3000/bilc; the server defaults to http://localhost:8000.
 
 ```bash
-ollama pull llama3.2:3b              # llama3.2:1b often refuses to argue; try 3B or larger
-cd bilc && go build -o bilc ./cmd/bilc   # bilc/bilc is gitignored
-go run ./cmd/bilc pair <code>                   # code from http://localhost:3000/bilc; server defaults to http://localhost:8000
+ollama pull llama3.2:3b     # llama3.2:1b often refuses to argue; try 3B or larger
+cd bilc
+go run ./cmd/bilc pair <code>
 go run ./cmd/bilc model set --model llama3.2:3b
-go run ./cmd/bilc run                           # leave running; the BILC page shows the device online
+go run ./cmd/bilc run       # leave running; the BILC page shows the device online
 ```
 
-A match needs two players, each with their own device. Sign up a second account in a private window, and give its device a separate config directory: on Linux, prefix each command for it with `XDG_CONFIG_HOME=/tmp/bilc-b`. Then pick **Bring your own model** in both lobbies and join. Clean up with `./bilc unpair` (and Revoke on the BILC page).
+**Two sessions on one machine.** A BYOM match needs two players, each with their own device, and a device is its config directory. `BILC_CONFIG_DIR` (an absolute path) gives a session its own, on any OS. Sign up a second account in a private window, get a code there, and in a second terminal run:
+
+```bash
+cd bilc
+export BILC_CONFIG_DIR=/tmp/bilc-b     # only this terminal; keep it set for every bilc command here
+go run ./cmd/bilc pair <code> --name device-b
+go run ./cmd/bilc model set --model llama3.2:3b
+go run ./cmd/bilc run
+```
+
+Both sessions can share one Ollama and model. Pick **Bring your own model** in both windows and join. To clean up, run `go run ./cmd/bilc unpair` in each terminal, with the variable still set in the second, since that also removes its keychain entry. Then `rm -rf /tmp/bilc-b` and Revoke both devices on the BILC page.
 
 Credentials go in the system keychain, or `credentials.json` (mode 0600) in the config directory when there is none. Run `go test -race ./...` from `bilc/` before a PR; [TESTING.md](TESTING.md) has the full checks.
 

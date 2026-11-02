@@ -7,6 +7,7 @@ import { parseBilcDevices, parsePairingCode, SIZE_CLASS_LABELS, type BilcDevice,
 const focus = "focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white";
 const panel = "rounded-3xl border border-white/[0.07] bg-[#202124]";
 const inset = "rounded-xl border border-white/10 bg-black/40 px-4 py-3 font-mono text-sm";
+const MODEL = "llama3.2:3b";
 const INSTALL = "curl -fsSL https://raw.githubusercontent.com/chickenfaight/chickenfaight/main/bilc/install.sh | sh";
 // While a code is showing, look for the new device often; otherwise just keep online dots fresh.
 const POLL_PAIRING_MS = 3000;
@@ -26,26 +27,45 @@ function useCountdown(deadline: string | null): number {
   return deadline ? Math.max(0, Math.ceil((Date.parse(deadline) - now) / 1000)) : 0;
 }
 
+// Each command both ways: with BILC installed, or from a checkout of the repo.
+function BilcCommands({ setup, args }: { setup?: string; args: string[] }) {
+  const block = (program: string) => <p className={`${inset} select-all`}>
+    {setup && <span className="block">{setup}</span>}
+    {args.map((arg) => <span key={arg} className="block">{program} {arg}</span>)}
+  </p>;
+  return <>
+    {block("bilc")}
+    <p className="mb-2 mt-3 text-zinc-300">Or from source, which needs Go, in the repo’s <span className="font-mono">bilc/</span> folder:</p>
+    {block("go run ./cmd/bilc/")}
+  </>;
+}
+
 function PairPanel({ code, error, creating, onCreate }: { code: PairingCode | null; error: string; creating: boolean; onCreate: () => void }) {
   const left = useCountdown(code?.expires_at ?? null);
   const active = code !== null && left > 0;
   return <section aria-labelledby="pair-title" className={`${panel} p-7`}>
     <h2 id="pair-title" className="text-sm font-bold">Pair a device</h2>
-    <p className="mt-2 max-w-2xl text-sm leading-relaxed text-zinc-400">BILC connects a model running on your computer to the BYOM arena. Install it, then pair it with a one-time code.</p>
+    <p className="mt-2 max-w-2xl text-sm leading-relaxed text-zinc-400">BILC connects a model running on your computer to the BYOM arena.</p>
     <ol className="mt-5 grid gap-4 text-sm">
-      <li><p className="mb-2 text-zinc-300">1. Install or update BILC (Linux and macOS):</p><p className={`${inset} select-all break-all`}>{INSTALL}</p></li>
+      <li><p className="mb-2 text-zinc-300">1. Install <a href="https://ollama.com" target="_blank" rel="noreferrer" className={`underline ${focus}`}>Ollama</a> and get a model:</p><p className={`${inset} select-all`}>ollama pull {MODEL}</p></li>
+      <li><p className="mb-2 text-zinc-300">2. Install or update BILC (Linux and macOS). Skip this if you run it from source.</p><p className={`${inset} select-all break-all`}>{INSTALL}</p></li>
       <li>
-        <p className="mb-2 text-zinc-300">2. Get a code and pair. Each code works once, for 10 minutes.</p>
+        <p className="mb-2 text-zinc-300">3. Get a code, then run these three commands. Each code works once, for 10 minutes.</p>
         {active
-          ? <p className={`${inset} select-all`}>bilc pair {grouped(code.code)}</p>
+          ? <BilcCommands args={[`pair ${grouped(code.code)}`, `model set --model ${MODEL}`, "run"]} />
           // aria-disabled, not disabled: Firefox restores a stale disabled state on reload (frontend/AGENTS.md).
           : <button onClick={() => { if (!creating) onCreate(); }} aria-disabled={creating} className={`h-11 rounded-xl bg-[#e53848] px-5 text-sm font-bold text-white hover:bg-[#c92d3c] aria-disabled:opacity-50 aria-disabled:hover:bg-[#e53848] ${focus}`}>{creating ? "Getting a code…" : code ? "Get a new code" : "Get pairing code"}</button>}
         <p aria-live="polite" className="mt-2 min-h-4 text-xs text-zinc-500">
           {error ? <span className="text-red-300">{error}</span> : active ? `Expires in ${Math.floor(left / 60)}:${String(left % 60).padStart(2, "0")}. Your device shows up below once it pairs.` : code ? "That code expired." : ""}
         </p>
       </li>
-      <li><p className="mb-2 text-zinc-300">3. Choose your local model and connect:</p><p className={inset}>bilc model set --model llama3.2:3b<br />bilc run</p></li>
     </ol>
+    <details className="mt-5 text-sm">
+      <summary className={`cursor-pointer text-zinc-300 ${focus}`}>Run two devices on one computer</summary>
+      <p className="mb-2 mt-3 max-w-2xl leading-relaxed text-zinc-400">To play a debate against yourself, sign in to a second account in a private window and get a code there. Keep your first <span className="font-mono">bilc run</span> going. In a second terminal, give that device its own config folder, then pair it.</p>
+      <BilcCommands setup="export BILC_CONFIG_DIR=/tmp/bilc-b" args={["pair <code> --name device-b", `model set --model ${MODEL}`, "run"]} />
+      <p className="mt-2 max-w-2xl leading-relaxed text-zinc-400">Then choose Bring your own model in both windows and join.</p>
+    </details>
   </section>;
 }
 
