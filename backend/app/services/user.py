@@ -8,7 +8,7 @@ from uuid import UUID
 
 from app.models.avatar import Avatar
 from app.models.user import User
-from app.models.ladder_rating import Rating
+from app.models.ladder_rating import Rating as RatingM
 from app.repositories.friend import FriendRepository
 from app.repositories.user import UserRepository
 from app.schemas import (
@@ -19,6 +19,7 @@ from app.schemas import (
     UserSearchPage,
     LoginData,
     SignupData,
+    Rating,
 )
 from app.services.exceptions import (
     UserNotFoundError,
@@ -113,15 +114,24 @@ class UserService:
         is_friend = await FriendRepository(self.session).is_friend(viewer.id, user.id)
         
         # Fetch ratings only for the profile being requested
-        statement = select(Rating).where(Rating.user_id == user.id)
+        statement = select(RatingM).where(RatingM.user_id == user.id)
         result = await self.session.execute(statement)
         ratings = result.scalars().all()
-        
+        ratingsclean = []
+        for rat in ratings:
+            ratingsclean.append(Rating(
+                ladder=str(rat.ladder_id),
+                elo=rat.elo,
+                games_played=rat.games_played,
+                wins=rat.wins,
+                losses=rat.losses
+            ))
+
         return UserProfile.model_validate(user).model_copy(update={
             "is_friend": is_friend,
             "streak": effective_streak(user, datetime.now(UTC)),
             "rank": await points_rank(self.session, user),
-            "ratings": ratings,
+            "ratings": ratingsclean,
         })
 
     async def search(self, query: str, limit: int, offset: int) -> UserSearchPage:
