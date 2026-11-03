@@ -2,6 +2,18 @@
 // `email` is private: only `/auth/me` returns it, to its owner.
 export type User = { id: string; tag: string | null; username: string | null; email: string | null; elo: number };
 
+export type ArenaStats = { points: number; debates_played: number; wins: number; win_rate: number | null; recent_form: ("W" | "L")[] };
+
+export function parseArenaStats(data: unknown): ArenaStats {
+  if (!isObject(data)
+    || ![data.points, data.debates_played, data.wins].every(value => typeof value === "number" && Number.isSafeInteger(value) && value >= 0)
+    || (data.win_rate !== null && (typeof data.win_rate !== "number" || !Number.isFinite(data.win_rate) || data.win_rate < 0 || data.win_rate > 100))
+    || !Array.isArray(data.recent_form) || data.recent_form.length > 5 || !data.recent_form.every(value => value === "W" || value === "L")) {
+    throw new Error("Invalid arena stats");
+  }
+  return data as ArenaStats;
+}
+
 function optionalString(value: unknown): value is string | null {
   return value === null || typeof value === "string";
 }

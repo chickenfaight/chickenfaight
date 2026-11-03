@@ -1,4 +1,5 @@
 from .schemas import (
+    ArenaStats,
     FriendsPage,
     GoogleIdentity,
     LoginData,
@@ -22,6 +23,8 @@ from .bilc import (
     BilcDeviceRead,
     BilcRegister,
     BilcRegistered,
+    BilcRelease,
+    BilcReleaseAsset,
     BilcTokenRequest,
     BilcTokens,
     Hello,
@@ -29,6 +32,7 @@ from .bilc import (
 )
 
 __all__ = [
+    "ArenaStats",
     "FriendsPage",
     "GoogleIdentity",
     "LoginData",
@@ -50,6 +54,8 @@ __all__ = [
     "BilcDeviceRead",
     "BilcRegister",
     "BilcRegistered",
+    "BilcRelease",
+    "BilcReleaseAsset",
     "BilcTokenRequest",
     "BilcTokens",
     "Hello",

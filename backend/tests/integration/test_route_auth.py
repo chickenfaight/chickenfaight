@@ -22,6 +22,8 @@ PUBLIC = {
     # BILC has no session: the pairing code or refresh token in the body is its credential.
     ("POST", "/v1/bilc/register"),
     ("POST", "/v1/bilc/token"),
+    # `bilc run` checks for updates; only public release information.
+    ("GET", "/v1/bilc/releases/latest"),
 }
 
 

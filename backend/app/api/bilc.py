@@ -8,9 +8,17 @@ from app.api.rate_limit import rate_limit, rate_limit_by_ip
 from app.auth.bilc import BilcIdentityDependency
 from app.auth.dependencies import CurrentUserDependency
 from app.db.session import get_session
-from app.schemas import BilcDeviceRead, BilcRegister, BilcRegistered, BilcTokenRequest, BilcTokens, PairingCodeRead
+from app.schemas import (
+    BilcDeviceRead,
+    BilcRegister,
+    BilcRegistered,
+    BilcRelease,
+    BilcTokenRequest,
+    BilcTokens,
+    PairingCodeRead,
+)
 from app.services.bilc import BilcService
-from app.services.bilc_connections import BilcConnections
+from app.services.bilc_connections import PROTOCOL_VERSION, BilcConnections
 from app.services.exceptions import TokenReusedError
 
 router = APIRouter(prefix="/bilc", tags=["bilc"])
@@ -19,6 +27,7 @@ SessionDependency = Annotated[AsyncSession, Depends(get_session)]
 # BILC's own routes have no session; the pairing code or refresh token in the body is the credential.
 register_limit = rate_limit_by_ip(burst=10, per_minute=10)
 token_limit = rate_limit_by_ip(burst=20, per_minute=20)
+release_limit = rate_limit_by_ip(burst=20, per_minute=60)
 
 
 def connections(request: Request) -> BilcConnections:
@@ -63,6 +72,12 @@ async def refresh_token(request: Request, body: BilcTokenRequest, session: Sessi
     except TokenReusedError as reused:
         await connections(request).close(reused.device_id, 4403, "Device revoked")
         raise
+
+
+@router.get("/releases/latest", response_model=BilcRelease, dependencies=[release_limit])
+async def latest_release(request: Request) -> BilcRelease:
+    # Public: `bilc run` checks this before anything else, and it holds nothing private.
+    return await request.app.state.bilc_releases.describe(PROTOCOL_VERSION)
 
 
 @router.websocket("/ws")

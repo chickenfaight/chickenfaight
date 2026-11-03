@@ -36,7 +36,7 @@ Rules:
 
 State the auth of every endpoint explicitly; PROTOCOL.md lists which are public.
 - **Web routes / match socket:** `CurrentUserDependency`. The signed session cookie holds only a random `session_token`; `SessionService` (`app/services/auth_session.py`) looks up its SHA-256 hash in `sessions`, rejecting unknown, expired, or logged-out tokens and clearing the stale cookie. Sign-in creates a row (and deletes that user's expired ones); logout deletes it. Sessions last `SESSION_LIFETIME` (14 days), which also sets the cookie's max-age.
-- **BILC routes / socket:** `register` and `token` take their credential in the body (they're on the public allowlist). The socket uses `BilcIdentityDependency` (`app/auth/bilc.py`): it decodes the access JWT (HS256, `aud=bilc`, `exp` required) before touching the database, then rejects unknown devices (4401) and revoked devices or a `uid` that isn't the owner (4403), all before `accept()`. `BilcService` (`app/services/bilc.py`) owns pairing and rotation; `BilcConnections` (`app/services/bilc_connections.py`, on `app.state`) owns live sockets, and its HELLO recorder is injected so socket tests never write to `POSTGRES_URL`.
+- **BILC routes / socket:** `register` and `token` take their credential in the body (they're on the public allowlist). The socket uses `BilcIdentityDependency` (`app/auth/bilc.py`): it decodes the access JWT (HS256, `aud=bilc`, `exp` required) before touching the database, then rejects unknown devices (4401) and revoked devices or a `uid` that isn't the owner (4403), all before `accept()`. `BilcReleases` (`app/services/bilc_releases.py`, on `app.state`) answers the public `releases/latest` route from a 10-minute cache of GitHub's answer, keeping the last answer if GitHub can't be read; the tests give it a fake fetch, so they never call GitHub. `BilcService` (`app/services/bilc.py`) owns pairing and rotation; `BilcConnections` (`app/services/bilc_connections.py`, on `app.state`) owns live sockets, and its HELLO recorder is injected so socket tests never write to `POSTGRES_URL`.
 - **WebSockets:** authenticate and authorize *before* `accept()`.
 - **Ownership** (own device, participant in match) is checked in services, not routers. Return 404 for other users' private resources.
 - **Rate limits:** routes that read other users' data or change the friends list add `dependencies=[rate_limit(burst=..., per_minute=...)]` (`app/api/rate_limit.py`), an in-memory token bucket per signed-in user that raises `RateLimitedError` (429 `RATE_LIMITED` with `Retry-After`). Each `rate_limit(...)` call is its own bucket; reuse the returned dependency to share one across routes. Values are listed in PROTOCOL.md.
@@ -90,6 +90,8 @@ Live state (matchmaking queues, running engines, connected BILC devices in `Bilc
 ## Friends
 
 Adding a friend is one-way: `friendships` rows mean `user_id` added `friend_id`, and the other player doesn't approve it. All of `FriendService`'s methods act on the caller's own list. No route reveals another player's friends; profiles expose only `is_friend`, meaning whether the caller added that player. Only tagged players can be added. Adding twice and removing a non-friend both succeed without changing anything.
+
+The homepage reads `/v1/users/me/arena-stats` via `app/services/arena_stats.py`: caller-only points, completed/forfeited match totals, win percentage, and the latest five W/L results across all arenas. Voids are excluded; no matches yields a null percentage. No rating tables or schema changes are needed.
 
 ## Matchmaking and Elo
 

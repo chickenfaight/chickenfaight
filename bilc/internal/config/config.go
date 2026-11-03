@@ -27,8 +27,20 @@ type Config struct {
 	BilcID    string `json:"bilc_id,omitempty"`
 }
 
-// Dir is os.UserConfigDir()/chickenfaight/bilc.
+// DirEnv overrides the config directory, on every OS, so one machine can run
+// several devices. os.UserConfigDir can't do that portably: macOS ignores
+// XDG_CONFIG_HOME.
+const DirEnv = "BILC_CONFIG_DIR"
+
+// Dir is $BILC_CONFIG_DIR if set, else os.UserConfigDir()/chickenfaight/bilc.
 func Dir() (string, error) {
+	if dir := os.Getenv(DirEnv); dir != "" {
+		if !filepath.IsAbs(dir) {
+			// A relative path would silently mean a different device in each directory.
+			return "", fmt.Errorf("%s must be an absolute path, got %q", DirEnv, dir)
+		}
+		return dir, nil
+	}
 	base, err := os.UserConfigDir()
 	if err != nil {
 		return "", fmt.Errorf("find config directory: %w", err)

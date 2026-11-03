@@ -141,6 +141,10 @@ Flags:
   -h, --help Show this help
   --version  Print the version
 
+Environment:
+  BILC_CONFIG_DIR  Keep this device's settings here (an absolute path), to run
+                   a second device on one computer
+
 Examples:
   bilc pair ABCD-EFGH
   bilc model set --model llama3.2:3b

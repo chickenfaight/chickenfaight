@@ -8,7 +8,8 @@ from starlette.concurrency import run_in_threadpool
 from app.api.rate_limit import rate_limit
 from app.auth.dependencies import CurrentUserDependency
 from app.db.session import get_session
-from app.schemas import UserProfile, UserRead, TagAvailability, TagUpdate, UsernameUpdate, UserSearchPage
+from app.schemas import ArenaStats, UserProfile, UserRead, TagAvailability, TagUpdate, UsernameUpdate, UserSearchPage
+from app.services.arena_stats import arena_stats
 from app.services.avatars import MAX_UPLOAD_BYTES, process_avatar
 from app.services.exceptions import AvatarInvalidError
 from app.services.user import UserService
@@ -16,6 +17,11 @@ from app.services.user import UserService
 
 router = APIRouter(prefix="/users", tags=["users"])
 SessionDependency = Annotated[AsyncSession, Depends(get_session)]
+
+
+@router.get("/me/arena-stats", response_model=ArenaStats)
+async def get_arena_stats(user: CurrentUserDependency, session: SessionDependency) -> ArenaStats:
+    return await arena_stats(session, user)
 
 
 @router.get(

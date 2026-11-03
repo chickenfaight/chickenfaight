@@ -27,6 +27,7 @@ class User(Base):
     password_salt: Mapped[str | None] = mapped_column(String(255), nullable=True)
     password_hash: Mapped[str | None] = mapped_column(Text, nullable=True)
     avatar_url: Mapped[str | None] = mapped_column(Text, nullable=True)
+    elo: Mapped[int] = mapped_column(default=0, server_default=text("0"))
     # Daily-play rewards (app/services/rewards.py), separate from per-model Elo.
     points: Mapped[int] = mapped_column(default=0, server_default=text("0"))
     streak: Mapped[int] = mapped_column(default=0, server_default=text("0"))

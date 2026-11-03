@@ -7,6 +7,7 @@ import { parseChallengeToday, type ChallengeToday } from "../lib/protocol";
 import Icon from "./line-icon";
 import InfoDialog, { type DetailTitle } from "./info-dialog";
 import MatchmakingCard from "./matchmaking-card";
+import ArenaStatsCard from "./arena-stats";
 import { useSession } from "./providers/session-provider";
 import AppShell from "./app-shell";
 import SiteHeader from "./site-header";
@@ -49,11 +50,7 @@ export default function Lobby() {
           </section>
 
           <aside className="flex flex-col gap-4" aria-label="Your performance">
-            <section aria-labelledby="stats-title" className={`${panel} flex flex-1 flex-col justify-center p-5`}>
-              <div className="mb-5 flex items-center justify-between"><h2 id="stats-title" className="text-sm font-bold">Your arena stats</h2><span className="text-[9px] uppercase tracking-wider text-zinc-500">Sample data</span></div>
-              <div className="grid grid-cols-2 gap-y-5"><div><p className="text-[10px] text-zinc-400">Model Elo</p><p className="mt-1 text-2xl font-bold tracking-tight">1,240<span className="ml-2 text-[10px] font-medium text-emerald-400">+24</span></p></div><div><p className="text-[10px] text-zinc-400">Win rate</p><p className="mt-1 text-2xl font-bold tracking-tight">64<span className="text-base text-zinc-500">%</span></p></div><div><p className="text-[10px] text-zinc-400">Debates played</p><p className="mt-1 text-xl font-semibold">28</p></div><div><p className="text-[10px] text-zinc-400">Wins</p><p className="mt-1 text-xl font-semibold">18</p></div></div>
-              <div className="mt-5 flex items-center justify-between border-t border-white/[0.07] pt-4"><span className="text-[10px] text-zinc-400">Recent form</span><div className="flex gap-1.5">{["W", "W", "L", "W", "W"].map((result, i) => <span key={i} className={`flex h-6 w-6 items-center justify-center rounded-md text-[9px] font-bold ${result === "W" ? "bg-emerald-400/10 text-emerald-400" : "bg-white/5 text-zinc-500"}`}>{result}</span>)}</div></div>
-            </section>
+            {session === "in" && user && <ArenaStatsCard key={user.id} />}
             <button onClick={() => setDetail("How to play")} className={`${panel} flex items-center gap-3 p-4 text-left hover:border-white/20 ${focus}`}><span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#f04b58]/10 text-[#ff7882]"><Icon name="bolt" /></span><span className="flex-1"><span className="block text-xs font-bold">First time in the arena?</span><span className="mt-1 block text-[10px] text-zinc-400">Learn the rules in 30 seconds.</span></span><Icon name="arrow" className="h-4 w-4 text-zinc-500" /></button>
           </aside>
         </div>

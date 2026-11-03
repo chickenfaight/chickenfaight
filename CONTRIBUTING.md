@@ -79,17 +79,34 @@ Check the connection at http://localhost:3000/health.
 
 ## BILC
 
-Run a local BYOM match against yourself, with the backend and frontend running:
+Run BILC from source, with the backend and frontend running. Get `<code>` from http://localhost:3000/bilc; the server defaults to http://localhost:8000.
 
 ```bash
-ollama pull llama3.2:3b              # llama3.2:1b often refuses to argue; try 3B or larger
-cd bilc && go build -o bilc ./cmd/bilc   # bilc/bilc is gitignored
-./bilc pair <code>                   # code from http://localhost:3000/bilc; server defaults to http://localhost:8000
-./bilc model set --model llama3.2:3b
-./bilc run                           # leave running; the BILC page shows the device online
+ollama pull llama3.2:3b     # llama3.2:1b often refuses to argue; try 3B or larger
+cd bilc
+unset BILC_CONFIG_DIR      # first device uses the default config directory
+go run ./cmd/bilc pair <code>
+go run ./cmd/bilc model set --model llama3.2:3b
+go run ./cmd/bilc run       # leave running; the BILC page shows the device online
 ```
 
-A match needs two players, each with their own device. Sign up a second account in a private window, and give its device a separate config directory: on Linux, prefix each command for it with `XDG_CONFIG_HOME=/tmp/bilc-b`. Then pick **Bring your own model** in both lobbies and join. Clean up with `./bilc unpair` (and Revoke on the BILC page).
+**Two sessions on one machine (macOS and Linux).** A BYOM match needs two players, each with a separately paired device. `BILC_CONFIG_DIR` overrides the entire BILC config directory with an absolute path. On macOS, the default is `~/Library/Application Support/chickenfaight/bilc`; `XDG_CONFIG_HOME` has no effect. Use `BILC_CONFIG_DIR` for the second device on either OS.
+
+Sign up a second account in a private window, get a fresh pairing code there, and in a second terminal run from the repository root:
+
+```bash
+cd bilc
+export BILC_CONFIG_DIR="$HOME/.bilc-b" # only this terminal; keep it set for every bilc command here
+go run ./cmd/bilc pair <code> --name device-b
+go run ./cmd/bilc model set --model llama3.2:3b
+go run ./cmd/bilc run
+```
+
+Leave `BILC_CONFIG_DIR` unset in the first terminal. When reopening the second terminal later, export the same path again before running BILC. Pair it separately; copying the first device's config would reuse its identity. Both devices can use macOS Keychain because tokens are stored under distinct device IDs.
+
+Both sessions can share one Ollama and model. Pick **Bring your own model** in both windows and join. To clean up, stop both runs and run `go run ./cmd/bilc unpair` in each terminal, with the variable still set in the second, since that also removes its keychain entry. Then remove `~/.bilc-b` if no longer needed, run `unset BILC_CONFIG_DIR` in the second terminal, and Revoke both devices on the BILC page.
+
+The commands above use the current source. If using `./bilc` instead, rebuild it after pulling this fix with `go build -o bilc ./cmd/bilc` from `bilc/`; an older binary will ignore the new variable.
 
 Credentials go in the system keychain, or `credentials.json` (mode 0600) in the config directory when there is none. Run `go test -race ./...` from `bilc/` before a PR; [TESTING.md](TESTING.md) has the full checks.
 

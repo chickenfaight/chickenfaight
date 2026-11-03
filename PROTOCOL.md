@@ -78,7 +78,7 @@ Server-side constants; clients read deadlines from messages rather than hard-cod
 | Queue poll interval | 2 s |
 | Pairing code TTL (implemented) | 10 min, single use |
 | BILC access JWT / refresh token (implemented) | 15 min / 30 days, rotated on every use (each rotation restarts the 30 days) |
-| BILC rate limits (implemented) | `POST /v1/bilc/pairing-codes`: a burst of 5 and 5/min per user. `POST /v1/bilc/register`: a burst of 10 and 10/min per client IP. `POST /v1/bilc/token`: a burst of 20 and 20/min per client IP |
+| BILC rate limits (implemented) | `POST /v1/bilc/pairing-codes`: a burst of 5 and 5/min per user. `POST /v1/bilc/register`: a burst of 10 and 10/min per client IP. `POST /v1/bilc/token`: a burst of 20 and 20/min per client IP. `GET /v1/bilc/releases/latest`: a burst of 20 and 60/min per client IP |
 | Web session (implemented) | 14 days from sign-in, not extended by use; logout ends it immediately |
 | REST rate limits, per user (implemented) | Token buckets, each holding a burst and refilling steadily: search, profile lookup, tag availability, and friends list each allow a burst of 20 and 60/min; adding and removing friends share a burst of 10 and 20/min |
 | Points and streaks (implemented) | Days are UTC. Only players who finished the match score: both in a judged match, only the winner of a forfeit, nobody in a void. +10 for finishing, +10 for winning, +50 for the day's challenge (once per UTC day, counted only if the match ends that same day), and +25 at every 7th consecutive day. A finished match on a new UTC day extends the streak if the previous one was within 48 h, and otherwise restarts it at 1 |
@@ -95,6 +95,7 @@ UserRead         { id: uuid, email: str|null, tag: str|null, username: str|null,
 UserPublic       { id: uuid, tag: str|null, username: str|null, avatar_url: str|null }   (implemented)
                  `tag` is the permanent unique identifier, null until set and never changed. `username` is the changeable display name: not unique, null until set; clients show it, falling back to the tag.
 UserProfile      UserPublic + { ratings: [Rating], is_friend: bool, points: int, streak: int, rank: int|null }   (implemented; `ratings` is empty until ratings ship; `is_friend` is whether the caller has added this player; `streak` is already 0 if 48 h passed without a finished match; `rank` is the 1-based position by points among tagged players, ties sharing a rank)
+ArenaStats       { points: int, debates_played: int, wins: int, win_rate: float|null, recent_form: ["W"|"L"] } (implemented; all models and regular/daily matches combined; completed and forfeited matches count, voids do not; win_rate is a percentage, null with no counted matches; recent_form is the latest five counted results, newest first, ordered by ended_at then match ID descending)
 Rating           { ladder: str, elo: int, games_played: int, wins: int, losses: int }
 Ladder           { slug: str, display_name: str, kind: "cloud"|"byom" }
 ArenaRead        { id: uuid, display_name: str, kind: "provided"|"byom" } (implemented; for "provided", id is the model's UUID; the one "byom" arena, listed last, has the fixed id in "BYOM arena" below)
@@ -135,6 +136,7 @@ Player prompts are never returned by any endpoint or message except to their aut
 | GET | `/v1/users/tag-availability` | session | `?tag=` (≤ 64 chars) | `{ available: bool, code: str\|null, detail: str\|null }`; `code` is one of the `TAG_*` errors above when unavailable (implemented) |
 | GET | `/v1/users/search` | session | `?q=` (1–64 chars), `?limit=` (1–50, default 20), `?offset=` (≥ 0, default 0) | `{ items: [UserPublic], next_offset: int\|null }`; only users with a tag; ranked exact tag, then prefix, then contains, then fuzzy (trigram word similarity), all ignoring case; `next_offset` is null on the last page; a blank `q` returns no items (implemented) |
 | GET | `/v1/users/by-tag/{tag}` | session | `{tag}`: ignoring case | `UserProfile`; 404 `NOT_FOUND` if no user has that tag (implemented) |
+| GET | `/v1/users/me/arena-stats` | session | — | `ArenaStats`, for the caller only (implemented) |
 | GET | `/v1/users/{id}` | session | `{id}: uuid` | `UserProfile` |
 | GET | `/v1/users/{id}/matches` | session | `{id}: uuid`, `?limit&offset` | `[MatchSummary]`, finished only |
 | GET | `/v1/friends` | session | `?limit=` (1–100, default 50), `?offset=` (≥ 0, default 0) | `{ items: [UserPublic], next_offset: int\|null }`: the caller's own friends only, ordered by tag ignoring case. No route lists another player's friends (implemented) |
@@ -157,7 +159,7 @@ Player prompts are never returned by any endpoint or message except to their aut
 
 `/health` and `/auth/*` stay unversioned: the OAuth redirect URI is registered with Google.
 
-The six `public` rows above, plus `POST /v1/bilc/register` and `POST /v1/bilc/token` below (whose credential is the pairing code or refresh token in the body), are the only routes reachable without a session; `tests/integration/test_route_auth.py` enforces this for every route. FastAPI's `/docs`, `/redoc`, and `/openapi.json` exist only when `APP_ENV=development` (implemented). Passwords are sent as typed, never hashed by the client (a client-side hash would itself be the password); the server stores only a salted scrypt hash. Use HTTPS outside local development.
+The six `public` rows above, plus `POST /v1/bilc/register` and `POST /v1/bilc/token` below (whose credential is the pairing code or refresh token in the body) and `GET /v1/bilc/releases/latest` below, are the only routes reachable without a session; `tests/integration/test_route_auth.py` enforces this for every route. FastAPI's `/docs`, `/redoc`, and `/openapi.json` exist only when `APP_ENV=development` (implemented). Passwords are sent as typed, never hashed by the client (a client-side hash would itself be the password); the server stores only a salted scrypt hash. Use HTTPS outside local development.
 
 ### BYOM arena (implemented)
 
@@ -178,7 +180,7 @@ The current session-authenticated `POST /v1/match/queue` requires `{ model_id: u
 |---|---|---|---|---|
 | POST | `/v1/bilc/register` | pairing code in body | `{ pairing_code: str (≤ 16; case, spaces, and hyphens ignored), device_name: str (1–64), platform: str (1–32), client_version: str (1–32) }`; text fields are trimmed and can't contain control or invisible formatting characters | `{ bilc_id: uuid, refresh_token: str }`; 400 `PAIRING_CODE_INVALID`; 422 for a malformed body (implemented) |
 | POST | `/v1/bilc/token` | refresh token in body | `{ bilc_id: uuid, refresh_token: str (≤ 128) }` | `{ access_token, expires_at, refresh_token }`; 401 `TOKEN_INVALID` (implemented) |
-| GET | `/v1/bilc/releases/latest` | public | — | `{ version, min_supported_version, protocol_version, assets: [{ platform, arch, url, sha256 }] }` (PLANNED; `install.sh` reads GitHub Releases directly) |
+| GET | `/v1/bilc/releases/latest` | public | — | `{ version: str\|null, min_supported_version, protocol_version, assets: [{ platform, arch, url, sha256 }] }`. Read from GitHub Releases (`BILC_RELEASES_URL`) and cached for 10 min; `version` is null until a release is published, or until GitHub first answers; `bilc run` checks it on start; `install.sh` still reads GitHub Releases directly (implemented) |
 | GET | `/v1/bilc/download` | public | `?platform=mac|win|linux&arch=amd64|arm64` | 302 to the release asset |
 
 Access JWT: HS256 with `BILC_JWT_SECRET`, claims `sub` = `bilc_id` (uuid), `uid` = user id (uuid), `aud` = `"bilc"`, `iat`, `exp` (implemented). Each refresh token works once. Presenting the one just replaced revokes the device and closes its socket 4403; any other wrong token gets `TOKEN_INVALID` without revoking.

@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -16,6 +17,7 @@ import (
 
 	"github.com/chickenfaight/chickenfaight/bilc/internal/auth"
 	"github.com/chickenfaight/chickenfaight/bilc/internal/config"
+	"github.com/chickenfaight/chickenfaight/bilc/internal/conn"
 )
 
 type memStore map[string]string
@@ -225,6 +227,33 @@ func TestStatusForgetsARevokedDevice(t *testing.T) {
 	}
 }
 
+func TestConfigDirOverrideKeepsDevicesApart(t *testing.T) {
+	server := newFakeServer(t)
+	first, second := t.TempDir(), t.TempDir()
+	store := memStore{}
+	run := func(dir string, args ...string) {
+		t.Helper()
+		t.Setenv(config.DirEnv, dir)
+		c := &cli{stdout: &bytes.Buffer{}, stderr: &bytes.Buffer{}, store: store}
+		if err := c.run(args); err != nil {
+			t.Fatal(err)
+		}
+	}
+	run(first, "pair", "ABCD2345", "--server", server.URL)
+	run(second, "model", "set", "--model", "other")
+	if _, err := os.Stat(filepath.Join(first, "config.json")); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv(config.DirEnv, second)
+	cfg, _, err := (&cli{}).loadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.BilcID != "" || cfg.Model.Name != "other" {
+		t.Fatalf("second directory shares the first's device: %+v", cfg)
+	}
+}
+
 func TestModelSet(t *testing.T) {
 	h := newHarness(t)
 	if err := h.cli.run([]string{"model", "set", "--model", "llama3.2:3b"}); err != nil {
@@ -270,6 +299,50 @@ func TestRunNeedsPairingAndModel(t *testing.T) {
 	}
 	if err := h.cli.run([]string{"run"}); err == nil || !strings.Contains(err.Error(), "bilc model set") {
 		t.Fatalf("error = %v", err)
+	}
+}
+
+func TestRunChecksForUpdates(t *testing.T) {
+	for name, tc := range map[string]struct {
+		current string
+		handler http.HandlerFunc
+		notice  string
+		err     error
+	}{
+		"newer version": {"0.1.0", releaseInfo(`"0.2.0"`), "BILC 0.2.0 is available (you have 0.1.0). To update: curl", nil},
+		"up to date":    {"0.2.0", releaseInfo(`"0.2.0"`), "", nil},
+		"too old":       {"0.0.9", releaseInfo(`"0.2.0"`), "", conn.ErrOutdated},
+		"dev build":     {"dev", releaseInfo(`"0.2.0"`), "", nil},
+		"check failed":  {"0.1.0", http.NotFound, "", nil},
+	} {
+		t.Run(name, func(t *testing.T) {
+			srv := httptest.NewServer(tc.handler)
+			defer srv.Close()
+			h := newHarness(t)
+			err := h.cli.checkForUpdate(context.Background(), srv.URL, tc.current, false)
+			if !errors.Is(err, tc.err) {
+				t.Fatalf("err = %v, want %v", err, tc.err)
+			}
+			if tc.notice == "" && h.stderr.Len() != 0 || !strings.Contains(h.stderr.String(), tc.notice) {
+				t.Fatalf("stderr = %q, want %q", h.stderr.String(), tc.notice)
+			}
+		})
+	}
+}
+
+func TestFailedUpdateCheckIsOnlyShownWhenVerbose(t *testing.T) {
+	h := newHarness(t)
+	if err := h.cli.checkForUpdate(context.Background(), "http://127.0.0.1:1", "0.1.0", true); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(h.stderr.String(), "Couldn't check for updates") {
+		t.Fatalf("stderr = %q", h.stderr.String())
+	}
+}
+
+func releaseInfo(version string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprintf(w, `{"version":%s,"min_supported_version":"0.1.0","protocol_version":1,"assets":[]}`, version)
 	}
 }
 
