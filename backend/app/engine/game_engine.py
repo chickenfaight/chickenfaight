@@ -8,6 +8,7 @@ from datetime import date, datetime, timedelta, timezone
 from json import JSONDecodeError
 from typing import Literal
 from uuid import UUID
+from sqlalchemy import func, or_, select, update
 
 from fastapi import WebSocket, WebSocketDisconnect
 from openai import OpenAIError
@@ -16,7 +17,7 @@ from pydantic import ValidationError
 from app.config import settings
 from app.db.session import SessionFactory
 from app.inference.model_client import *
-from app.models import Topic
+from app.models import Topic, Ladder
 from app.repositories.topic import TopicRepository
 from app.services.challenge import Twist, check_prompt, topic_for, twist_for
 from app.services.rewards import MatchReport, record_match
@@ -324,9 +325,13 @@ class GameEngine:
                     
                     ladder_id = None
                     if self.devices:
-                        ladder_id = (await session.execute(select(Ladder).where(Ladder.kind == "byom")).scalar())[0].id
+                        statement = select(Ladder).where(Ladder.kind == "byom")
+                        res = await session.execute(statement)
+                        ladder_id = res.scalar_one_or_none().id
                     else:
-                        ladder_id = (await session.execute(select(Ladder).where(Ladder.provider_model_id == self.api_model_id)).scalar())[0].id
+                        statement = select(Ladder).where(Ladder.provider_model_id == self.api_model_id)
+                        res = await session.execute(statement)
+                        ladder_id = res.scalar_one_or_none().id
                     
                     if ladder_id:
                         from app.services.rating import RatingService
@@ -336,7 +341,7 @@ class GameEngine:
                             opp_side = "con" if self.sides[user_id] == "pro" else "pro"
                             opp_user_id = next(uid for uid, s in self.sides.items() if s == opp_side)
                             
-                            opp_rating = rating_service.get_rating(opp_user_id, ladder_id)
+                            opp_rating = await rating_service.get_rating(opp_user_id, ladder_id)
                             opp_elo = opp_rating.elo if opp_rating else 1000
                             
                             if winner_side == self.sides[user_id]:
@@ -346,7 +351,7 @@ class GameEngine:
                             else:
                                 result_type = "loss"
                             
-                            rating_service.calculate_and_update_elo(user_id, ladder_id, opp_elo, result_type)
+                            await rating_service.calculate_and_update_elo(user_id, ladder_id, opp_elo, result_type)
         except Exception:
             logger.exception("Match %s: couldn't record the result", self.match_id)
 

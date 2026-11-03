@@ -1,5 +1,6 @@
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import func, or_, select, update
 
 import secrets
 from datetime import UTC, datetime
@@ -7,6 +8,7 @@ from uuid import UUID
 
 from app.models.avatar import Avatar
 from app.models.user import User
+from app.models.ladder_rating import Rating
 from app.repositories.friend import FriendRepository
 from app.repositories.user import UserRepository
 from app.schemas import (
@@ -109,10 +111,17 @@ class UserService:
         """A player's public profile, as seen by `viewer`."""
         user = await self.get_by_tag(tag)
         is_friend = await FriendRepository(self.session).is_friend(viewer.id, user.id)
+        
+        # Fetch ratings only for the profile being requested
+        statement = select(Rating).where(Rating.user_id == user.id)
+        result = await self.session.execute(statement)
+        ratings = result.scalars().all()
+        
         return UserProfile.model_validate(user).model_copy(update={
             "is_friend": is_friend,
             "streak": effective_streak(user, datetime.now(UTC)),
             "rank": await points_rank(self.session, user),
+            "ratings": ratings,
         })
 
     async def search(self, query: str, limit: int, offset: int) -> UserSearchPage:

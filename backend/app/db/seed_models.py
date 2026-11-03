@@ -15,7 +15,7 @@ from app.models import InferenceAdapter, Model, Provider
 from app.schemas.model_metadata import ModelProviderMetadata
 
 
-OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
+OPENROUTER_BASE_URL = "https://genai.rcac.purdue.edu/api"
 Price = Annotated[Decimal, Field(allow_inf_nan=False)]
 TokenLimit = Annotated[int, Field(strict=True, gt=0, le=2_147_483_647)]
 PRICING = TypeAdapter(dict[str, Price])
