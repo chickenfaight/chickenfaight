@@ -11,7 +11,7 @@ const focus = "focus-visible:outline-2 focus-visible:outline-offset-4 focus-visi
 const panel = "rounded-3xl border border-white/[0.07] bg-[#202124]";
 
 // The app's top bar: wordmark, navigation, player search, and the profile menu.
-export default function SiteHeader({ current, query }: { current?: "play"; query?: string }) {
+export default function SiteHeader({ current, query }: { current?: "play" | "leaderboards"; query?: string }) {
   const { user, status: session, logout, loggingOut, logoutError } = useSession();
   const [menu, setMenu] = useState(false);
   const [detail, setDetail] = useState<DetailTitle | null>(null);
@@ -27,7 +27,7 @@ export default function SiteHeader({ current, query }: { current?: "play"; query
       <Link href="/" className={`flex items-center gap-2.5 rounded-xl ${focus}`} aria-label="Chicken fAIght home"><span className="text-[#f04b58]"></span><span className="text-xl font-extrabold tracking-[-0.06em]">chicken<span className="text-[#f04b58]">fAIght</span><span className="text-[#f04b58]">.</span></span></Link>
       <nav aria-label="Main navigation" className="flex h-full items-center gap-8 text-sm font-semibold">
         <Link href="/" aria-current={current === "play" ? "page" : undefined} className={`flex h-full items-center border-b-2 ${current === "play" ? "border-[#f04b58] text-white" : "border-transparent text-zinc-400 hover:text-white"} ${focus}`}>Play</Link>
-        <button onClick={() => setDetail("Your ladder")} className={`text-zinc-400 hover:text-white ${focus}`}>Leaderboards</button>
+        <Link href="/leaderboards" aria-current={current === "leaderboards" ? "page" : undefined} className={`flex h-full items-center border-b-2 ${current === "leaderboards" ? "border-[#f04b58] text-white" : "border-transparent text-zinc-400 hover:text-white"} ${focus}`}>Leaderboards</Link>
         <button onClick={() => setDetail("How to play")} className={`text-zinc-400 hover:text-white ${focus}`}>How to play</button>
       </nav>
       <div className="flex items-center gap-4">
@@ -39,7 +39,7 @@ export default function SiteHeader({ current, query }: { current?: "play"; query
           <Icon name="chevron" className="h-4 w-4 text-zinc-400" />
         </button>
         {menu && <div id="profile-options" className="absolute right-0 top-full w-56 pt-2"><div className={`${panel} p-2 text-sm`}>
-          {session === "in" ? <><Link href="/profile/me" className={`block rounded-xl px-4 py-3 hover:bg-white/5 ${focus}`}>My profile</Link><button onClick={() => setDetail("Your ladder")} className={`w-full rounded-xl px-4 py-3 text-left hover:bg-white/5 ${focus}`}>My ladder</button><button disabled={loggingOut} onClick={signOut} className={`w-full rounded-xl px-4 py-3 text-left text-[#ff7882] hover:bg-white/5 disabled:opacity-50 ${focus}`}>{loggingOut ? "Signing out…" : "Sign out"}</button></> : <Link href="/login" className={`block rounded-xl px-4 py-3 hover:bg-white/5 ${focus}`}>Sign in</Link>}
+          {session === "in" ? <><Link href="/profile/me" className={`block rounded-xl px-4 py-3 hover:bg-white/5 ${focus}`}>My profile</Link><Link href="/leaderboards" className={`block rounded-xl px-4 py-3 hover:bg-white/5 ${focus}`}>Leaderboards</Link><button disabled={loggingOut} onClick={signOut} className={`w-full rounded-xl px-4 py-3 text-left text-[#ff7882] hover:bg-white/5 disabled:opacity-50 ${focus}`}>{loggingOut ? "Signing out…" : "Sign out"}</button></> : <Link href="/login" className={`block rounded-xl px-4 py-3 hover:bg-white/5 ${focus}`}>Sign in</Link>}
           {logoutError && <p role="alert" className="px-4 py-2 text-xs text-red-300">{logoutError}</p>}
         </div></div>}
       </div>

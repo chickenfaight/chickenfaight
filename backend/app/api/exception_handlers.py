@@ -74,7 +74,7 @@ async def handle_arena_not_found(
 ) -> JSONResponse:
     return JSONResponse(
         status_code=404,
-        content={"code": "NOT_FOUND", "detail": "No active arena has that model ID."},
+        content={"code": "NOT_FOUND", "detail": error.detail},
     )
 
 

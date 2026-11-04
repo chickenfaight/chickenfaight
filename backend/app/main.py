@@ -13,6 +13,7 @@ from app.api.game import router as game_router
 from app.api.users import router as users_router
 from app.api.friends import router as friends_router
 from app.api.arenas import router as arenas_router
+from app.api.ladders import router as ladders_router
 from app.api.tips import router as tips_router
 from app.api.challenge import router as challenge_router
 from app.api.bilc import router as bilc_router
@@ -90,6 +91,7 @@ app.include_router(game_router, prefix="/v1")
 app.include_router(users_router, prefix="/v1")
 app.include_router(friends_router, prefix="/v1")
 app.include_router(arenas_router, prefix="/v1")
+app.include_router(ladders_router, prefix="/v1")
 app.include_router(tips_router, prefix="/v1")
 app.include_router(challenge_router, prefix="/v1")
 app.include_router(bilc_router, prefix="/v1")

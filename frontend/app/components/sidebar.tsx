@@ -9,6 +9,7 @@ const focus = "focus-visible:outline-2 focus-visible:outline-offset-4 focus-visi
 
 const SECTIONS = [
   { href: "/", label: "Play", icon: "play", matches: (path: string) => path === "/" },
+  { href: "/leaderboards", label: "Leaderboards", icon: "trophy", matches: (path: string) => path === "/leaderboards" },
   { href: "/challenge", label: "Daily challenge", icon: "bolt", matches: (path: string) => path.startsWith("/challenge") },
   { href: "/tips", label: "Debate tips", icon: "chat", matches: (path: string) => path.startsWith("/tips") },
   { href: "/bilc", label: "BILC", icon: "chip", matches: (path: string) => path.startsWith("/bilc") },
