@@ -13,7 +13,6 @@ class UserRead(BaseModel):
     tag: str | None
     username: str | None
     avatar_url: str | None
-    elo: int
 
 
 class ArenaStats(BaseModel):
@@ -50,7 +49,6 @@ class FriendshipStatus(BaseModel):
 
 
 class UserProfile(UserPublic):
-    # Empty until the ratings table ships.
     ratings: list[Rating] = []
     # Whether this player and the caller are friends, and any pending request between them.
     is_friend: bool = False
