@@ -59,7 +59,7 @@ class Matchmaker:
         self.queues: defaultdict[QueueKey, list[tuple[UUID, float, int]]] = defaultdict(list)
         self.queued_users: dict[UUID, QueueKey] = {} # dict[user_id, queue key] for checks and cancellation
         self.assignments: dict[UUID, UUID] = {} # dict[user_id, match_id]
-
+        self.randomqueue: deque[tuple[UUID, float]] = deque()
         self.engines: dict[UUID, GameEngine] = {}       # dict[match_id, engine]
         self.tasks: dict[UUID, asyncio.Task[None]] = {} # dict[match_id, async task]
 
@@ -71,6 +71,9 @@ class Matchmaker:
     async def match_available_players(self):
         # TODO more sophisticated matching algorithm with elo and shi coming soon
         for (model_id, challenge_day), queue in self.queues.items():
+            if len(self.randomqueue) > 0 and len(queue) % 2 == 1:
+                toqueue = self.randomqueue.popleft()
+                queue.append((toqueue[0],toqueue[1],1000))
             while len(queue) >= 2:
                 player1pos = -1
                 player2pos = -1
@@ -153,11 +156,14 @@ class Matchmaker:
         return match_id
 
 
-    def register(self, user_id: UUID, model_id: UUID, elo: int, challenge_day: date | None = None):
+    def register(self, user_id: UUID, model_id: UUID | None, elo: int, challenge_day: date | None = None):
         self.check_free(user_id)
-        key = (model_id, challenge_day)
-        self.queues[key].append((user_id, time.time(), elo))
-        self.queued_users[user_id] = key
+        if model_id is None:
+            self.randomqueue.append((user_id, time.time()))
+        else:
+            key = (model_id, challenge_day)
+            self.queues[key].append((user_id, time.time(), elo))
+            self.queued_users[user_id] = key
 
     def register_byom(self, user_id: UUID, device_id: UUID, size_class: SizeClass) -> None:
         """Queue for the BYOM arena with one of the user's devices (the route checked it's idle)."""

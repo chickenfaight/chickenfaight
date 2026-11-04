@@ -50,12 +50,14 @@ async def queue_match(
         challenge_day = today()
         if await completed_challenge(session, user.id, challenge_day):
             raise ChallengeAlreadyCompletedError()
-    rating_service = RatingService(session)
-    res = await session.execute(select(Ladder).where(Ladder.slug == f"ladder-{body.model_id}"))
-    ladder = res.scalars().one_or_none()
-    if ladder is None:
-        raise ArenaNotFoundError()
-    rating = await rating_service.get_rating(user.id, ladder.id)
+    rating = None
+    if body.model_id is not None:
+        rating_service = RatingService(session)
+        res = await session.execute(select(Ladder).where(Ladder.slug == f"ladder-{body.model_id}"))
+        ladder = res.scalars().one_or_none()
+        if ladder is None:
+            raise ArenaNotFoundError()
+        rating = await rating_service.get_rating(user.id, ladder.id)
     elo = rating.elo if rating is not None else DEFAULT_ELO
     matchmaker.register(user.id, body.model_id, elo, challenge_day)
 
