@@ -56,7 +56,7 @@ class Matchmaker:
         self.byom_queue: list[ByomEntry] = []
         # One queue per (model_id, challenge_day): regular matches use challenge_day None; daily-challenge
         # players wait in their own queue so they only meet others playing today's challenge.
-        self.queues: defaultdict[QueueKey, deque[UUID]] = defaultdict(deque)
+        self.queues: defaultdict[QueueKey, list[tuple[UUID, float, int]]] = defaultdict(list)
         self.queued_users: dict[UUID, QueueKey] = {} # dict[user_id, queue key] for checks and cancellation
         self.assignments: dict[UUID, UUID] = {} # dict[user_id, match_id]
 
@@ -73,13 +73,34 @@ class Matchmaker:
         for (model_id, challenge_day), queue in self.queues.items():
             while len(queue) >= 2:
                 match_id = uuid4()
-                players = (queue.popleft(), queue.popleft())
 
-                for user_id in players:
-                    del self.queued_users[user_id]
-                    self.assignments[user_id] = match_id
+                player1pos = -1
+                player2pos = -1
+                for i in range(0, len(queue)):
+                    player1 = queue[i]
+                    for j in range(i+1, len(queue)):
+                        player2 = queue[j]
+                        if abs(player1[2] - player2[2]) < 50 or (time.time() - player1[1]) > 15:
+                            player1pos = i
+                            player2pos = j
+                            break
+                    if player1pos > -1:
+                        break
 
-                self.start(GameEngine(match_id, players, model_id, challenge_day))
+                if player1pos > -1 and player2pos > -1:
+                    player1 = queue[player1pos]
+                    player2 = queue[player2pos]
+                    players = (player1, player2)
+                    queue.remove(player1)
+                    queue.remove(player2)
+
+
+                    del self.queued_users[players[0][0]]
+                    del self.queued_users[players[1][0]]
+                    self.assignments[players[0][0]] = match_id
+                    self.assignments[players[1][0]] = match_id
+
+                    self.start(GameEngine(match_id, (players[0][0],players[1][0]), model_id, challenge_day))
         self.match_byom_players()
 
     def match_byom_players(self) -> None:
@@ -132,10 +153,10 @@ class Matchmaker:
         return match_id
 
 
-    def register(self, user_id: UUID, model_id: UUID, challenge_day: date | None = None):
+    def register(self, user_id: UUID, model_id: UUID, elo: int, challenge_day: date | None = None):
         self.check_free(user_id)
         key = (model_id, challenge_day)
-        self.queues[key].append(user_id)
+        self.queues[key].append((user_id, time.time(), elo))
         self.queued_users[user_id] = key
 
     def register_byom(self, user_id: UUID, device_id: UUID, size_class: SizeClass) -> None:

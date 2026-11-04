@@ -6,6 +6,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.auth.dependencies import CurrentUserDependency
 from app.db.session import get_session
 from app.models.user import User
+from app.models.ladder_rating import Rating
+from app.models.ladder_rating import Ladder
+from sqlalchemy import func, or_, select, update
 from app.schemas.schemas import QueueRequest
 from app.services.arena import BYOM_ARENA_ID, ArenaService
 from app.services.bilc import BilcService
@@ -20,6 +23,7 @@ from app.services.exceptions import (
 )
 from app.services.rewards import completed_challenge
 from app.services.user import require_tag
+from app.services.rating import RatingService
 
 router = APIRouter(prefix="/match", tags=["match"])
 SessionDependency = Annotated[AsyncSession, Depends(get_session)]
@@ -46,7 +50,13 @@ async def queue_match(
         challenge_day = today()
         if await completed_challenge(session, user.id, challenge_day):
             raise ChallengeAlreadyCompletedError()
-    matchmaker.register(user.id, body.model_id, challenge_day)
+    """get user elo"""
+    rating_service = RatingService(session)
+    res = await session.execute(select(Ladder).where(Ladder.slug == f"ladder-{body.model_id}"))
+    ladder = res.scalars().one_or_none()
+    rating = await rating_service.get_rating(user.id, ladder.id)
+    elo = rating.elo
+    matchmaker.register(user.id, body.model_id, elo, challenge_day)
 
     return matchmaker.get_status(user.id)
 
