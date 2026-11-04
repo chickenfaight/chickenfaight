@@ -13,7 +13,7 @@ from app.config import settings
 from app.db.migrate import migrate, reset
 from app.db.session import get_session
 from app.main import app
-from app.models import InferenceAdapter, Model, Provider, User
+from app.models import InferenceAdapter, Ladder, Model, Provider, Rating, User
 from app.services.bilc_connections import BilcConnections
 from app.services.bilc_releases import BilcReleases
 from app.services.matchmaking import Matchmaker
@@ -123,6 +123,18 @@ def make_model(db_session: AsyncSession) -> Callable[..., Awaitable[Model]]:
         return model
 
     return make
+
+
+@pytest.fixture
+def seed_rating(db_session: AsyncSession) -> Callable[[User, Model, int], Awaitable[None]]:
+    async def seed(user: User, model: Model, elo: int) -> None:
+        ladder = Ladder(slug=f"ladder-{model.id}", display_name=model.display_name, kind="cloud")
+        db_session.add(ladder)
+        await db_session.flush()
+        db_session.add(Rating(user_id=user.id, ladder_id=ladder.id, elo=elo))
+        await db_session.commit()
+
+    return seed
 
 
 @pytest.fixture

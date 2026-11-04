@@ -5,7 +5,8 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm.attributes import set_committed_value
 
 from app.config import settings
-from app.models import User
+from app.main import app
+from app.models import Ladder, User
 from app.schemas import GoogleIdentity
 from app.services.exceptions import TagAlreadySetError
 from app.services.user import UserService
@@ -165,12 +166,34 @@ async def test_queue_requires_tag(client, log_in, make_user):
     assert (await client.get("/v1/match/status")).json() == {"status": "none"}
 
 
-async def test_queue_allowed_with_tag(client, log_in, make_user, make_model):
-    log_in(await make_user("queuer"))
+async def test_queue_allowed_with_tag(client, log_in, make_user, make_model, seed_rating):
+    user = await make_user("queuer")
+    log_in(user)
     model = await make_model()
+    await seed_rating(user, model, 1234)
     response = await client.post("/v1/match/queue", json={"model_id": str(model.id)})
     assert response.status_code == 202
     assert response.json() == {"status": "queued"}
+
+
+@pytest.mark.parametrize("has_ladder", [True, False])
+async def test_queue_for_unrated_user(client, log_in, make_user, make_model, db_session, has_ladder):
+    user = await make_user("newplayer")
+    log_in(user)
+    model = await make_model()
+    if has_ladder:
+        db_session.add(Ladder(slug=f"ladder-{model.id}", display_name=model.display_name, kind="cloud"))
+        await db_session.commit()
+
+    response = await client.post("/v1/match/queue", json={"model_id": str(model.id)})
+    if has_ladder:
+        assert response.status_code == 202
+        [(queued_user, _, elo)] = app.state.matchmaker.queues[(model.id, None)]
+        assert (queued_user, elo) == (user.id, 1000)
+    else:
+        assert response.status_code == 404
+        assert user.id not in app.state.matchmaker.queued_users
+
 
 
 async def test_patch_is_allowed_by_cors(client):

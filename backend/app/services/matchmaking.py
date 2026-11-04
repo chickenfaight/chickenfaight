@@ -72,8 +72,6 @@ class Matchmaker:
         # TODO more sophisticated matching algorithm with elo and shi coming soon
         for (model_id, challenge_day), queue in self.queues.items():
             while len(queue) >= 2:
-                match_id = uuid4()
-
                 player1pos = -1
                 player2pos = -1
                 for i in range(0, len(queue)):
@@ -87,20 +85,22 @@ class Matchmaker:
                     if player1pos > -1:
                         break
 
-                if player1pos > -1 and player2pos > -1:
-                    player1 = queue[player1pos]
-                    player2 = queue[player2pos]
-                    players = (player1, player2)
-                    queue.remove(player1)
-                    queue.remove(player2)
+                if player1pos == -1:
+                    break
 
+                match_id = uuid4()
+                player1 = queue[player1pos]
+                player2 = queue[player2pos]
+                players = (player1, player2)
+                queue.remove(player1)
+                queue.remove(player2)
 
-                    del self.queued_users[players[0][0]]
-                    del self.queued_users[players[1][0]]
-                    self.assignments[players[0][0]] = match_id
-                    self.assignments[players[1][0]] = match_id
+                del self.queued_users[players[0][0]]
+                del self.queued_users[players[1][0]]
+                self.assignments[players[0][0]] = match_id
+                self.assignments[players[1][0]] = match_id
 
-                    self.start(GameEngine(match_id, (players[0][0],players[1][0]), model_id, challenge_day))
+                self.start(GameEngine(match_id, (players[0][0],players[1][0]), model_id, challenge_day))
         self.match_byom_players()
 
     def match_byom_players(self) -> None:
@@ -198,8 +198,9 @@ class Matchmaker:
         if user_id not in self.queued_users:
             return
 
-        key = self.queued_users.pop(user_id)
+        key = self.queued_users[user_id]
         if key == BYOM_KEY:
             self.byom_queue = [entry for entry in self.byom_queue if entry.user_id != user_id]
         else:
-            self.queues[key].remove(user_id)
+            self.queues[key] = [entry for entry in self.queues[key] if entry[0] != user_id]
+        del self.queued_users[user_id]

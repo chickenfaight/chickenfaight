@@ -6,9 +6,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.auth.dependencies import CurrentUserDependency
 from app.db.session import get_session
 from app.models.user import User
-from app.models.ladder_rating import Rating
-from app.models.ladder_rating import Ladder
-from sqlalchemy import func, or_, select, update
+from app.models.ladder_rating import DEFAULT_ELO, Ladder
+from sqlalchemy import select
 from app.schemas.schemas import QueueRequest
 from app.services.arena import BYOM_ARENA_ID, ArenaService
 from app.services.bilc import BilcService
@@ -16,6 +15,7 @@ from app.services.bilc_connections import BilcConnections
 from app.services.matchmaking import Matchmaker
 from app.services.challenge import today
 from app.services.exceptions import (
+    ArenaNotFoundError,
     BilcBusyError,
     BilcOfflineError,
     ByomQueueInvalidError,
@@ -50,12 +50,13 @@ async def queue_match(
         challenge_day = today()
         if await completed_challenge(session, user.id, challenge_day):
             raise ChallengeAlreadyCompletedError()
-    """get user elo"""
     rating_service = RatingService(session)
     res = await session.execute(select(Ladder).where(Ladder.slug == f"ladder-{body.model_id}"))
     ladder = res.scalars().one_or_none()
+    if ladder is None:
+        raise ArenaNotFoundError()
     rating = await rating_service.get_rating(user.id, ladder.id)
-    elo = rating.elo
+    elo = rating.elo if rating is not None else DEFAULT_ELO
     matchmaker.register(user.id, body.model_id, elo, challenge_day)
 
     return matchmaker.get_status(user.id)

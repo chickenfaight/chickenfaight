@@ -16,13 +16,14 @@ async def test_today_describes_the_shared_challenge(client, log_in, make_user):
     assert datetime.fromisoformat(body["resets_at"]) > datetime.now(UTC)
 
 
-async def test_completed_challenge_shows_and_blocks_requeueing(client, log_in, make_user, make_model, db_session):
+async def test_completed_challenge_shows_and_blocks_requeueing(client, log_in, make_user, make_model, db_session, seed_rating):
     user = await make_user("Rooster_42")
     log_in(user)
     db_session.add(ChallengeCompletion(user_id=user.id, day=today()))
     await db_session.commit()
     assert (await client.get("/v1/challenge/today")).json()["completed"] is True
     model = await make_model()
+    await seed_rating(user, model, 1234)
     response = await client.post("/v1/match/queue", json={"model_id": str(model.id), "daily": True})
     assert response.status_code == 409
     assert response.json()["code"] == "CHALLENGE_ALREADY_COMPLETED"
@@ -30,11 +31,13 @@ async def test_completed_challenge_shows_and_blocks_requeueing(client, log_in, m
     assert (await client.post("/v1/match/queue", json={"model_id": str(model.id)})).status_code == 202
 
 
-async def test_daily_queue_is_separate_from_regular(client, log_in, make_user, make_model):
+async def test_daily_queue_is_separate_from_regular(client, log_in, make_user, make_model, seed_rating):
     user = await make_user("Rooster_42")
     log_in(user)
     model = await make_model()
-    await client.post("/v1/match/queue", json={"model_id": str(model.id), "daily": True})
+    await seed_rating(user, model, 1234)
+    response = await client.post("/v1/match/queue", json={"model_id": str(model.id), "daily": True})
+    assert response.status_code == 202
     assert app.state.matchmaker.queued_users[user.id] == (model.id, today())
 
 

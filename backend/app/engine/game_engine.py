@@ -18,6 +18,8 @@ from app.config import settings
 from app.db.session import SessionFactory
 from app.inference.model_client import *
 from app.models import Topic, Ladder
+from app.models.ladder_rating import DEFAULT_ELO
+from app.services.rating import RatingService
 from app.repositories.topic import TopicRepository
 from app.services.challenge import Twist, check_prompt, topic_for, twist_for
 from app.services.rewards import MatchReport, record_match
@@ -323,35 +325,30 @@ class GameEngine:
                 if self.result["status"] == "completed":
                     winner_side = self.result.get("winner")
                     
-                    ladder_id = None
-                    if self.devices:
-                        statement = select(Ladder).where(Ladder.kind == "byom")
-                        res = await session.execute(statement)
-                        ladder_id = res.scalar_one_or_none().id
-                    else:
-                        statement = select(Ladder).where(Ladder.provider_model_id == self.api_model_id)
-                        res = await session.execute(statement)
-                        ladder_id = res.scalar_one_or_none().id
-                    
-                    if ladder_id:
-                        from app.services.rating import RatingService
+                    slug = "byom-arena" if self.devices else f"ladder-{self.model_id}"
+                    async with session.begin():
+                        ladder = await session.scalar(select(Ladder).where(Ladder.slug == slug))
+                        if ladder is None:
+                            logger.warning("Match %s: missing rating ladder %s", self.match_id, slug)
+                            return
+
                         rating_service = RatingService(session)
-                        
+                        first, second = self.players
+                        starting_elo = {}
                         for user_id in self.players:
-                            opp_side = "con" if self.sides[user_id] == "pro" else "pro"
-                            opp_user_id = next(uid for uid, s in self.sides.items() if s == opp_side)
-                            
-                            opp_rating = await rating_service.get_rating(opp_user_id, ladder_id)
-                            opp_elo = opp_rating.elo if opp_rating else 1000
-                            
-                            if winner_side == self.sides[user_id]:
-                                result_type = "win"
-                            elif winner_side is None:
+                            rating = await rating_service.get_rating(user_id, ladder.id)
+                            starting_elo[user_id] = rating.elo if rating is not None else DEFAULT_ELO
+
+                        for user_id, opponent_id in ((first, second), (second, first)):
+                            if winner_side is None:
                                 result_type = "draw"
+                            elif winner_side == self.sides[user_id]:
+                                result_type = "win"
                             else:
                                 result_type = "loss"
-                            
-                            await rating_service.calculate_and_update_elo(user_id, ladder_id, opp_elo, result_type)
+                            await rating_service.calculate_and_update_elo(
+                                user_id, ladder.id, starting_elo[opponent_id], result_type,
+                            )
         except Exception:
             logger.exception("Match %s: couldn't record the result", self.match_id)
 

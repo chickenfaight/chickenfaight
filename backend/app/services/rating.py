@@ -35,5 +35,4 @@ class RatingService:
             user_rating.wins += 1
         elif result == "loss":
             user_rating.losses += 1
-        await self.session.commit()
         return user_rating

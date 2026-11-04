@@ -48,11 +48,13 @@ async def test_deleted_user_vanishes_from_friends_profiles_and_search(client, lo
     assert remaining == 0
 
 
-async def test_deletion_leaves_the_queue(client, log_in, make_user, make_model):
+async def test_deletion_leaves_the_queue(client, log_in, make_user, make_model, seed_rating):
     user = await make_user("Rooster_42")
     log_in(user)
     model = await make_model()
-    await client.post("/v1/match/queue", json={"model_id": str(model.id)})
+    await seed_rating(user, model, 1234)
+    response = await client.post("/v1/match/queue", json={"model_id": str(model.id)})
+    assert response.status_code == 202
     assert user.id in app.state.matchmaker.queued_users
     await client.delete(DELETE_ME)
     assert user.id not in app.state.matchmaker.queued_users

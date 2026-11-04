@@ -5,6 +5,7 @@ from sqlalchemy.exc import IntegrityError
 import uuid
 
 from app.models import Rating
+from app.models.ladder_rating import DEFAULT_ELO
 from app.db.base import Base
 
 class RatingRepository:
@@ -27,17 +28,17 @@ class RatingRepository:
         new_rating = Rating(
             user_id=user_id,
             ladder_id=ladder_id,
-            elo=1000,
+            elo=DEFAULT_ELO,
             games_played=0,
             wins=0,
             losses=0
         )
         try:
-            self.session.add(new_rating)
-            await self.session.flush()
+            async with self.session.begin_nested():
+                self.session.add(new_rating)
+                await self.session.flush()
             return new_rating
         except IntegrityError:
-            await self.session.rollback()
             return await self.get_rating(user_id, ladder_id)
             
     def get_all_ratings_for_user(self, user_id: uuid.UUID) -> list[Rating]:

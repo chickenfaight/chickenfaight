@@ -9,25 +9,29 @@ from app.services.matchmaking import Matchmaker
 
 
 class RegistrationTests(unittest.TestCase):
-    def test_registration_is_visible_to_polling_and_uses_fifo_order(self):
+    def test_registration_preserves_queue_order_and_records_elo_and_join_time(self):
         matchmaker = Matchmaker()
         first, second = uuid4(), uuid4()
         model_id = uuid4()
-        matchmaker.register(first, model_id)
-        matchmaker.register(second, model_id)
+        with patch('app.services.matchmaking.time.time', side_effect=[100.0, 101.0]):
+            matchmaker.register(first, model_id, elo=1000)
+            matchmaker.register(second, model_id, elo=1049)
         self.assertEqual(matchmaker.get_status(first), {"status": "queued"})
         self.assertEqual(matchmaker.get_status(second), {"status": "queued"})
-        self.assertEqual(list(matchmaker.queues[(model_id, None)]), [first, second])
+        self.assertEqual(matchmaker.queues[(model_id, None)], [
+            (first, 100.0, 1000), (second, 101.0, 1049),
+        ])
 
     def test_duplicate_registration_does_not_add_another_entry(self):
         matchmaker = Matchmaker()
         user_id = uuid4()
         model_id, other_model_id = uuid4(), uuid4()
-        matchmaker.register(user_id, model_id)
+        matchmaker.register(user_id, model_id, elo=1000)
         with self.assertRaises(AlreadyQueuedError):
-            matchmaker.register(user_id, other_model_id)
-        self.assertEqual(list(matchmaker.queues[(model_id, None)]), [user_id])
-        self.assertNotIn(other_model_id, matchmaker.queues)
+            matchmaker.register(user_id, other_model_id, elo=1100)
+        [(queued_user, _, elo)] = matchmaker.queues[(model_id, None)]
+        self.assertEqual((queued_user, elo), (user_id, 1000))
+        self.assertNotIn((other_model_id, None), matchmaker.queues)
         self.assertEqual(matchmaker.queued_users, {user_id: (model_id, None)})
 
     def test_matched_user_cannot_register_again(self):
@@ -35,7 +39,7 @@ class RegistrationTests(unittest.TestCase):
         user_id, match_id = uuid4(), uuid4()
         matchmaker.assignments[user_id] = match_id
         with self.assertRaises(AlreadyMatchedError):
-            matchmaker.register(user_id, uuid4())
+            matchmaker.register(user_id, uuid4(), elo=1000)
         self.assertFalse(matchmaker.queued_users)
         self.assertFalse(matchmaker.queues)
         self.assertEqual(matchmaker.get_status(user_id), {"status": "matched", "match_id": str(match_id)})
@@ -50,7 +54,7 @@ class RegistrationTests(unittest.TestCase):
         self.assertEqual(matchmaker.get_status(user_id)["status"], "matched")
         matchmaker.engines[match_id].result = {"end_reason": "resigned"}
         self.assertEqual(matchmaker.get_status(user_id), {"status": "none"})
-        matchmaker.register(user_id, uuid4())
+        matchmaker.register(user_id, uuid4(), elo=1000)
         self.assertEqual(matchmaker.get_status(user_id), {"status": "queued"})
 
 
@@ -66,12 +70,13 @@ class CancellationTests(unittest.TestCase):
         from app.db.session import get_session
         from app.models.user import User
 
-        self.user = User(id=uuid4(), google_sub="cancel-test", elo=1000)
+        self.user = User(id=uuid4(), google_sub="cancel-test")
         self.other = uuid4()
         self.model_id = uuid4()
         self.matchmaker = Matchmaker()
-        self.matchmaker.register(self.user.id, self.model_id)
-        self.matchmaker.register(self.other, self.model_id)
+        self.matchmaker.register(self.user.id, self.model_id, elo=1000)
+        self.matchmaker.register(self.other, self.model_id, elo=1025)
+        self.caller_entry, self.other_entry = self.matchmaker.queues[(self.model_id, None)]
         self.app = FastAPI()
         self.app.add_middleware(SessionMiddleware, secret_key="test-only")
         self.app.state.matchmaker = self.matchmaker
@@ -88,25 +93,29 @@ class CancellationTests(unittest.TestCase):
             self.assertEqual(response.status_code, 204)
             self.assertEqual(response.content, b'')
         self.assertEqual(self.matchmaker.get_status(self.user.id), {'status': 'none'})
-        self.assertEqual(list(self.matchmaker.queues[(self.model_id, None)]), [self.other])
-        self.matchmaker.register(self.user.id, self.model_id)
-        self.assertEqual(list(self.matchmaker.queues[(self.model_id, None)]), [self.other, self.user.id])
+        self.assertEqual(self.matchmaker.queues[(self.model_id, None)], [self.other_entry])
+        self.matchmaker.register(self.user.id, self.model_id, elo=1000)
+        other_entry, (user_id, _, elo) = self.matchmaker.queues[(self.model_id, None)]
+        self.assertEqual(other_entry, self.other_entry)
+        self.assertEqual((user_id, elo), (self.user.id, 1000))
 
     def test_cancel_removes_user_from_only_the_selected_model_queue(self):
         other_model_id = uuid4()
         third = uuid4()
-        self.matchmaker.register(third, other_model_id)
+        self.matchmaker.register(third, other_model_id, elo=1100)
+        [third_entry] = self.matchmaker.queues[(other_model_id, None)]
         self.assertEqual(self.client.delete('/match/queue').status_code, 204)
-        self.assertEqual(list(self.matchmaker.queues[(self.model_id, None)]), [self.other])
-        self.assertEqual(list(self.matchmaker.queues[(other_model_id, None)]), [third])
+        self.assertEqual(self.matchmaker.queues[(self.model_id, None)], [self.other_entry])
+        self.assertEqual(self.matchmaker.queues[(other_model_id, None)], [third_entry])
         self.assertEqual(self.matchmaker.queued_users, {self.other: (self.model_id, None), third: (other_model_id, None)})
 
     def test_user_can_choose_another_model_after_cancellation(self):
         other_model_id = uuid4()
         self.matchmaker.cancel(self.user.id)
-        self.matchmaker.register(self.user.id, other_model_id)
-        self.assertEqual(list(self.matchmaker.queues[(self.model_id, None)]), [self.other])
-        self.assertEqual(list(self.matchmaker.queues[(other_model_id, None)]), [self.user.id])
+        self.matchmaker.register(self.user.id, other_model_id, elo=1100)
+        self.assertEqual(self.matchmaker.queues[(self.model_id, None)], [self.other_entry])
+        [(user_id, _, elo)] = self.matchmaker.queues[(other_model_id, None)]
+        self.assertEqual((user_id, elo), (self.user.id, 1100))
 
     def test_match_winning_race_returns_conflict_and_keeps_assignment(self):
         self.matchmaker.cancel(self.user.id)
@@ -121,13 +130,13 @@ class CancellationTests(unittest.TestCase):
         from app.auth.dependencies import get_current_user
         del self.app.dependency_overrides[get_current_user]
         self.assertEqual(self.client.delete('/match/queue').status_code, 401)
-        self.assertEqual(list(self.matchmaker.queues[(self.model_id, None)]), [self.user.id, self.other])
+        self.assertEqual(self.matchmaker.queues[(self.model_id, None)], [self.caller_entry, self.other_entry])
 
     def test_delete_is_allowed_by_cors(self):
         from app.main import app
         from app.config import settings
         from fastapi.testclient import TestClient
-        response = TestClient(app).options('/match/queue', headers={
+        response = TestClient(app).options('/v1/match/queue', headers={
             'Origin': settings.frontend_url,
             'Access-Control-Request-Method': 'DELETE',
         })
@@ -140,19 +149,19 @@ class PairingTests(unittest.IsolatedAsyncioTestCase):
         matchmaker = Matchmaker()
         users = [uuid4(), uuid4()]
         for user in users:
-            matchmaker.register(user, uuid4())
+            matchmaker.register(user, uuid4(), elo=1000)
         with patch('app.services.matchmaking.GameEngine') as engine:
             await matchmaker.match_available_players()
             engine.assert_not_called()
         self.assertFalse(matchmaker.assignments)
         self.assertEqual(len(matchmaker.queued_users), 2)
 
-    async def test_each_arena_pairs_fifo_and_completion_cleans_up(self):
+    async def test_each_arena_pairs_eligible_players_in_order_and_completion_cleans_up(self):
         matchmaker = Matchmaker()
         model_a, model_b = uuid4(), uuid4()
         users = [uuid4() for _ in range(7)]
         for index, user in enumerate(users):
-            matchmaker.register(user, model_a if index % 2 == 0 else model_b)
+            matchmaker.register(user, model_a if index % 2 == 0 else model_b, elo=1000 + index)
 
         def fake_engine(match_id, players, model_id, challenge_day=None):
             return SimpleNamespace(match_id=match_id, players=players, model_id=model_id, devices={}, run=AsyncMock())
@@ -163,7 +172,8 @@ class PairingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(pairs, [(users[0], users[2]), (users[4], users[6]), (users[1], users[3])])
         self.assertEqual([call.args[2] for call in engine.call_args_list], [model_a, model_a, model_b])
         self.assertEqual(matchmaker.queued_users, {users[5]: (model_b, None)})
-        self.assertEqual(list(matchmaker.queues[(model_b, None)]), [users[5]])
+        [(queued_user, _, elo)] = matchmaker.queues[(model_b, None)]
+        self.assertEqual((queued_user, elo), (users[5], 1005))
         self.assertEqual(len(matchmaker.engines), 3)
         self.assertEqual(matchmaker.assignments[users[0]], matchmaker.assignments[users[2]])
         self.assertNotEqual(matchmaker.assignments[users[0]], matchmaker.assignments[users[1]])
@@ -172,6 +182,47 @@ class PairingTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(matchmaker.engines)
         self.assertFalse(matchmaker.tasks)
         self.assertEqual(matchmaker.get_status(users[5]), {'status': 'queued'})
+
+    async def test_pairs_within_elo_window_and_leaves_ineligible_player_queued(self):
+        matchmaker = Matchmaker()
+        first, ineligible, eligible = uuid4(), uuid4(), uuid4()
+        model_id = uuid4()
+        with patch('app.services.matchmaking.time.time', return_value=100.0):
+            matchmaker.register(first, model_id, elo=1000)
+            matchmaker.register(ineligible, model_id, elo=950)
+            matchmaker.register(eligible, model_id, elo=1049)
+            with patch('app.services.matchmaking.GameEngine') as engine, patch.object(matchmaker, 'start'):
+                await matchmaker.match_available_players()
+
+        engine.assert_called_once()
+        self.assertEqual(engine.call_args.args[1], (first, eligible))
+        self.assertEqual(matchmaker.queues[(model_id, None)], [(ineligible, 100.0, 950)])
+        self.assertEqual(matchmaker.queued_users, {ineligible: (model_id, None)})
+
+    async def test_elo_gap_of_50_requires_waiting_more_than_15_seconds(self):
+        matchmaker = Matchmaker()
+        first, second = uuid4(), uuid4()
+        model_id = uuid4()
+        with patch('app.services.matchmaking.time.time', return_value=100.0):
+            matchmaker.register(first, model_id, elo=1050)
+            matchmaker.register(second, model_id, elo=1000)
+        original_queue = matchmaker.queues[(model_id, None)].copy()
+
+        with patch('app.services.matchmaking.GameEngine') as engine, patch.object(matchmaker, 'start'):
+            # Bound clock reads so a matchmaking pass that retries the same pair fails promptly.
+            with patch('app.services.matchmaking.time.time', side_effect=[115.0] * 10):
+                await matchmaker.match_available_players()
+            engine.assert_not_called()
+            self.assertEqual(matchmaker.queues[(model_id, None)], original_queue)
+            self.assertEqual(matchmaker.queued_users, {first: (model_id, None), second: (model_id, None)})
+            self.assertFalse(matchmaker.assignments)
+
+            with patch('app.services.matchmaking.time.time', return_value=115.1):
+                await matchmaker.match_available_players()
+            engine.assert_called_once()
+            self.assertEqual(engine.call_args.args[1], (first, second))
+            self.assertFalse(matchmaker.queues[(model_id, None)])
+            self.assertFalse(matchmaker.queued_users)
 
 
 class QueueApiTests(unittest.TestCase):
@@ -202,12 +253,26 @@ class QueueApiTests(unittest.TestCase):
         self.client = TestClient(self.app)
         self.addCleanup(self.client.close)
 
+    def mock_rating_lookup(self, elo):
+        from app.models import Ladder, Rating
+
+        ladder = Ladder(id=uuid4(), slug=f"ladder-{self.model_id}")
+        ladder_result = MagicMock()
+        ladder_result.scalars.return_value.one_or_none.return_value = ladder
+        rating_result = MagicMock()
+        rating_result.scalar_one_or_none.return_value = Rating(
+            user_id=self.user.id, ladder_id=ladder.id, elo=elo,
+        )
+        self.session.execute.side_effect = [self.result, ladder_result, rating_result]
+
     def test_queue_body_selects_model_and_polling_sees_registration(self):
+        self.mock_rating_lookup(elo=1234)
         response = self.client.post('/v1/match/queue', json={'model_id': str(self.model_id)})
         self.assertEqual(response.status_code, 202)
         self.assertEqual(response.json(), {'status': 'queued'})
         self.assertEqual(self.client.get('/v1/match/status').json(), {'status': 'queued'})
-        self.assertEqual(list(self.matchmaker.queues[(self.model_id, None)]), [self.user.id])
+        [(user_id, _, elo)] = self.matchmaker.queues[(self.model_id, None)]
+        self.assertEqual((user_id, elo), (self.user.id, 1234))
 
     def test_invalid_or_missing_model_id_does_not_register(self):
         for body in [{}, {'model_id': 'invalid'}, {'model_id': None}]:
@@ -241,11 +306,16 @@ class QueueApiTests(unittest.TestCase):
         self.session.execute.assert_not_awaited()
 
     def test_duplicate_queue_request_preserves_original_arena(self):
-        self.matchmaker.register(self.user.id, uuid4())
+        original_model_id = uuid4()
+        self.matchmaker.register(self.user.id, original_model_id, elo=1100)
+        self.mock_rating_lookup(elo=1234)
         response = self.client.post('/v1/match/queue', json={'model_id': str(self.model_id)})
         self.assertEqual(response.status_code, 409)
         self.assertEqual(response.json()['code'], 'ALREADY_QUEUED')
-        self.assertNotIn(self.model_id, self.matchmaker.queues)
+        self.assertNotIn((self.model_id, None), self.matchmaker.queues)
+        [(user_id, _, elo)] = self.matchmaker.queues[(original_model_id, None)]
+        self.assertEqual((user_id, elo), (self.user.id, 1100))
+        self.assertEqual(self.matchmaker.queued_users, {self.user.id: (original_model_id, None)})
 
 
 class ByomPairingTests(unittest.TestCase):

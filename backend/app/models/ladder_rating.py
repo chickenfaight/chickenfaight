@@ -6,6 +6,9 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
 
+DEFAULT_ELO = 1000
+
+
 class Ladder(Base):
     __tablename__ = "ladders"
 
@@ -33,7 +36,7 @@ class Rating(Base):
     user_id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True)
     ladder_id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True)
 
-    elo: Mapped[int] = mapped_column(default=1000, server_default=text("1000"))
+    elo: Mapped[int] = mapped_column(default=DEFAULT_ELO, server_default=text(str(DEFAULT_ELO)))
     games_played: Mapped[int] = mapped_column(default=0, server_default=text("0"))
     wins: Mapped[int] = mapped_column(default=0, server_default=text("0"))
     losses: Mapped[int] = mapped_column(default=0, server_default=text("0"))
