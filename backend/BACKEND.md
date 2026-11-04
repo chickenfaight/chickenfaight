@@ -103,6 +103,7 @@ Cloud matchmaking keeps separate queues for each model UUID and daily challenge 
 
 - **BYOM queue** (implemented): `Matchmaker.byom_queue` holds `ByomEntry(user, device, size class, joined time)`, filled by `register_byom()` after the queue route checks the device (`app/api/matchmaking.py`). Each tick, `pair_byom()` (a pure function) pairs idle-device entries by size class (`app/services/bilc_rules.py`), widening to a neighboring class after `BYOM_WIDEN_AFTER` (30 s); the matchmaker reserves both devices before starting the engine, and `run_match` frees them again if the engine crashed. The `Matchmaker` and the app share one `BilcConnections`.
 - **Elo** is tracked per user and ladder. Unrated players enter the queue at 1000. Completed matches use K = 32 and calculate both updates from the pre-match ratings. Both rating changes are committed together after match history is saved. Forfeits and voids leave Elo unchanged.
+- **Leaderboards** read the current top 50 from each active ladder, ordered by Elo. Only tagged players with a recorded rated match on that ladder are eligible.
 
 ## Database schema (target)
 

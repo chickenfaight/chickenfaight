@@ -89,7 +89,7 @@ function isObject(data: unknown): data is Record<string, unknown> {
   return typeof data === "object" && data !== null;
 }
 
-// Search and profiles only ever return tagged users, so `tag` is required here.
+// Player listings and profiles only ever return tagged users, so `tag` is required here.
 export function parseUserPublic(data: unknown): UserPublic {
   if (!isObject(data) || typeof data.id !== "string" || typeof data.tag !== "string"
     || !optionalString(data.username) || !optionalString(data.avatar_url)) {
@@ -129,6 +129,26 @@ function parseRating(data: unknown): Rating {
     throw new Error("Invalid rating");
   }
   return data as Rating;
+}
+
+export type Ladder = { slug: string; display_name: string; kind: "cloud" | "byom" };
+export type LeaderboardEntry = { rank: number; user: UserPublic; rating: Rating };
+
+export function parseLadders(data: unknown): Ladder[] {
+  if (!Array.isArray(data)) throw new Error("Invalid ladders");
+  return data.map((item: unknown) => {
+    if (!isObject(item) || typeof item.slug !== "string" || typeof item.display_name !== "string"
+      || (item.kind !== "cloud" && item.kind !== "byom")) throw new Error("Invalid ladder");
+    return { slug: item.slug, display_name: item.display_name, kind: item.kind };
+  });
+}
+
+export function parseLeaderboard(data: unknown): LeaderboardEntry[] {
+  if (!Array.isArray(data)) throw new Error("Invalid leaderboard");
+  return data.map((item: unknown) => {
+    if (!isObject(item) || typeof item.rank !== "number") throw new Error("Invalid leaderboard entry");
+    return { rank: item.rank, user: parseUserPublic(item.user), rating: parseRating(item.rating) };
+  });
 }
 
 export function parseUserProfile(data: unknown): UserProfile {

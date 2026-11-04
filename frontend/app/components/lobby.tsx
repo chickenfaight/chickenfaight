@@ -62,10 +62,17 @@ export default function Lobby() {
             <span className="mt-2 block truncate text-xs text-zinc-300">{challenge?.topic?.topic ?? "One topic. A whole lot of opinions."}</span>
             <span className="mt-1 block truncate text-[11px] text-zinc-500">{challenge ? `Twist: ${challenge.twist.title}` : "A new twist every day."}</span>
           </Link>
-          {([
-            { title: "Your ladder", icon: "trophy", tag: "Per-model rankings", text: "Small steps. Big pecking order.", sub: "Make your mark on every model’s ladder.", color: "text-[#ff7882] bg-[#f04b58]/10" },
-            { title: "Bring your own model", icon: "chip", tag: "Home Grown Battles", text: "Got a model with something to prove?", sub: "Your machine. Your model. Our arena.", color: "text-[#b5a4d9] bg-[#b5a4d9]/10" },
-          ] as const).map((card) => <button key={card.title} onClick={() => setDetail(card.title)} className={`${panel} group p-4 xl:p-5 text-left hover:border-white/20 ${focus}`}><span className="flex items-center justify-between"><span className={`flex h-9 w-9 items-center justify-center rounded-xl ${card.color}`}><Icon name={card.icon} /></span><span className="text-[9px] text-zinc-500">{card.tag}</span></span><span className="mt-3 flex items-center justify-between text-sm font-bold">{card.title}<Icon name="arrow" className="h-4 w-4 text-zinc-500 group-hover:text-white" /></span><span className="mt-2 block text-xs text-zinc-300">{card.text}</span><span className="mt-1 block text-[11px] text-zinc-500">{card.sub}</span></button>)}
+          <Link href="/leaderboards" className={`${panel} group p-4 xl:p-5 text-left hover:border-white/20 ${focus}`}>
+            <span className="flex items-center justify-between"><span className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#f04b58]/10 text-[#ff7882]"><Icon name="trophy" /></span><span className="text-[9px] text-zinc-500">Per-model rankings</span></span>
+            <span className="mt-3 flex items-center justify-between text-sm font-bold">Leaderboards<Icon name="arrow" className="h-4 w-4 text-zinc-500 group-hover:text-white" /></span>
+            <span className="mt-2 block text-xs text-zinc-300">See the top 50 players in each arena.</span>
+          </Link>
+          <button onClick={() => setDetail("Bring your own model")} className={`${panel} group p-4 xl:p-5 text-left hover:border-white/20 ${focus}`}>
+            <span className="flex items-center justify-between"><span className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#b5a4d9]/10 text-[#b5a4d9]"><Icon name="chip" /></span><span className="text-[9px] text-zinc-500">Home Grown Battles</span></span>
+            <span className="mt-3 flex items-center justify-between text-sm font-bold">Bring your own model<Icon name="arrow" className="h-4 w-4 text-zinc-500 group-hover:text-white" /></span>
+            <span className="mt-2 block text-xs text-zinc-300">Got a model with something to prove?</span>
+            <span className="mt-1 block text-[11px] text-zinc-500">Your machine. Your model. Our arena.</span>
+          </button>
         </section>
         <footer className="flex shrink-0 items-center justify-between text-[10px] text-zinc-500"><span>All brains. A little bit of bird.</span><span>Chicken fAIght <span className="mx-2 text-zinc-700">/</span> Made for a good argument.</span></footer>
       </main>

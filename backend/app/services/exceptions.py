@@ -24,7 +24,9 @@ class MatchNotFoundError(ServiceError):
     pass
 
 class ArenaNotFoundError(ServiceError):
-    pass
+    def __init__(self, detail: str = "No active arena has that model ID."):
+        self.detail = detail
+        super().__init__(detail)
 
 class UserNotFoundError(ServiceError):
     def __init__(self, detail: str = "No player has that tag."):
