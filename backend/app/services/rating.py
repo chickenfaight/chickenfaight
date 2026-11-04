@@ -2,7 +2,7 @@ from typing import Optional
 import uuid
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.repositories.rating import RatingRepository
-from app.models import Rating
+from app.models import Rating, User
 from sqlalchemy import func, or_, select, update
 
 class RatingService:
@@ -35,4 +35,5 @@ class RatingService:
             user_rating.wins += 1
         elif result == "loss":
             user_rating.losses += 1
+        res = await self.session.execute(update(User).where(User.id == user_id).values(elo=new_elo).returning(User))
         return user_rating
