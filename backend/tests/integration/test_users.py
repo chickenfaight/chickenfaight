@@ -171,9 +171,12 @@ async def test_queue_allowed_with_tag(client, log_in, make_user, make_model, see
     log_in(user)
     model = await make_model()
     await seed_rating(user, model, 1234)
+    await seed_rating(user, await make_model(), 1800)
     response = await client.post("/v1/match/queue", json={"model_id": str(model.id)})
     assert response.status_code == 202
     assert response.json() == {"status": "queued"}
+    [(queued_user, _, elo)] = app.state.matchmaker.queues[(model.id, None)]
+    assert (queued_user, elo) == (user.id, 1234)
 
 
 @pytest.mark.parametrize("has_ladder", [True, False])

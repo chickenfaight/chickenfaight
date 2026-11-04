@@ -275,7 +275,8 @@ class QueueApiTests(unittest.TestCase):
         self.assertEqual((user_id, elo), (self.user.id, 1234))
 
     def test_invalid_or_missing_model_id_does_not_register(self):
-        for body in [{}, {'model_id': 'invalid'}, {'model_id': None}]:
+        # `model_id: null` is valid: it's Quick Queue.
+        for body in [{}, {'model_id': 'invalid'}]:
             with self.subTest(body=body):
                 response = self.client.post('/v1/match/queue', json=body)
                 self.assertEqual(response.status_code, 422)

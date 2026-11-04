@@ -47,7 +47,8 @@ async def queue_match(
         return matchmaker.get_status(user.id)
     if body.bilc_id is not None:
         raise ByomQueueInvalidError("Only the BYOM arena takes a device.")
-    await ArenaService(session).require_active(body.model_id)
+    if body.model_id is not None:
+        await ArenaService(session).require_active(body.model_id)
     challenge_day = None
     if body.daily:
         challenge_day = today()
