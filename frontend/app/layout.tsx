@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
+import FriendRequestsProvider from "./components/providers/friend-requests-provider";
 import SessionProvider from "./components/providers/session-provider";
 import "./globals.css";
 
@@ -24,7 +25,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       lang="en"
       className={`${geistSans.variable} ${geistMono.variable} dark h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col"><SessionProvider>{children}</SessionProvider></body>
+      <body className="min-h-full flex flex-col"><SessionProvider><FriendRequestsProvider>{children}</FriendRequestsProvider></SessionProvider></body>
     </html>
   );
 }

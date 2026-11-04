@@ -111,7 +111,13 @@ class UserService:
     async def get_profile(self, viewer: User, tag: str) -> UserProfile:
         """A player's public profile, as seen by `viewer`."""
         user = await self.get_by_tag(tag)
-        is_friend = await FriendRepository(self.session).is_friend(viewer.id, user.id)
+        friends = FriendRepository(self.session)
+        is_friend = await friends.is_friend(viewer.id, user.id)
+        friend_request = None
+        if await friends.request_exists(viewer.id, user.id):
+            friend_request = "sent"
+        elif await friends.request_exists(user.id, viewer.id):
+            friend_request = "received"
         
         # Fetch ratings only for the profile being requested
         statement = select(RatingM).where(RatingM.user_id == user.id)
@@ -129,6 +135,7 @@ class UserService:
 
         return UserProfile.model_validate(user).model_copy(update={
             "is_friend": is_friend,
+            "friend_request": friend_request,
             "streak": effective_streak(user, datetime.now(UTC)),
             "rank": await points_rank(self.session, user),
             "ratings": ratingsclean,

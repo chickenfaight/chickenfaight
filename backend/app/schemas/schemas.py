@@ -42,11 +42,19 @@ class Rating(BaseModel):
     losses: int
 
 
+class FriendshipStatus(BaseModel):
+    """How a player relates to the caller."""
+    is_friend: bool = False
+    # A pending request between them: "sent" by the caller, or "received" from this player.
+    friend_request: Literal["sent", "received"] | None = None
+
+
 class UserProfile(UserPublic):
     # Empty until the ratings table ships.
     ratings: list[Rating] = []
-    # Whether the caller has added this player as a friend.
+    # Whether this player and the caller are friends, and any pending request between them.
     is_friend: bool = False
+    friend_request: Literal["sent", "received"] | None = None
     # Daily-play rewards; `streak` already lapses to 0 after 48 hours without a finished match.
     points: int = 0
     streak: int = 0

@@ -59,7 +59,7 @@ bilc/              BYOM Interface Layer Client (Go CLI; partially built)
 | Public routes | Allowlist of 9 (`/health`, Google login/callback, password signup/login, logout, BILC register/token, which carry their credential in the body, and BILC's latest-release check), enforced by `tests/integration/test_route_auth.py`; API docs only in development | A new route can't ship public by accident |
 | Rate limits | In-memory token buckets: per signed-in user on routes that read other users' data or edit friends; per IP and per tag on password sign-in and signup | Slows scraping and password guessing; one process, like matchmaking |
 | Passwords | Sent as typed over HTTPS; the server stores a salted scrypt hash (stdlib); one generic error for every failed sign-in | A client-side hash would itself be the password; no account enumeration |
-| Friends | One-way adds; each list visible only to its owner | No approval flow; no scraping friend graphs |
+| Friends | Mutual: one player sends a request, the other accepts; any number of friends; each list visible only to its owner | Nobody becomes your friend without agreeing; no scraping friend graphs |
 | Tags vs usernames | Permanent unique `tag` (URLs, search, sign-in) plus a changeable, non-unique `username` (display) | Players can rename without breaking links or logins |
 | Daily challenge | PvP queue per model with a UTC-daily topic and an engine-enforced twist; points, streaks, and a once-a-day bonus recorded from saved match results | Same challenge for everyone; awards can't be double-counted |
 | Profile pictures | Uploads re-encoded to 256×256 WebP with Pillow and stored in Postgres (`avatars`) | Strips EXIF/GPS and disguised files; no separate file storage |

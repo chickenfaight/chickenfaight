@@ -226,6 +226,7 @@ async def test_profile_by_tag(client, log_in, make_user, db_session):
         "avatar_url": "https://lh3.googleusercontent.com/a/pic",
         "ratings": [],
         "is_friend": False,
+        "friend_request": None,
         "points": 0,
         "streak": 0,
         "rank": 1,

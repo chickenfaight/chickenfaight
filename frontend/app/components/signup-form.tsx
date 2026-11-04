@@ -92,7 +92,10 @@ export default function SignupForm() {
   }
 
   return (
-    <form onSubmit={onSubmit} noValidate className="mt-6">
+    <form
+      // Without this, a form submitted before the page's JavaScript loads puts the password in the URL.
+      method="post"
+      onSubmit={onSubmit} noValidate className="mt-6">
       {field("tag", "Tag", { autoComplete: "username", maxLength: 64, placeholder: "e.g. Rooster_42" }, "Permanent and unique: 3–24 letters, numbers, or underscores. You sign in with it.")}
       {field("username", "Username", { autoComplete: "nickname", maxLength: 64, placeholder: "How others see you" }, "Shown to other players. You can change it anytime.")}
       {field("password", "Password", { type: "password", autoComplete: "new-password", maxLength: MAX_PASSWORD }, `At least ${MIN_PASSWORD} characters.`)}

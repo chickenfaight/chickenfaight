@@ -149,6 +149,12 @@ class BilcDeviceNotFoundError(TagError):
     detail = "You have no device with that ID."
 
 
+class FriendRequestNotFoundError(TagError):
+    code = "NOT_FOUND"
+    status_code = 404
+    detail = "That friend request is no longer open."
+
+
 class BilcOfflineError(TagError):
     code = "BILC_OFFLINE"
     status_code = 409

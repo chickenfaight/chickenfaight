@@ -188,6 +188,56 @@ class ScriptedClient:
 
 
 
+class ArgumentLimitTests(unittest.IsolatedAsyncioTestCase):
+    def setUp(self):
+        self.player = uuid4()
+        with patch("app.engine.game_engine.OpenAIModelClient"):
+            self.engine = GameEngine(uuid4(), (self.player, uuid4()), uuid4())
+        self.engine.sides = {self.player: "pro", self.engine.players[1]: "con"}
+        self.engine.topic = SimpleNamespace(topic="T", pro_position="P", con_position="C")
+        self.engine.prompts = {self.player: "Strategy"}
+        self.engine.prompt_received[self.player].set()
+        self.socket = SimpleNamespace(send_json=AsyncMock())
+        self.engine.connections[self.player] = self.socket
+
+    def sent(self, kind):
+        return [call.args[0]["payload"] for call in self.socket.send_json.await_args_list if call.args[0]["type"] == kind]
+
+    async def test_limits_are_200_tokens_and_2000_characters(self):
+        self.assertEqual((self.engine.MAX_TOKENS, self.engine.MAX_ARGUMENT_CHARS), (200, 2000))
+        calls = []
+
+        async def stream(messages, max_tokens):
+            calls.append((messages, max_tokens))
+            yield "Fine."
+
+        self.engine.model_clients[self.player] = SimpleNamespace(stream=stream)
+        await self.engine.generate_arguments(self.player)
+        messages, max_tokens = calls[0]
+        self.assertEqual(max_tokens, 200)
+        self.assertIn("within 200 tokens", messages[0]["content"])
+
+    async def test_output_at_the_limit_is_untouched(self):
+        self.engine.model_clients[self.player] = ScriptedClient(["x" * 1999, "y"])
+        await self.engine.generate_arguments(self.player)
+        self.assertEqual(self.engine.arguments["pro"], "x" * 1999 + "y")
+
+    async def test_over_length_output_is_cut_and_the_turn_still_succeeds(self):
+        client = ScriptedClient(["x" * 1990, "y" * 20, "never read", "hang"])
+        self.engine.model_clients[self.player] = client
+        await asyncio.wait_for(self.engine.generate_arguments(self.player), 2)
+        self.assertEqual(self.engine.arguments["pro"], "x" * 1990 + "y" * 10)
+        # The browser sees exactly the kept text, then the normal end of the turn.
+        self.assertEqual("".join(p["delta"] for p in self.sent("TURN_DELTA")), self.engine.arguments["pro"])
+        self.assertEqual(self.sent("TURN_END"), [{}])
+        self.assertEqual(client.calls, 1)  # not a failure, so no retry
+
+    async def test_one_huge_delta_is_cut(self):
+        self.engine.model_clients[self.player] = ScriptedClient(["z" * 100_000])
+        await self.engine.generate_arguments(self.player)
+        self.assertEqual(len(self.engine.arguments["pro"]), 2000)
+
+
 class ModelFailureTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         self.players = (uuid4(), uuid4())

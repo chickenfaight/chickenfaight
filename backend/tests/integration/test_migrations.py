@@ -2,6 +2,7 @@
 
 import logging
 from collections.abc import Iterator
+from uuid import uuid4
 
 import pytest
 from alembic import command
@@ -52,6 +53,30 @@ def test_every_migration_downgrades_and_upgrades(engine):
         assert inspect(connection).get_table_names() == ["alembic_version"]
         command.upgrade(config, "heads")
     assert applied(engine) == HEADS
+
+
+def test_one_way_friends_become_requests_and_mutual_ones_stay_friends(engine):
+    ids = {name: str(uuid4()) for name in ("mutual_a", "mutual_b", "adder", "added")}
+    with engine.begin() as connection:
+        config = alembic_config(connection)
+        command.downgrade(config, "dfd89642550f")
+        for name, user_id in ids.items():
+            connection.execute(text("INSERT INTO users (id, google_sub) VALUES (:id, :sub)"), {"id": user_id, "sub": name})
+        rows = [("mutual_a", "mutual_b"), ("mutual_b", "mutual_a"), ("adder", "added")]
+        for user, friend in rows:
+            connection.execute(text("INSERT INTO friendships (user_id, friend_id) VALUES (:u, :f)"), {"u": ids[user], "f": ids[friend]})
+
+        command.upgrade(config, "heads")
+        friendships = connection.execute(text("SELECT user_id::text, friend_id::text FROM friendships")).all()
+        assert {tuple(row) for row in friendships} == {(ids["mutual_a"], ids["mutual_b"]), (ids["mutual_b"], ids["mutual_a"])}
+        requests = connection.execute(text("SELECT sender_id::text, receiver_id::text FROM friend_requests")).all()
+        assert [tuple(row) for row in requests] == [(ids["adder"], ids["added"])]
+
+        # Going back restores every row.
+        command.downgrade(config, "dfd89642550f")
+        restored = connection.execute(text("SELECT user_id::text, friend_id::text FROM friendships")).all()
+        assert {tuple(row) for row in restored} == {(ids[user], ids[friend]) for user, friend in rows}
+        command.upgrade(config, "heads")
 
 
 def test_migrating_a_current_database_keeps_data(engine, test_database_url):
