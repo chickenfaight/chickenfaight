@@ -160,6 +160,7 @@ class Matchmaker:
         self.check_free(user_id)
         if model_id is None:
             self.randomqueue.append((user_id, time.time()))
+            self.queued_users[user_id] = (None, challenge_day)
         else:
             key = (model_id, challenge_day)
             self.queues[key].append((user_id, time.time(), elo))

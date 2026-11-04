@@ -140,7 +140,7 @@ class TipsTip(BaseModel):
 
 
 class QueueRequest(BaseModel):
-    model_id: UUID
+    model_id: UUID | None
     daily: bool = False  # join today's daily-challenge queue for this model
     bilc_id: UUID | None = None  # required for, and only for, the BYOM arena
 

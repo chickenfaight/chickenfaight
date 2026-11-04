@@ -43,6 +43,7 @@ export default function MatchmakingCard({ daily = false, onChallengeDone }: { da
       try {
         const list = parseArenas(await api("/v1/arenas", controller.signal));
         if (controller.signal.aborted) return;
+		list.push({ id: "quick", display_name: "Quick Queue", kind: "provided" });
         setArenas(list);
         setSelectedId(previous => preferredArena(list, previous));
         setCatalogPhase("ready");
@@ -98,8 +99,8 @@ export default function MatchmakingCard({ daily = false, onChallengeDone }: { da
             if (parseQueueStatus(data).status === "none") {
               const model = joinModel.current;
               if (!model) throw new Error("No arena selected");
-              const body = daily ? { model_id: model.id, daily: true }
-                : model.kind === "byom" ? { model_id: model.id, bilc_id: joinDevice.current } : { model_id: model.id };
+              const body = model.id == "quick" ? {model_id: null} : (daily ? { model_id: model.id, daily: true }
+                : model.kind === "byom" ? { model_id: model.id, bilc_id: joinDevice.current } : { model_id: model.id });
               data = await api("/v1/match/queue", controller.signal, "POST", body);
               if (!controller.signal.aborted) setQueuedModel(model);
             } else {
