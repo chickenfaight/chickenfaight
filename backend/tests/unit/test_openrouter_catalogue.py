@@ -66,3 +66,19 @@ async def test_fetch_rejects_http_errors():
 def test_invalid_selected_models_or_catalogue_fail_before_import(payload):
     with pytest.raises(ValidationError):
         parse_free_models(payload)
+
+
+@pytest.mark.parametrize(("reasoning", "imported"), [
+    ({"mandatory": True}, False),
+    ({"mandatory": True, "default_effort": "max"}, False),
+    ({"mandatory": False}, True),
+    ({"mandatory": False, "default_enabled": True}, True),
+    ({}, True),
+    (None, True),
+])
+def test_models_that_must_reason_are_not_imported(reasoning, imported):
+    entry = {"id": "lab/model:free", "name": "Lab model", "pricing": {"prompt": "0", "completion": "0"}}
+    if reasoning is not None:
+        entry["reasoning"] = reasoning
+    assert bool(parse_free_models({"data": [entry]})) is imported
+

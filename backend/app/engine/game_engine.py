@@ -467,7 +467,7 @@ class GameEngine:
                 await self.stream_turn(player)
                 break
             except MODEL_ERRORS as exc:
-                logger.warning("Match %s: %s turn attempt %d failed: %r", self.match_id, side, attempt, exc)
+                logger.warning("Match %s: %s turn attempt %d on %s failed: %r", self.match_id, side, attempt, self.api_model_id, exc)
                 # Deltas already sent can't be taken back, so a retry would show the player duplicate text.
                 if self.arguments[side].strip() or attempt == self.MODEL_ATTEMPTS:
                     raise ModelFailure(side) from exc

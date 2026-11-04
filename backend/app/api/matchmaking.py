@@ -1,3 +1,4 @@
+import logging
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Request, Response, status
@@ -24,6 +25,8 @@ from app.services.exceptions import (
 from app.services.rewards import completed_challenge
 from app.services.user import require_tag
 from app.services.rating import RatingService
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/match", tags=["match"])
 SessionDependency = Annotated[AsyncSession, Depends(get_session)]
@@ -56,6 +59,8 @@ async def queue_match(
         res = await session.execute(select(Ladder).where(Ladder.slug == f"ladder-{body.model_id}"))
         ladder = res.scalars().one_or_none()
         if ladder is None:
+            # The model is fine, so without this the 404 would give no clue; it's a setup problem.
+            logger.warning("Model %s has no ladder, so it can't be queued for. Run `uv run python -m app.db.seed_ladders`.", body.model_id)
             raise ArenaNotFoundError()
         rating = await rating_service.get_rating(user.id, ladder.id)
     elo = rating.elo if rating is not None else DEFAULT_ELO

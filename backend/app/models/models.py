@@ -48,6 +48,9 @@ class Model(Base):
     max_output_tokens: Mapped[int | None] = mapped_column()
 
     is_active: Mapped[bool] = mapped_column(default=True, server_default=text("true"))
+    # Set when the importer deactivated this model for leaving the free catalogue, so it can come
+    # back when it returns. A model deactivated by hand has none, and stays off.
+    delisted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     provider_metadata: Mapped[dict[str, Any]] = mapped_column(
         JSONB, default=dict, server_default=text("'{}'::jsonb"),
     )

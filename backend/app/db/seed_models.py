@@ -8,6 +8,7 @@ from typing import Annotated, Any
 
 import httpx
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, ValidationError
+from sqlalchemy import case, select, true, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -60,12 +61,21 @@ class ModelCatalogue(BaseModel):
     data: list[dict[str, Any]]
 
 
+def requires_reasoning(model: dict[str, Any]) -> bool:
+    """Models that always reason can't play: hidden reasoning spends a turn's small token budget and
+    delays its first token, and OpenRouter rejects a request to turn it off."""
+    reasoning = model.get("reasoning")
+    return isinstance(reasoning, dict) and reasoning.get("mandatory") is True
+
+
 def parse_free_models(payload: object) -> list[OpenRouterModel]:
     catalogue = ModelCatalogue.model_validate(payload)
     return [
         OpenRouterModel.model_validate(model)
         for model in catalogue.data
-        if model.get("id") != "openrouter/free" and is_free_pricing(model.get("pricing"))
+        if model.get("id") != "openrouter/free"
+        and is_free_pricing(model.get("pricing"))
+        and not requires_reasoning(model)
     ]
 
 
@@ -123,19 +133,54 @@ async def import_models(session: AsyncSession, models: list[OpenRouterModel]) ->
             model_insert = insert(Model).values(provider_id=provider_id, **row)
             await session.execute(model_insert.on_conflict_do_update(
                 index_elements=[Model.provider_id, Model.api_model_id],
-                set_={key: getattr(model_insert.excluded, key) for key in row},
+                set_={
+                    **{key: getattr(model_insert.excluded, key) for key in row},
+                    # Free again after the importer delisted it. Otherwise its flag is left alone.
+                    "is_active": case((Model.delisted_at.is_not(None), true()), else_=Model.is_active),
+                    "delisted_at": None,
+                },
             ))
     return len(rows)
 
 
+async def delist_missing_models(session: AsyncSession, models: list[OpenRouterModel]) -> list[str]:
+    """Deactivate active OpenRouter models that are no longer importable (gone, paid, or always
+    reasoning), which would otherwise fail or start costing money, using a fresh session. Returns their names. Other providers are untouched."""
+    free_ids = {model.id for model in models if model.id != "openrouter/free" and model.is_free}
+    if not free_ids:
+        # An empty catalogue is far likelier to be a bad response than every model going paid at once.
+        return []
+    now = datetime.now(UTC)
+    statement = (
+        update(Model)
+        .where(
+            Model.provider_id == select(Provider.id).where(Provider.slug == "openrouter").scalar_subquery(),
+            Model.is_active.is_(True),
+            Model.api_model_id.not_in(free_ids),
+        )
+        .values(is_active=False, delisted_at=now, updated_at=now)
+        .returning(Model.display_name)
+    )
+    async with session.begin():
+        return list(await session.scalars(statement))
+
+
 async def main() -> None:
+    from app.db.seed_ladders import provision_ladders
     from app.db.session import SessionFactory, engine
 
     try:
         models = await fetch_free_models()
         async with SessionFactory() as session:
             count = await import_models(session, models)
-        print(f"Imported or updated {count} free model(s) under the OpenRouter provider.")
+        async with SessionFactory() as session:
+            delisted = await delist_missing_models(session, models)
+        async with SessionFactory() as session:
+            # A model can't be queued for without its ladder.
+            ladders = await provision_ladders(session)
+        print(f"Imported or updated {count} free model(s) under the OpenRouter provider; added {ladders} ladder(s).")
+        if delisted:
+            print(f"Deactivated {len(delisted)} model(s) no longer free or playable: {', '.join(sorted(delisted))}.")
     finally:
         await engine.dispose()
 

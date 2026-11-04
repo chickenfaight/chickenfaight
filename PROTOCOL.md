@@ -264,8 +264,8 @@ The model seed utility reads the public `GET https://openrouter.ai/api/v1/models
 catalogue without authentication or inference calls (implemented). Its `data` entries
 supply `id`, `name`, `pricing` (USD per token/request/unit), `context_length`, and
 `top_provider.max_completion_tokens`; additional metadata is retained. Only explicitly
-zero-priced entries are imported, excluding the `openrouter/free` router. Every imported model references the single
-`openrouter` provider row, regardless of the model's author.
+zero-priced entries are imported, excluding the `openrouter/free` router and models whose `reasoning.mandatory` is true, which reject `reasoning: { enabled: false }` and would spend a turn's tokens on hidden reasoning. Every imported model references the single
+`openrouter` provider row, regardless of the model's author. Active models that have left the free catalogue are deactivated, so they leave `GET /v1/arenas` and queueing for them returns 404 `NOT_FOUND`; they return if they become free again (implemented).
 
 Both the server (cloud models) and BILC (local model) speak the OpenAI Chat Completions API: `POST {base_url}/chat/completions` with `stream: true`, consuming SSE `choices[0].delta.content` chunks. Nothing else about a provider may be assumed.
 

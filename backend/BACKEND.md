@@ -99,7 +99,7 @@ The arena repository lists active `models` rows. `ArenaService.list_active()` va
 
 Cloud matchmaking keeps separate queues for each model UUID and daily challenge date. The queue endpoint checks that the model is active and its ladder exists. Each entry holds a user UUID, enqueue time, and Elo. A user can occupy one queue or match at a time. Each pass takes the first eligible pair in queue order. A pair qualifies if its Elo gap is under 50 or the earlier player has waited more than 15 seconds. When no pair qualifies, the queue waits for the next pass.
 
-Run `uv run python -m app.db.seed_ladders` from `backend/` after importing models to provision their ladders and the BYOM ladder. Queue requests for a cloud model whose ladder is missing return 404. The engine resolves the model UUID at startup to get the API model ID and display name. Inference uses the configured OpenRouter base URL and API key.
+`uv run python -m app.db.seed_models` provisions ladders after importing models (`provision_ladders` in `app/db/seed_ladders.py`, which adds any missing `ladder-{model id}` and the BYOM ladder, and leaves existing ones alone); `uv run python -m app.db.seed_ladders` does just that step. Queue requests for a cloud model whose ladder is missing return 404 and log a warning naming that command. The engine resolves the model UUID at startup to get the API model ID and display name. Inference uses the configured OpenRouter base URL and API key.
 
 - **BYOM queue** (implemented): `Matchmaker.byom_queue` holds `ByomEntry(user, device, size class, joined time)`, filled by `register_byom()` after the queue route checks the device (`app/api/matchmaking.py`). Each tick, `pair_byom()` (a pure function) pairs idle-device entries by size class (`app/services/bilc_rules.py`), widening to a neighboring class after `BYOM_WIDEN_AFTER` (30 s); the matchmaker reserves both devices before starting the engine, and `run_match` frees them again if the engine crashed. The `Matchmaker` and the app share one `BilcConnections`.
 - **Elo** is tracked per user and ladder. Unrated players enter the queue at 1000. Completed matches use K = 32 and calculate both updates from the pre-match ratings. Both rating changes are committed together after match history is saved. Forfeits and voids leave Elo unchanged.
@@ -112,7 +112,7 @@ Postgres. Constraint and index names come from the naming convention in `app/db/
 |---|---|---|
 | `users` (implemented) | `id` UUID, `google_sub?` unique (null for password-only accounts), `password_salt?`, `password_hash?` (scrypt, hex; null for Google-only accounts), `email?`, `tag?` unique on `lower(tag)` plus a `pg_trgm` GIN index on `lower(tag)` for search, `username?` (≤ 32, not unique), `avatar_url?`, `updated_at` | Drop `elo` when `ratings` ships; `tag` is permanent and `username` changeable (see below) |
 | `providers` (implemented) | `id` UUID, `slug` unique, `display_name`, `base_url`, `adapter`, `is_active`, `updated_at` | `adapter` uses `InferenceAdapter`, stored as VARCHAR + CHECK; currently only `openai_compatible`. Credentials and inference wiring remain in server configuration / PLANNED integration |
-| `models` (implemented) | `id` UUID, `provider_id`, `api_model_id`, `display_name`, `input_cost?`, `output_cost?`, `cached_input_cost?`, `pricing_updated_at?`, `context_window?`, `max_output_tokens?`, `is_active`, `provider_metadata` JSONB, `updated_at` | Unique `(provider_id, api_model_id)`; costs are nonnegative NUMERIC(20,10) USD per million tokens (null = unknown, zero = free); token limits are positive when set. UUID-based argument model selection is implemented; provider-specific connection settings remain PLANNED |
+| `models` (implemented) | `id` UUID, `provider_id`, `api_model_id`, `display_name`, `input_cost?`, `output_cost?`, `cached_input_cost?`, `pricing_updated_at?`, `context_window?`, `max_output_tokens?`, `is_active`, `delisted_at?`, `provider_metadata` JSONB, `updated_at` | Unique `(provider_id, api_model_id)`; costs are nonnegative NUMERIC(20,10) USD per million tokens (null = unknown, zero = free); token limits are positive when set. UUID-based argument model selection is implemented; provider-specific connection settings remain PLANNED |
 | `ladders` | `id` UUID, `slug` unique, `display_name`, `kind` (`cloud`/`byom`), `provider_model_id?`, `is_active`, `provider_metadata` JSONB | Exactly one `byom` row |
 | `ratings` | PK(`user_id`, `ladder_id`), `elo` = 1000, `games_played`, `wins`, `losses`, `updated_at` | Created on first queue |
 | `avatars` (implemented) | `user_id` PK, FK to `users` with `ON DELETE CASCADE`; `image` (256×256 WebP bytes) | Uploaded pictures, kept out of `users` so loading a user never loads image bytes. `process_avatar()` (`app/services/avatars.py`, Pillow) decodes, checks format and pixel count, applies EXIF rotation, crops, and re-encodes every upload, which strips metadata and anything disguised as an image. Google sign-in only updates `avatar_url` while there's no upload |
@@ -174,7 +174,7 @@ Alembic migrations live in `app/db/migrations/versions/` (config in `pyproject.t
 | Local DB is in a strange state | — | `uv run python -m app.db.migrate --reset` (development only) |
 | Production | Migrations run on startup; never auto-reset (`APP_ENV` unset) | Run one server process; concurrent startups would race on migrations |
 
-The temporary topic importer lives in `app/db/seed.py`; ladder seeding is PLANNED.
+The temporary topic importer lives in `app/db/seed.py`.
 Migrations create the `topics` table; from `backend/`, run
 `uv run python -m app.db.seed topics.example.txt`.
 New topics are active by default; pass `--inactive` to add inactive topics. Each UTF-8 line is
@@ -188,14 +188,12 @@ The OpenRouter model importer is `uv run python -m app.db.seed_models` from `bac
 after migrations have run. Catalogue fetching, validation, and database writes all live in
 `app/db/seed_models.py`; it reads the public catalogue without an API key or inference requests. Only models with explicit zero prompt and
 completion prices and zero for every other supplied price are imported; missing token
-prices, dynamic pricing, and the `openrouter/free` router are excluded. Names, exact API IDs, context/output limits,
+prices, dynamic pricing, the `openrouter/free` router, and models whose `reasoning.mandatory` is true are excluded (they reject `reasoning: { enabled: false }`, and hidden reasoning would use up a turn's tokens). Names, exact API IDs, context/output limits,
 and validated provider metadata are stored; token prices are converted from USD per
 token to USD per million tokens, with a refresh timestamp. Missing cache prices remain null.
 One transaction upserts a single provider (`slug=openrouter`, OpenRouter API base URL,
 `adapter=openai_compatible`) and models by `(provider_id, api_model_id)`, preserving their
-UUIDs and existing activation flags. New rows are active. Other providers and models
-no longer in the free catalogue are left unchanged; this is a seed/refresh utility,
-not automatic availability synchronization. Model authors never get provider rows.
+UUIDs and existing activation flags. New rows are active. Active OpenRouter models that are no longer importable are deactivated and given `delisted_at`, and they return, with the same UUID, when a later run finds them free again; a model deactivated by hand has no `delisted_at`, so it stays off. An empty catalogue deactivates nothing, and other providers are unchanged. This only happens when the command runs; it isn't automatic availability synchronization. Model authors never get provider rows.
 
 Code can call `await import_topics(session, path, is_active=True)` with a fresh session
 and a `pathlib.Path`. `TopicRepository` provides add, ID/content lookup, and random
