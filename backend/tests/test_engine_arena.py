@@ -188,6 +188,22 @@ class ScriptedClient:
 
 
 
+async def test_a_failed_cloud_turn_waits_before_retrying(monkeypatch):
+    # conftest removes the delay for speed; put it back to see the engine use it.
+    monkeypatch.setattr(GameEngine, "RETRY_DELAY", 3)
+    player = uuid4()
+    with patch("app.engine.game_engine.OpenAIModelClient"):
+        engine = GameEngine(uuid4(), (player, uuid4()), uuid4())
+    engine.sides = {player: "pro", engine.players[1]: "con"}
+    engine.topic = SimpleNamespace(topic="T", pro_position="P", con_position="C")
+    engine.prompts = {player: "Strategy"}
+    engine.model_clients[player] = ScriptedClient([ValueError("rate limited")], ["Second try."])
+    with patch("app.engine.game_engine.asyncio.sleep", new=AsyncMock()) as sleep:
+        await engine.generate_cloud_argument(player)
+    sleep.assert_awaited_once_with(3)
+    assert engine.arguments["pro"] == "Second try."
+
+
 class ArgumentLimitTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         self.player = uuid4()
@@ -215,7 +231,7 @@ class ArgumentLimitTests(unittest.IsolatedAsyncioTestCase):
         await self.engine.generate_arguments(self.player)
         messages, max_tokens = calls[0]
         self.assertEqual(max_tokens, 200)
-        self.assertIn("within 200 tokens", messages[0]["content"])
+        self.assertIn("under 120 words", messages[0]["content"])
 
     async def test_output_at_the_limit_is_untouched(self):
         self.engine.model_clients[self.player] = ScriptedClient(["x" * 1999, "y"])

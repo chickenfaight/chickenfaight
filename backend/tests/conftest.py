@@ -12,11 +12,17 @@ from app.auth.dependencies import get_current_user
 from app.config import settings
 from app.db.migrate import migrate, reset
 from app.db.session import get_session
+from app.engine.game_engine import GameEngine
 from app.main import app
 from app.models import InferenceAdapter, Ladder, Model, Provider, Rating, User
 from app.services.bilc_connections import BilcConnections
 from app.services.bilc_releases import BilcReleases
 from app.services.matchmaking import Matchmaker
+
+
+@pytest.fixture(autouse=True)
+def no_retry_delay(monkeypatch):
+    monkeypatch.setattr(GameEngine, "RETRY_DELAY", 0)
 
 
 @pytest.fixture(autouse=True)

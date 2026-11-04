@@ -1,0 +1,11 @@
+# Models offered as arenas: `uv run python -m app.db.seed_models` deactivates every other model.
+# List a model only after playing real turns on it: two at once, as in a match, that finish a sentence,
+# stay on their side, and don't refuse. Listed models must also still be free (the importer checks).
+# One OpenRouter model ID per line; blank lines and `#` comments are ignored.
+# Last tested 2026-11-04, two rounds of two simultaneous turns each.
+cohere/north-mini-code:free
+dots-studio/dots-3-note-preview:free
+nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free
+nvidia/nemotron-3-ultra-550b-a55b:free
+nvidia/nemotron-3.5-lightning:free
+nvidia/nemotron-3.5-super-vl:free

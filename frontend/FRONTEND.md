@@ -96,7 +96,7 @@ Do not: add light mode; use colored or gradient fills (no purple/indigo/blue "AI
 - Shared components in `app/components/`, one per file, kebab-case filename, default-exported PascalCase component.
 - Non-UI code in `app/lib/`: `auth.ts` (`backendUrl`), `api.ts` (one fetch wrapper: `credentials: "include"`, timeout, optional JSON body, parses the PROTOCOL error envelope into `ApiError { status, code, detail }`), `protocol.ts` (TypeScript types mirroring PROTOCOL.md, kept in sync by hand).
 - Never hard-code the backend URL; use `backendUrl`. Env vars exposed to the browser must be `NEXT_PUBLIC_*` and must not be secrets.
-- Every `<form>` has `method="post"`, even with an `onSubmit` handler. A form with no method submits as GET if it's used before the page's JavaScript loads, which puts its fields, passwords included, in the URL. `/login` and `/signup` also redirect away any old URL holding a `password`.
+- A `<form>` rendered before the page's JavaScript loads, with named fields that are private, has `method="post"`, even with an `onSubmit` handler. With no method it submits as GET if used too early, which puts its fields, passwords included, in the URL. `/login` and `/signup` also redirect away any old URL holding a `password`.
 - Every fetch/socket/timer is cleaned up on unmount (`AbortController`, `close()`), as in `login-status.tsx`.
 - Style with Tailwind classes inline. No CSS modules or new global CSS beyond tokens in `globals.css`.
 

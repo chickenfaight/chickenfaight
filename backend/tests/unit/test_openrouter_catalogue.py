@@ -7,7 +7,9 @@ from app.db.seed_models import (
     OPENROUTER_BASE_URL,
     fetch_free_models,
     is_free_pricing,
+    only_arena_models,
     parse_free_models,
+    read_arena_models,
 )
 
 
@@ -81,4 +83,20 @@ def test_models_that_must_reason_are_not_imported(reasoning, imported):
     if reasoning is not None:
         entry["reasoning"] = reasoning
     assert bool(parse_free_models({"data": [entry]})) is imported
+
+
+def test_arena_list_keeps_only_listed_models(tmp_path):
+    listed = tmp_path / "models.txt"
+    listed.write_text("# comment\n\nlab/good:free\n  lab/also:free  \n", encoding="utf-8")
+    allowed = read_arena_models(listed)
+    assert allowed == {"lab/good:free", "lab/also:free"}
+    models = parse_free_models({"data": [
+        {"id": model_id, "name": model_id, "pricing": {"prompt": "0", "completion": "0"}}
+        for model_id in ("lab/good:free", "lab/unvetted:free")
+    ]})
+    assert [model.id for model in only_arena_models(models, allowed)] == ["lab/good:free"]
+
+
+def test_the_committed_arena_list_is_not_empty():
+    assert read_arena_models()
 

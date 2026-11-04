@@ -4,6 +4,7 @@ import asyncio
 import sys
 from datetime import UTC, datetime
 from decimal import Decimal
+from pathlib import Path
 from typing import Annotated, Any
 
 import httpx
@@ -79,6 +80,19 @@ def parse_free_models(payload: object) -> list[OpenRouterModel]:
     ]
 
 
+# The models tested to work as arenas; see the comments in the file.
+ARENA_MODELS_FILE = Path(__file__).with_name("arena_models.txt")
+
+
+def read_arena_models(path: Path = ARENA_MODELS_FILE) -> set[str]:
+    lines = (line.strip() for line in path.read_text(encoding="utf-8").splitlines())
+    return {line for line in lines if line and not line.startswith("#")}
+
+
+def only_arena_models(models: list[OpenRouterModel], allowed: set[str]) -> list[OpenRouterModel]:
+    return [model for model in models if model.id in allowed]
+
+
 async def fetch_free_models() -> list[OpenRouterModel]:
     async with httpx.AsyncClient(timeout=30) as client:
         response = await client.get(f"{OPENROUTER_BASE_URL}/models")
@@ -144,8 +158,8 @@ async def import_models(session: AsyncSession, models: list[OpenRouterModel]) ->
 
 
 async def delist_missing_models(session: AsyncSession, models: list[OpenRouterModel]) -> list[str]:
-    """Deactivate active OpenRouter models that are no longer importable (gone, paid, or always
-    reasoning), which would otherwise fail or start costing money, using a fresh session. Returns their names. Other providers are untouched."""
+    """Deactivate active OpenRouter models not among `models` (unvetted, gone, paid, or always
+    reasoning), which could fail or start costing money, using a fresh session. Returns their names. Other providers are untouched."""
     free_ids = {model.id for model in models if model.id != "openrouter/free" and model.is_free}
     if not free_ids:
         # An empty catalogue is far likelier to be a bad response than every model going paid at once.
@@ -170,7 +184,7 @@ async def main() -> None:
     from app.db.session import SessionFactory, engine
 
     try:
-        models = await fetch_free_models()
+        models = only_arena_models(await fetch_free_models(), read_arena_models())
         async with SessionFactory() as session:
             count = await import_models(session, models)
         async with SessionFactory() as session:
@@ -180,7 +194,7 @@ async def main() -> None:
             ladders = await provision_ladders(session)
         print(f"Imported or updated {count} free model(s) under the OpenRouter provider; added {ladders} ladder(s).")
         if delisted:
-            print(f"Deactivated {len(delisted)} model(s) no longer free or playable: {', '.join(sorted(delisted))}.")
+            print(f"Deactivated {len(delisted)} model(s) not in arena_models.txt, no longer free, or unplayable: {', '.join(sorted(delisted))}.")
     finally:
         await engine.dispose()
 

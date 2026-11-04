@@ -51,7 +51,7 @@ uv run python -m app.db.seed_models
 
 This also creates each model's ladder, which it can't be played without. If every cloud model says "That arena is no longer available" and the backend logs "has no ladder", your models predate this step: run `uv run python -m app.db.seed_ladders`, or this command again.
 
-Re-running updates existing models without duplicates, deactivates models no longer free or that always reason (they return if that changes), and leaves models you deactivated by hand off. Run it again if a model starts failing with "the debate model failed". All imported models belong
+Only the models tested to work, listed in `app/db/arena_models.txt`, are imported. To add one, test it with real turns first (the file says how) and add its ID. Re-running updates existing models without duplicates, deactivates models that are unlisted, no longer free, or that always reason (they return if that changes), and leaves models you deactivated by hand off. Run it again if a model starts failing with "the debate model failed". All imported models belong
 to a single provider row with slug `openrouter`; model authors are not providers.
 See [backend/BACKEND.md](backend/BACKEND.md) for filtering and update behavior.
 

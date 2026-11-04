@@ -193,7 +193,7 @@ and validated provider metadata are stored; token prices are converted from USD 
 token to USD per million tokens, with a refresh timestamp. Missing cache prices remain null.
 One transaction upserts a single provider (`slug=openrouter`, OpenRouter API base URL,
 `adapter=openai_compatible`) and models by `(provider_id, api_model_id)`, preserving their
-UUIDs and existing activation flags. New rows are active. Active OpenRouter models that are no longer importable are deactivated and given `delisted_at`, and they return, with the same UUID, when a later run finds them free again; a model deactivated by hand has no `delisted_at`, so it stays off. An empty catalogue deactivates nothing, and other providers are unchanged. This only happens when the command runs; it isn't automatic availability synchronization. Model authors never get provider rows.
+UUIDs and existing activation flags. New rows are active. Only models listed in `app/db/arena_models.txt` are imported: free models come and go and many can't play (rate-limited shared pools, classifiers, music generators), so a model is added only after real test turns. Active OpenRouter models that are unlisted or no longer importable are deactivated and given `delisted_at`, and they return, with the same UUID, when a later run finds them free again; a model deactivated by hand has no `delisted_at`, so it stays off. An empty catalogue deactivates nothing, and other providers are unchanged. This only happens when the command runs; it isn't automatic availability synchronization. Model authors never get provider rows.
 
 Code can call `await import_topics(session, path, is_active=True)` with a fresh session
 and a `pathlib.Path`. `TopicRepository` provides add, ID/content lookup, and random

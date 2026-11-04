@@ -23,7 +23,7 @@ def with_psycopg_driver(database_url: str) -> str:
 
 
 # Free on OpenRouter and supports response schemas (needed by the judge).
-DEFAULT_OPENROUTER_MODEL = "nvidia/nemotron-3-super-120b-a12b:free"
+DEFAULT_OPENROUTER_MODEL = "nvidia/nemotron-3.5-super-vl:free"
 
 
 @dataclass(frozen=True)
