@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import AddFriendButton from "../../components/add-friend";
+import FriendRequests from "../../components/friend-requests";
 import ProfileEditor from "../../components/profile-editor";
 import Avatar from "../../components/avatar";
 import AppShell from "../../components/app-shell";
@@ -86,6 +87,16 @@ async function ownFriends(): Promise<UserPage | null> {
   }
 }
 
+// The signed-in player's pending requests in one direction; null if they couldn't be loaded.
+async function ownRequests(direction: "incoming" | "outgoing"): Promise<UserPage | null> {
+  try {
+    const response = await backendGet(`/v1/friends/requests?direction=${direction}&limit=${FRIENDS_SHOWN}`);
+    return response.ok ? parseUserPage(await response.json()) : null;
+  } catch {
+    return null;
+  }
+}
+
 function Friends({ friends }: { friends: UserPage | null }) {
   return (
     <section aria-labelledby="friends-title" className={`${panel} col-span-2 p-6`}>
@@ -93,7 +104,7 @@ function Friends({ friends }: { friends: UserPage | null }) {
       {friends === null ? (
         <p className="text-sm text-zinc-500">Couldn’t load your friends. Try again in a moment.</p>
       ) : friends.items.length === 0 ? (
-        <p className="text-sm text-zinc-500">No friends yet. Find players with the search above and add them from their profile.</p>
+        <p className="text-sm text-zinc-500">No friends yet. Find players with the search above and send a request from their profile.</p>
       ) : (
         <>
           <ul className="grid grid-cols-2 gap-3 xl:grid-cols-3">
@@ -117,9 +128,9 @@ function Stat({ label, value }: { label: string; value: string }) {
   return <div><p className="text-[10px] text-zinc-400">{label}</p><p className="mt-1 text-2xl font-bold tracking-tight">{value}</p></div>;
 }
 
-type ProfileProps = { profile: UserProfile; me: User | null; friends: UserPage | null };
+type ProfileProps = { profile: UserProfile; me: User | null; friends: UserPage | null; incoming: UserPage | null; outgoing: UserPage | null };
 
-function Profile({ profile, me, friends }: ProfileProps) {
+function Profile({ profile, me, friends, incoming, outgoing }: ProfileProps) {
   const meId = me?.id ?? null;
   const games = profile.ratings.reduce((sum, rating) => sum + rating.games_played, 0);
   const wins = profile.ratings.reduce((sum, rating) => sum + rating.wins, 0);
@@ -135,7 +146,7 @@ function Profile({ profile, me, friends }: ProfileProps) {
           <p className="mt-1 truncate text-sm text-zinc-400"><span className="sr-only">Tag: </span>{profile.tag}</p>
           {meId === profile.id && me?.email && <p className="mt-2 truncate text-xs text-zinc-500">{me.email} <span className="text-zinc-600">· only you can see this</span></p>}
           {meId === profile.id && <ProfileEditor username={profile.username} avatarUrl={profile.avatar_url} />}
-          {meId && meId !== profile.id && <AddFriendButton userId={profile.id} initialIsFriend={profile.is_friend} />}
+          {meId && meId !== profile.id && <AddFriendButton key={profile.id} userId={profile.id} initialIsFriend={profile.is_friend} initialRequest={profile.friend_request} />}
         </div>
       </section>
       <section aria-labelledby="record-title" className={`${panel} p-6`}>
@@ -156,6 +167,7 @@ function Profile({ profile, me, friends }: ProfileProps) {
           </div>
         )}
       </section>
+      {meId === profile.id && <FriendRequests incoming={incoming} outgoing={outgoing} shown={FRIENDS_SHOWN} />}
       {meId === profile.id && <Friends friends={friends} />}
     </div>
   );
@@ -167,12 +179,15 @@ export default async function ProfilePage({ params }: PageProps<"/profile/[tag]"
   if (tag === "me") await redirectToOwnProfile();
   const [result, me] = await Promise.all([lookUp(tag), viewer()]);
   const meId = me?.id ?? null;
-  const friends = result.status === "found" && meId === result.profile.id ? await ownFriends() : null;
+  const own = result.status === "found" && meId === result.profile.id;
+  const [friends, incoming, outgoing] = own
+    ? await Promise.all([ownFriends(), ownRequests("incoming"), ownRequests("outgoing")])
+    : [null, null, null];
 
   return (
     <AppShell header={<SiteHeader />}>
       <main className="mx-auto w-full max-w-[1100px] flex-1 px-6 py-10 xl:px-10">
-        {result.status === "found" ? <Profile profile={result.profile} me={me} friends={friends} /> : (
+        {result.status === "found" ? <Profile profile={result.profile} me={me} friends={friends} incoming={incoming} outgoing={outgoing} /> : (
           <section aria-labelledby="profile-title" className={`${panel} p-9`}>
             <h1 id="profile-title" className="text-xl font-bold">{result.status === "missing" ? "Player not found" : "Profile unavailable"}</h1>
             <p className="mt-2 truncate text-sm text-zinc-500">

@@ -1,6 +1,6 @@
 // `tag` is the permanent unique identifier (set once); `username` is the changeable display name.
 // `email` is private: only `/auth/me` returns it, to its owner.
-export type User = { id: string; tag: string | null; username: string | null; email: string | null; elo: number };
+export type User = { id: string; tag: string | null; username: string | null; email: string | null };
 
 export type ArenaStats = { points: number; debates_played: number; wins: number; win_rate: number | null; recent_form: ("W" | "L")[] };
 
@@ -19,12 +19,12 @@ function optionalString(value: unknown): value is string | null {
 }
 
 export function parseUser(data: unknown): User {
-  if (typeof data !== "object" || data === null || !("id" in data) || !("elo" in data) || !("tag" in data) || !("username" in data)
-    || typeof data.id !== "string" || typeof data.elo !== "number"
+  if (typeof data !== "object" || data === null || !("id" in data) || !("tag" in data) || !("username" in data)
+    || typeof data.id !== "string"
     || !optionalString(data.tag) || !optionalString(data.username) || !("email" in data) || !optionalString(data.email)) {
     throw new Error("Invalid user");
   }
-  return { id: data.id, tag: data.tag, username: data.username, email: data.email, elo: data.elo };
+  return { id: data.id, tag: data.tag, username: data.username, email: data.email };
 }
 
 // What to call a player: their username, or their tag if they haven't set one.
@@ -110,7 +110,18 @@ export function parseUserPage(data: unknown): UserPage {
 }
 
 export type Rating = { ladder: string; elo: number; games_played: number; wins: number; losses: number };
-export type UserProfile = UserPublic & { ratings: Rating[]; is_friend: boolean; points: number; streak: number; rank: number | null };
+// A pending friend request between the caller and a player: "sent" by the caller, or "received" from them.
+export type FriendRequestState = "sent" | "received" | null;
+export type UserProfile = UserPublic & { ratings: Rating[]; is_friend: boolean; friend_request: FriendRequestState; points: number; streak: number; rank: number | null };
+
+function isFriendRequestState(value: unknown): value is FriendRequestState {
+  return value === null || value === "sent" || value === "received";
+}
+
+export function parseFriendshipStatus(data: unknown): { is_friend: boolean; friend_request: FriendRequestState } {
+  if (!isObject(data) || typeof data.is_friend !== "boolean" || !isFriendRequestState(data.friend_request)) throw new Error("Invalid friendship status");
+  return { is_friend: data.is_friend, friend_request: data.friend_request };
+}
 
 function parseRating(data: unknown): Rating {
   if (!isObject(data) || typeof data.ladder !== "string"
@@ -121,11 +132,11 @@ function parseRating(data: unknown): Rating {
 }
 
 export function parseUserProfile(data: unknown): UserProfile {
-  if (!isObject(data) || !Array.isArray(data.ratings) || typeof data.is_friend !== "boolean"
+  if (!isObject(data) || !Array.isArray(data.ratings) || typeof data.is_friend !== "boolean" || !isFriendRequestState(data.friend_request)
     || typeof data.points !== "number" || typeof data.streak !== "number" || !(data.rank === null || typeof data.rank === "number")) {
     throw new Error("Invalid profile");
   }
-  return { ...parseUserPublic(data), ratings: data.ratings.map(parseRating), is_friend: data.is_friend, points: data.points, streak: data.streak, rank: data.rank };
+  return { ...parseUserPublic(data), ratings: data.ratings.map(parseRating), is_friend: data.is_friend, friend_request: data.friend_request, points: data.points, streak: data.streak, rank: data.rank };
 }
 
 // The daily challenge's twist, as announced in MATCH_STATE and GET /v1/challenge/today.

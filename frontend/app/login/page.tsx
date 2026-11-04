@@ -11,7 +11,9 @@ export const metadata: Metadata = {
   description: "Sign in to Chickenfaight.",
 };
 
-export default async function LoginPage() {
+export default async function LoginPage({ searchParams }: PageProps<"/login">) {
+  // An old bookmark or history entry from when this form could submit as GET: get it out of the address bar.
+  if ("password" in await searchParams) redirect("/login");
   // Already signed in with a valid session: skip the login screen.
   if (await serverSession() === "in") redirect("/");
   return (

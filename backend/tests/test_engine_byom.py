@@ -132,6 +132,15 @@ async def test_device_error_forfeits_that_side_only(match):
         assert browser.types()[-1] == "MATCH_RESULT"
 
 
+async def test_a_device_ignoring_the_limits_is_cut_off_without_forfeiting(match):
+    requests = await match.start({"pro": [["x" * 5000, "more", "and more"]], "con": [["Fares ", "fund it."]]})
+    await match.run()
+    assert requests["pro"][0]["max_tokens"] == 200
+    assert len(match.engine.arguments["pro"]) == 2000
+    assert match.engine.result["status"] == "completed"
+    assert match.connections.status(match.device("pro").device_id) == "idle"
+
+
 async def test_silent_device_times_out_and_forfeits(match):
     await match.start({"pro": [None], "con": [["Fares ", "fund it."]]})
     match.engine.FIRST_TOKEN_TIMEOUT = 0.2

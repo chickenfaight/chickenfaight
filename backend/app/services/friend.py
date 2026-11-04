@@ -1,17 +1,19 @@
+from typing import Literal
 from uuid import UUID
 
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.user import User
 from app.repositories.friend import FriendRepository
 from app.repositories.user import UserRepository
-from app.schemas import FriendsPage, UserPublic
-from app.services.exceptions import FriendSelfError, UserNotFoundError
+from app.schemas import FriendshipStatus, FriendsPage, UserPublic
+from app.services.exceptions import FriendRequestNotFoundError, FriendSelfError, UserNotFoundError
+from app.services.user import require_tag
 
 
 class FriendService:
-    """Friends lists. Every method acts on the caller's own list, so no one can read or edit another's.
+    """Friends and friend requests. A friendship needs both players: one asks, the other accepts.
+    Every method acts on the caller's own relationships, so no one can read or edit another's.
 
     These run on `CurrentUserDependency` routes, where loading the user already began the
     session's transaction, so writes finish it with `commit()` instead of `begin()`.
@@ -25,26 +27,70 @@ class FriendService:
     async def list_friends(self, user: User, limit: int, offset: int) -> FriendsPage:
         # Fetch one extra row to learn whether another page exists.
         found = await self.friends.list_friends(user.id, limit + 1, offset)
+        return self.page(found, limit, offset)
+
+    async def list_requests(
+        self, user: User, direction: Literal["incoming", "outgoing"], limit: int, offset: int,
+    ) -> FriendsPage:
+        listing = self.friends.list_incoming if direction == "incoming" else self.friends.list_outgoing
+        return self.page(await listing(user.id, limit + 1, offset), limit, offset)
+
+    async def status(self, user: User, other_id: UUID) -> FriendshipStatus:
+        """How `other_id` relates to the caller."""
+        if await self.friends.is_friend(user.id, other_id):
+            return FriendshipStatus(is_friend=True)
+        if await self.friends.request_exists(user.id, other_id):
+            return FriendshipStatus(is_friend=False, friend_request="sent")
+        if await self.friends.request_exists(other_id, user.id):
+            return FriendshipStatus(is_friend=False, friend_request="received")
+        return FriendshipStatus(is_friend=False)
+
+    async def send_request(self, user: User, receiver_id: UUID) -> FriendshipStatus:
+        """Ask to be friends. Asking a current friend changes nothing, and asking someone who
+        already asked you accepts: you both want it."""
+        # The receiver will be shown the sender, and players without a tag can't be displayed.
+        require_tag(user)
+        if receiver_id == user.id:
+            raise FriendSelfError()
+        # Untagged users are invisible elsewhere (search, profiles), so they can't be asked either.
+        receiver = await self.users.get_by_uuid(receiver_id)
+        if receiver is None or receiver.tag is None:
+            raise UserNotFoundError("No player has that ID.")
+        if await self.friends.lock_pair(user.id, receiver_id) < 2:
+            # The other account was deleted after the lookup.
+            raise UserNotFoundError("No player has that ID.")
+        if await self.friends.remove_request(receiver_id, user.id):
+            await self.friends.add_pair(user.id, receiver_id)
+        elif not await self.friends.is_friend(user.id, receiver_id):
+            await self.friends.add_request(user.id, receiver_id)
+        status = await self.status(user, receiver_id)
+        await self.session.commit()
+        return status
+
+    async def accept_request(self, user: User, sender_id: UUID) -> None:
+        await self.friends.lock_pair(user.id, sender_id)
+        if not await self.friends.remove_request(sender_id, user.id):
+            # Withdrawn, already answered, or never sent.
+            raise FriendRequestNotFoundError()
+        await self.friends.add_pair(user.id, sender_id)
+        await self.session.commit()
+
+    async def remove_request(self, user: User, other_id: UUID) -> None:
+        """Decline a request from `other_id`, or withdraw one sent to them."""
+        await self.friends.lock_pair(user.id, other_id)
+        await self.friends.remove_request(other_id, user.id)
+        await self.friends.remove_request(user.id, other_id)
+        await self.session.commit()
+
+    async def remove_friend(self, user: User, friend_id: UUID) -> None:
+        """End the friendship for both players."""
+        await self.friends.lock_pair(user.id, friend_id)
+        await self.friends.remove_pair(user.id, friend_id)
+        await self.session.commit()
+
+    @staticmethod
+    def page(found: list[User], limit: int, offset: int) -> FriendsPage:
         return FriendsPage(
             items=[UserPublic.model_validate(friend) for friend in found[:limit]],
             next_offset=offset + limit if len(found) > limit else None,
         )
-
-    async def add_friend(self, user: User, friend_id: UUID) -> None:
-        if friend_id == user.id:
-            raise FriendSelfError()
-        # Untagged users are invisible elsewhere (search, profiles), so they can't be added either.
-        friend = await self.users.get_by_uuid(friend_id)
-        if friend is None or friend.tag is None:
-            raise UserNotFoundError("No player has that ID.")
-        try:
-            await self.friends.add(user.id, friend_id)
-            await self.session.commit()
-        except IntegrityError:
-            # The other account was deleted after the lookup.
-            await self.session.rollback()
-            raise UserNotFoundError("No player has that ID.") from None
-
-    async def remove_friend(self, user: User, friend_id: UUID) -> None:
-        await self.friends.remove(user.id, friend_id)
-        await self.session.commit()

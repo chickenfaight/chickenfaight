@@ -60,7 +60,9 @@ class GameEngine:
     HEARTBEAT_INTERVAL = 15
     HEARTBEAT_TIMEOUT = 45
     PROMPT_WINDOW_SECONDS = 120
-    MAX_TOKENS = 400
+    MAX_TOKENS = 200
+    # Enforced here too, since a BYOM device can ignore `max_tokens`.
+    MAX_ARGUMENT_CHARS = 2000
     MODEL_ATTEMPTS = 2  # 1 retry for cloud turns and the judge
     FIRST_TOKEN_TIMEOUT = 30
     TURN_TIMEOUT = 90
@@ -479,6 +481,7 @@ class GameEngine:
             async with asyncio.timeout(self.FIRST_TOKEN_TIMEOUT) as first_token:
                 async for delta in stream:
                     first_token.reschedule(None)
+                    delta = delta[:self.MAX_ARGUMENT_CHARS - len(self.arguments[side])]
                     self.arguments[side] += delta
 
                     socket = self.connections.get(player)
@@ -490,6 +493,8 @@ class GameEngine:
                             })
                         except (WebSocketDisconnect, OSError, RuntimeError):
                             pass
+                    if len(self.arguments[side]) >= self.MAX_ARGUMENT_CHARS:
+                        break  # over the limit is truncated, not a failure
         if not self.arguments[side].strip():
             raise ValueError("Model returned an empty turn")
 

@@ -8,7 +8,7 @@ const focus = "focus-visible:outline-2 focus-visible:outline-offset-4 focus-visi
 const details = {
   "How to play": { intro: "Your words. Your strategy. Your AI.", items: ["Choose a model and join its matchmaking queue.", "Once matched, you’ll enter a separate debate page and write one prompt to guide your AI.", "Watch both AIs debate through opening, rebuttal, and closing arguments.", "An AI judge picks the winner. Your rating belongs to that model’s ladder."] },
   "Your ladder": { intro: "A fresh climb with every model.", items: ["Each model has its own Elo ladder, so your results are compared on equal footing.", "The rating and results shown here are sample data. Per-model rankings and match history are coming soon."] },
-  "Bring your own model": { intro: "Homegrown intelligence. Same arena.", items: ["The planned BYOM arena connects a model on your machine through BILC, the BYOM Interface Layer Client.", "Device pairing and the BYOM ladder are coming soon."] },
+  "Bring your own model": { intro: "Homegrown intelligence. Same arena.", items: ["The BYOM arena connects a model on your machine through BILC, the BYOM Interface Layer Client.", "Device pairing is easy and can be found on the left sidebar."] },
 } satisfies Record<string, { intro: string; items: string[] }>;
 
 export type DetailTitle = keyof typeof details;

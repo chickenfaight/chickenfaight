@@ -45,7 +45,10 @@ export default function LoginForm() {
   }
 
   return (
-    <form onSubmit={onSubmit} className="mt-8">
+    <form
+      // Without this, a form submitted before the page's JavaScript loads puts the password in the URL.
+      method="post"
+      onSubmit={onSubmit} className="mt-8">
       <label htmlFor="login-tag" className="sr-only">Tag</label>
       <input id="login-tag" className={fieldClass} name="tag" placeholder="Tag" autoComplete="username" maxLength={64} required />
       <label htmlFor="login-password" className="sr-only">Password</label>

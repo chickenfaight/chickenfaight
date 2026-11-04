@@ -28,7 +28,7 @@ class Message(TypedDict):
 
 class ModelClient(ABC):
     @abstractmethod
-    def stream(self, messages: list[Message], max_tokens: int = 400) -> AsyncIterator[str]:
+    def stream(self, messages: list[Message], max_tokens: int = 200) -> AsyncIterator[str]:
         ...
 
 
@@ -40,7 +40,7 @@ class OpenAIModelClient(ModelClient):
             api_key=settings.inference_api_key,
         )
 
-    async def stream(self, messages: list[Message], max_tokens: int = 400) -> AsyncIterator[str]:
+    async def stream(self, messages: list[Message], max_tokens: int = 200) -> AsyncIterator[str]:
         completion = await self.client.chat.completions.create(
             messages=messages,
             model=self.model,
@@ -112,5 +112,5 @@ class BilcModelClient(ModelClient):
         self.device_id = device_id
         self.match_id = match_id
 
-    def stream(self, messages: list[Message], max_tokens: int = 400) -> AsyncIterator[str]:
+    def stream(self, messages: list[Message], max_tokens: int = 200) -> AsyncIterator[str]:
         return self.devices.turn(self.device_id, self.match_id, messages, max_tokens)

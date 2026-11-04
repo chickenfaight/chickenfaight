@@ -1,5 +1,6 @@
 from .schemas import (
     ArenaStats,
+    FriendshipStatus,
     FriendsPage,
     GoogleIdentity,
     LoginData,
@@ -33,6 +34,7 @@ from .bilc import (
 
 __all__ = [
     "ArenaStats",
+    "FriendshipStatus",
     "FriendsPage",
     "GoogleIdentity",
     "LoginData",

@@ -10,7 +10,9 @@ export const metadata: Metadata = {
   description: "Create a Chickenfaight account.",
 };
 
-export default async function SignupPage() {
+export default async function SignupPage({ searchParams }: PageProps<"/signup">) {
+  // An old bookmark or history entry from when this form could submit as GET: get it out of the address bar.
+  if ("password" in await searchParams) redirect("/signup");
   // Already signed in with a valid session: nothing to sign up for.
   if (await serverSession() === "in") redirect("/");
   return (
