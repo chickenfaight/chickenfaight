@@ -141,6 +141,18 @@ async def test_a_device_ignoring_the_limits_is_cut_off_without_forfeiting(match)
     assert match.connections.status(match.device("pro").device_id) == "idle"
 
 
+async def test_each_players_model_is_kept_even_if_their_device_later_drops(match):
+    await match.start({"pro": [["Free ", "transit!"]]})
+    con = match.device("con")
+    run = asyncio.create_task(match.run())
+    await asyncio.sleep(0)  # the engine has started; now con's device goes away
+    await asyncio.sleep(0.05)
+    con.hang_up()
+    await asyncio.wait_for(run, 5)
+    assert set(match.engine.model_names.values()) == {"llama3.2:3b"}
+    assert set(match.engine.model_names) == set(match.users)
+
+
 async def test_silent_device_times_out_and_forfeits(match):
     await match.start({"pro": [None], "con": [["Fares ", "fund it."]]})
     match.engine.FIRST_TOKEN_TIMEOUT = 0.2

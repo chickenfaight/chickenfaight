@@ -1,6 +1,6 @@
 """Match results, points, and streaks (US14). `record_match` runs once per decided match."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 from uuid import UUID
 
@@ -8,7 +8,8 @@ from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import ChallengeCompletion, Match, MatchParticipant, User
+from app.models import ChallengeCompletion, Match, MatchParticipant, Turn, User
+from app.models.match import Phase
 from app.services.challenge import CHALLENGE_POINTS
 
 FINISH_POINTS = 10
@@ -27,6 +28,14 @@ class MatchReport:
     sides: dict[UUID, str]  # user_id -> "pro" | "con"
     result: dict             # the MATCH_RESULT payload
     ended_at: datetime
+    model_names: dict[UUID, str | None] = field(default_factory=dict)  # user_id -> the model they used
+    truncated: frozenset[str] = frozenset()  # sides whose argument hit the length limit
+
+
+def _storable(text: str) -> str:
+    """Model output is untrusted, and a NUL byte makes Postgres reject the whole transaction,
+    which would cost the players their result and points."""
+    return text.replace("\x00", "")
 
 
 def effective_streak(user: User, now: datetime) -> int:
@@ -66,10 +75,24 @@ async def record_match(session: AsyncSession, report: MatchReport) -> None:
         session.add(Match(
             id=report.match_id, model_id=report.model_id, topic_id=report.topic_id,
             status=result["status"], winner_side=result.get("winner"), end_reason=result["end_reason"],
-            verdict_reasoning=result.get("reason"), challenge_day=report.challenge_day, ended_at=report.ended_at,
+            verdict_reasoning=_storable(result["reason"]) if result.get("reason") else None,
+            challenge_day=report.challenge_day, ended_at=report.ended_at,
         ))
+        # A player who deleted their account mid-match is saved as the deleted player they now are,
+        # so the opponent keeps their result.
+        existing = set(await session.scalars(select(User.id).where(User.id.in_(report.sides))))
         for user_id, side in report.sides.items():
-            session.add(MatchParticipant(match_id=report.match_id, side=side, user_id=user_id))
+            session.add(MatchParticipant(
+                match_id=report.match_id, side=side, user_id=user_id if user_id in existing else None,
+                model_name=report.model_names.get(user_id),
+            ))
+        for index, side in enumerate(("pro", "con")):
+            content = _storable(result.get("arguments", {}).get(side, ""))
+            if content.strip():
+                session.add(Turn(
+                    match_id=report.match_id, index=index, side=side, phase=Phase.OPENING,
+                    content=content, truncated=side in report.truncated,
+                ))
         await session.flush()
 
         for user_id in _finishers(report):

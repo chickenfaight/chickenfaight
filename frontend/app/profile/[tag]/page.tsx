@@ -150,7 +150,10 @@ function Profile({ profile, me, friends, incoming, outgoing }: ProfileProps) {
         </div>
       </section>
       <section aria-labelledby="record-title" className={`${panel} p-6`}>
-        <h2 id="record-title" className="mb-5 text-sm font-bold">Record</h2>
+        <div className="mb-5 flex items-baseline justify-between gap-3">
+          <h2 id="record-title" className="text-sm font-bold">Record</h2>
+          {meId === profile.id && <Link href="/matches" className={`text-xs font-semibold text-[#ff7882] hover:underline ${focus}`}>Match history</Link>}
+        </div>
         <div className="mb-5 grid grid-cols-3 gap-3 border-b border-white/[0.07] pb-5">
           <Stat label="Points" value={profile.points.toLocaleString()} />
           {profile.rank !== null && <Stat label="Rank" value={`#${profile.rank.toLocaleString()}`} />}

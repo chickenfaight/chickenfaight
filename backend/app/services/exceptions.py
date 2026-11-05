@@ -20,9 +20,6 @@ class AlreadyMatchedError(ServiceError):
         self.match_id = match_id
         super().__init__(f"User {user_id} is already matched in {match_id}")
 
-class MatchNotFoundError(ServiceError):
-    pass
-
 class ArenaNotFoundError(ServiceError):
     def __init__(self, detail: str = "No active arena has that model ID."):
         self.detail = detail
@@ -149,6 +146,12 @@ class BilcDeviceNotFoundError(TagError):
     code = "NOT_FOUND"
     status_code = 404
     detail = "You have no device with that ID."
+
+
+class MatchNotFoundError(TagError):
+    code = "NOT_FOUND"
+    status_code = 404
+    detail = "No match to show."
 
 
 class FriendRequestNotFoundError(TagError):

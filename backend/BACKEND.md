@@ -59,7 +59,7 @@ The current engine keeps one receiver and one heartbeat task per browser connect
 | `format_game(prompt)` | Build the fixed-template `messages` for a turn; player prompt goes only inside delimiters, with delimiter strings stripped from it |
 | `call_model(messages)` | Stream a turn from a `ModelClient`, forwarding `TURN_DELTA`s; also used for the judge |
 | `unlink_user(socket)` | Send `MATCH_RESULT` and close the socket |
-| `report_game()` | Records the decided result, points, and streaks via `record_match()` (`app/services/rewards.py`) in its own session; runs at most once, from `run()`'s `finally`, and logs instead of raising on failure (implemented; Elo PLANNED) |
+| `report_game()` | Records the decided result, arguments, points, streaks, and Elo via `record_match()` (`app/services/rewards.py`) in its own session; runs at most once, just before `MATCH_RESULT` is sent (with `run()`'s `finally` as a backstop), and logs instead of raising on failure (implemented) |
 
 The engine never calls a provider directly. `app/inference/` exposes one `ModelClient` interface (`stream(messages, max_tokens) -> AsyncIterator[str]`) with `OpenAIModelClient` (cloud, `AsyncOpenAI` with `base_url`) and `BilcModelClient` (implemented: sends `TURN_REQUEST` to a device, yields `MATCH_RESPONSE` deltas). `BilcModelClient` depends only on the `DeviceLink` protocol (`turn()`), so tests can use a fake. Tests use a fake implementation.
 
@@ -78,6 +78,10 @@ Live state (matchmaking queues, running engines, connected BILC devices in `Bilc
 ## Daily challenges, points, and streaks
 
 `app/services/challenge.py` derives each UTC day's topic (a stable pick from active topics) and twist (rotating through `TWISTS`: character limits and banned or required whole words), and `check_prompt()` enforces the twist when a prompt is submitted. The matchmaker keys queues by `(model_id, challenge_day)`, so daily players only meet each other on the same model, and the engine loads that day's topic. `record_match()` writes `matches` and `match_participants`, then, under a row lock per finishing player, adds points, advances the streak (`users.points`, `users.streak`, `users.last_played_at`), and inserts into `challenge_completions` with `ON CONFLICT DO NOTHING` to award the challenge at most once. Values are in PROTOCOL.md.
+
+## Match history
+
+`record_match()` saves each player's `model_name` (the cloud model's display name, or the name their BILC device reported, read when the match starts so a device that later drops still has one) and one `turns` row per non-blank argument, with NUL bytes removed since Postgres can't store them and model output can contain them. `report_game()` adds `elo_before` and `elo_after` in the same transaction as the rating change. A player who deleted their account mid-match is saved with a null `user_id`, so the opponent keeps their result. `MatchHistoryService` (`app/services/match_history.py`) serves the routes and owns who may read what: a history only to its owner and a match only to its participants, 404 otherwise (PROTOCOL.md). Player prompts are never stored, because the arena promises players they stay private.
 
 ## Debate tips
 
@@ -122,9 +126,9 @@ Postgres. Constraint and index names come from the naming convention in `app/db/
 | `friend_requests` (implemented) | PK(`sender_id`, `receiver_id`), both FKs to `users` with `ON DELETE CASCADE`, CHECK `sender_id <> receiver_id` | Pending only: answering deletes the row. Its migration turned old one-way adds into requests |
 | `topics` (implemented) | `id` UUID, `category`, `topic`, `pro_position`, `con_position`, `is_active` | Text fields are limited to 255 characters; category defaults to `General`; active by default |
 | `matches` (results implemented) | `id` UUID (the engine's match ID), `model_id?` and `topic_id?` (`SET NULL`), `status`, `winner_side?`, `end_reason`, `verdict_reasoning?`, `challenge_day?` (UTC date, for daily-challenge matches), `ended_at` | Written once per decided match. `judge_metadata` and `started_at` remain PLANNED |
-| `match_participants` (implemented, without PLANNED columns) | PK(`match_id`, `side`), `user_id?` (unique with `match_id`; `SET NULL` when the account is deleted, so the opponent's history survives without user data) | `bilc_device_id?`, `prompt?`, `elo_before`, `elo_after?` remain PLANNED; `prompt` is never exposed to others |
+| `match_participants` (implemented, without PLANNED columns) | PK(`match_id`, `side`), `user_id?` (unique with `match_id`; `SET NULL` when the account is deleted, so the opponent's history survives without user data) | Also `model_name?` (the model this player used; older rows may have none), `elo_before?`, `elo_after?` (set when the match changed ratings). `bilc_device_id?` remains PLANNED. Player prompts are deliberately not stored |
 | `challenge_completions` (implemented) | PK(`user_id`, `day`), `match_id?` | Its primary key is what limits the challenge bonus to once per day, even when matches finish at the same moment |
-| `turns` | `id` UUID, `match_id`, `index` (unique with `match_id`), `side`, `phase`, `content`, `truncated`, `usage` JSONB | Written as each turn ends |
+| `turns` (implemented, without `usage`) | `id` UUID, `match_id` (`CASCADE`), `index` (unique with `match_id`), `side`, `phase`, `content`, `truncated` | Written with the match result, in play order. `usage` JSONB remains PLANNED |
 | `votes` | PK(`match_id`, `user_id`), `side` | Community opinion; never affects Elo |
 | `bilc_devices` (implemented) | `id` UUID, `user_id` (`CASCADE`), `name`, `platform`, `client_version`, `model_metadata?` JSONB, `refresh_token_hash?`, `previous_refresh_token_hash?`, `refresh_token_expires_at?`, `last_seen_at?`, `revoked_at?` | Token hashes are SHA-256 hex. The previous hash detects reuse of a rotated token, which revokes the device. Revoking keeps the row (for match history) and clears all three token columns |
 | `bilc_pairing_codes` (implemented) | `code_hash` PK, `user_id` (`CASCADE`), `expires_at`, `used_at?` | Used with one `UPDATE … WHERE used_at IS NULL AND expires_at > now() RETURNING`, so a code works once even under concurrent requests |

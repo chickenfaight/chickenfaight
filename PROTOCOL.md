@@ -84,6 +84,7 @@ Server-side constants; clients read deadlines from messages rather than hard-cod
 | Points and streaks (implemented) | Days are UTC. Only players who finished the match score: both in a judged match, only the winner of a forfeit, nobody in a void. +10 for finishing, +10 for winning, +50 for the day's challenge (once per UTC day, counted only if the match ends that same day), and +25 at every 7th consecutive day. A finished match on a new UTC day extends the streak if the previous one was within 48 h, and otherwise restarts it at 1 |
 | Tips chat rate limit (implemented) | A burst of 5 and 10/min per user |
 | Leaderboard rate limit (implemented) | A burst of 20 and 60/min per user |
+| Match history rate limit (implemented) | A burst of 20 and 60/min per user, on each of the two routes |
 | Profile picture rate limits (implemented) | Upload: a burst of 5 and 10/min per user. Viewing pictures: a burst of 100 and 300/min per user, since one page can show 20 |
 | Sign-in and signup rate limits (implemented) | `POST /auth/login`: a burst of 10 and 10/min per client IP, plus a burst of 5 and 1/min per tag (ignoring case), so many IPs can't share the guessing. `POST /auth/signup`: a burst of 5 and 1/min per client IP |
 
@@ -105,11 +106,12 @@ Phase            "opening" | "rebuttal" | "closing"
 MatchStatus      "waiting_for_players" | "awaiting_prompts" | "in_progress" | "judging"
                | "completed" | "forfeited" | "voided"
 EndReason        "judged" | "no_show" | "no_prompt" | "resigned" | "model_failure" | "judge_failure"
-Participant      { side: Side, user: UserPublic, elo_before: int, elo_after: int|null }
-Turn             { id: uuid, index: int, side: Side, phase: Phase, content: str }
-MatchSummary     { id: uuid, ladder: str, topic: str, status: MatchStatus, winner_side: Side|null,
-                   participants: [Participant], ended_at: str|null }
-MatchRead        MatchSummary + { end_reason: EndReason|null, verdict_reasoning: str|null, turns: [Turn] }
+Participant      { side: Side, user: UserPublic|null, elo_before: int|null, elo_after: int|null }   (`user` is null once the player deleted their account; Elo is null unless the match changed ratings)
+Turn             { id: uuid, index: int, side: Side, phase: Phase, content: str, truncated: bool }   (`truncated`: the 2000-char limit cut it off)
+MatchSummary     { id: uuid, topic: str|null, status: MatchStatus, winner_side: Side|null, end_reason: EndReason,
+                   challenge_day: str|null, you: Side, outcome: "win"|"loss"|"void", model: str|null,
+                   participants: [Participant], ended_at: str }   (implemented; `you` and `outcome` are the caller's, and `model` is the one the caller used, so an opponent's BYOM model stays private; `topic` is null if the topic was removed, `model` if it wasn't recorded)
+MatchRead        MatchSummary + { pro_position: str|null, con_position: str|null, verdict_reasoning: str|null, turns: [Turn] }   (implemented; never includes player prompts)
 BilcDevice       { id: uuid, name: str, platform: str, client_version: str, model_name: str|null,
                    size_class: "small"|"medium"|"large"|null, online: bool, status: "offline"|"idle"|"busy",
                    last_seen_at: str|null, created_at: str }   (implemented; `model_name` is `HELLO.model.name`, null until the device first connects; `size_class` is from the live connection's `HELLO`, else the last one stored (see "BYOM arena"); `online` means its socket finished `HELLO`; `status` is `busy` while reserved for a match, which outlasts a dropped socket; `last_seen_at` is the last pairing, token refresh, or `HELLO`)
@@ -139,7 +141,7 @@ Player prompts are never returned by any endpoint or message except to their aut
 | GET | `/v1/users/by-tag/{tag}` | session | `{tag}`: ignoring case | `UserProfile`; 404 `NOT_FOUND` if no user has that tag (implemented) |
 | GET | `/v1/users/me/arena-stats` | session | — | `ArenaStats`, for the caller only (implemented) |
 | GET | `/v1/users/{id}` | session | `{id}: uuid` | `UserProfile` |
-| GET | `/v1/users/{id}/matches` | session | `{id}: uuid`, `?limit&offset` | `[MatchSummary]`, finished only |
+| GET | `/v1/users/{id}/matches` | session | `{id}: uuid`, `limit` 1–50 (default 20), `offset` ≥ 0 (default 0) | `{ items: [MatchSummary], next_offset: int\|null }`, finished matches, newest first. Your own only: 404 `NOT_FOUND` for anyone else's, until profile privacy settings decide who else may see it (implemented) |
 | GET | `/v1/friends` | session | `?limit=` (1–100, default 50), `?offset=` (≥ 0, default 0) | `{ items: [UserPublic], next_offset: int\|null }`: the caller's own friends only, ordered by tag ignoring case. A player can have any number of friends. No route lists another player's friends (implemented) |
 | DELETE | `/v1/friends/{user_id}` | session | `{user_id}: uuid` | 204, also if not a friend. Ends the friendship for both players (implemented) |
 | GET | `/v1/friends/requests` | session | `?direction=incoming\|outgoing` (default `incoming`), `?limit=` (1–100, default 50), `?offset=` (≥ 0, default 0) | `{ items: [UserPublic], next_offset: int\|null }`: the caller's own pending requests only, newest first (implemented) |
@@ -155,7 +157,7 @@ Player prompts are never returned by any endpoint or message except to their aut
 | POST | `/v1/matchmaking/queue` | session | `{ ladder: str, bilc_id?: uuid }` (`bilc_id` required iff ladder is BYOM, must be caller's online idle device) | 202 `{ status: "queued" }` |
 | GET | `/v1/matchmaking/queue` | session | — | `{ status: "none"|"queued"|"matched", match_id?: uuid }` |
 | DELETE | `/v1/matchmaking/queue` | session | — | 204 |
-| GET | `/v1/matches/{id}` | session | `{id}: uuid` | `MatchRead`; live matches visible to participants only |
+| GET | `/v1/matches/{id}` | session | `{id}: uuid` | `MatchRead`. Finished matches, participants only: 404 `NOT_FOUND` otherwise, so a match's existence isn't revealed (implemented) |
 | POST | `/v1/matches/{id}/votes` | session | `{id}: uuid`, `{ side: Side }` | 204; finished matches, non-participants, one vote per user (upsert) |
 | POST | `/v1/bilc/pairing-codes` | session | — | `{ code: str (8 chars, A–Z 2–9), expires_at }`; also deletes the caller's used and expired codes (implemented) |
 | GET | `/v1/bilc/devices` | session | — | `[BilcDevice]` (caller's only, not revoked, newest first; implemented) |
@@ -227,7 +229,7 @@ Until the full snapshot/turn contract above ships, the arena uses these payloads
 - `MATCH_STATE`: `{ match_id, model_display_name, topic: { category, topic, pro_position, con_position }, you, participants: [{ user_id, side }], deadline }`. `model_display_name` is the selected model's database display name. `deadline` is an ISO UTC timestamp, established once both players connect using the server's 120-second prompt window. `challenge` is `{ title, description, max_chars: int|null }` for a daily-challenge match, else null; a prompt breaking it gets `ERROR` `PROMPT_BREAKS_CHALLENGE` and may be resubmitted (implemented).
 - `TURN_DELTA`: `{ delta }`, sent only to the author of the generating side.
 - `TURN_END`: `{}`, sent to that same player once their opening argument finishes.
-- `MATCH_RESULT`: `{ winner: "pro"|"con"|null, reason, status: "completed"|"forfeited"|"voided", end_reason: "judged"|"no_prompt"|"resigned"|"model_failure"|"judge_failure", arguments: { pro, con } }`. Only generated arguments are shared; player prompts remain private. A missed prompt deadline forfeits to the side that submitted; if neither submitted, the match is void. A cloud turn that errors or times out (30 s to first token, 90 s total) is retried once after 3 s, unless part of it already streamed to the player, since a retry would duplicate that text; if it still fails, the match is void (`model_failure`), even if a prompt deadline also passed. A judge error, timeout (120 s), or unparseable verdict is retried once, then voids the match (`judge_failure`). `RESIGN` before any result stops generation or judging and forfeits to the other side (`resigned`); the first decided result is final. Once a match has a result, `GET /v1/match/status` stops reporting it as `matched`. These outcomes do not yet persist results or update Elo.
+- `MATCH_RESULT`: `{ winner: "pro"|"con"|null, reason, status: "completed"|"forfeited"|"voided", end_reason: "judged"|"no_prompt"|"resigned"|"model_failure"|"judge_failure", arguments: { pro, con } }`. Only generated arguments are shared; player prompts remain private. A missed prompt deadline forfeits to the side that submitted; if neither submitted, the match is void. A cloud turn that errors or times out (30 s to first token, 90 s total) is retried once after 3 s, unless part of it already streamed to the player, since a retry would duplicate that text; if it still fails, the match is void (`model_failure`), even if a prompt deadline also passed. A judge error, timeout (120 s), or unparseable verdict is retried once, then voids the match (`judge_failure`). `RESIGN` before any result stops generation or judging and forfeits to the other side (`resigned`); the first decided result is final. Once a match has a result, `GET /v1/match/status` stops reporting it as `matched`. The result is saved before `MATCH_RESULT` is sent, so a player who sees it finds the match in their history. Completed matches update Elo; forfeits and voids don't.
 - `ERROR` also includes `PROMPT_DEADLINE_PASSED` when a submission arrives after the server deadline.
 
 The browser retains `model_display_name` from `MATCH_STATE` and displays it throughout composition, generation, judging, and results (implemented). It echoes heartbeats, retains its submitted prompt in page memory, marks its argument complete on `TURN_END`, and changes the waiting message on `JUDGING`. Reload/reconnect recovery remains planned.

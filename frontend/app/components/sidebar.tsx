@@ -13,7 +13,7 @@ const SECTIONS = [
   { href: "/challenge", label: "Daily challenge", icon: "bolt", matches: (path: string) => path.startsWith("/challenge") },
   { href: "/tips", label: "Debate tips", icon: "chat", matches: (path: string) => path.startsWith("/tips") },
   { href: "/bilc", label: "BILC", icon: "chip", matches: (path: string) => path.startsWith("/bilc") },
-  { href: "/profile/me", label: "Profile", icon: "user", matches: (path: string) => path.startsWith("/profile") },
+  { href: "/profile/me", label: "Profile", icon: "user", matches: (path: string) => path.startsWith("/profile") || path.startsWith("/matches") },
   { href: "/settings", label: "Settings", icon: "gear", matches: (path: string) => path.startsWith("/settings") },
 ] as const;
 

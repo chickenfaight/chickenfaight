@@ -2,7 +2,7 @@ import uuid
 from datetime import date, datetime
 from enum import StrEnum
 
-from sqlalchemy import Date, DateTime, Enum, ForeignKey, String, Text, UniqueConstraint, func
+from sqlalchemy import Boolean, Date, DateTime, Enum, ForeignKey, Integer, String, Text, UniqueConstraint, func, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -25,9 +25,15 @@ class Side(StrEnum):
     CON = "con"
 
 
+class Phase(StrEnum):
+    OPENING = "opening"
+    REBUTTAL = "rebuttal"
+    CLOSING = "closing"
+
+
 class Match(Base):
-    """A finished match's result, recorded once by the engine (`report_game`). Turns, votes, and Elo
-    from the planned schema aren't stored yet; player prompts never are."""
+    """A finished match's result, recorded once by the engine (`report_game`). Votes from the planned
+    schema aren't stored yet. Player prompts never are: the arena promises they stay private."""
     __tablename__ = "matches"
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True)  # the engine's match ID
@@ -53,6 +59,30 @@ class MatchParticipant(Base):
     side: Mapped[Side] = mapped_column(_enum(Side, "participant_side"), primary_key=True)
     # Null once the player deletes their account: the opponent's history keeps the row, not the user.
     user_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), index=True)
+    # The model this player used, as named when the match was played. Stored per player because each
+    # brings their own in BYOM, and as text so history survives renames and removals. Null if unknown.
+    model_name: Mapped[str | None] = mapped_column(String(255))
+    # On this match's ladder; null when Elo didn't change (forfeits and voids) or for older matches.
+    elo_before: Mapped[int | None] = mapped_column(Integer)
+    elo_after: Mapped[int | None] = mapped_column(Integer)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class Turn(Base):
+    """One side's generated text in one phase, saved with the match's result. Untrusted model
+    output: shown only as plain text."""
+    __tablename__ = "turns"
+    __table_args__ = (UniqueConstraint("match_id", "index", name="uq_turns_match_id_index"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    # The unique constraint's index covers lookups and cascades by match.
+    match_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("matches.id", ondelete="CASCADE"))
+    index: Mapped[int] = mapped_column(Integer)
+    side: Mapped[Side] = mapped_column(_enum(Side, "turn_side"))
+    phase: Mapped[Phase] = mapped_column(_enum(Phase, "turn_phase"))
+    content: Mapped[str] = mapped_column(Text)
+    truncated: Mapped[bool] = mapped_column(Boolean, default=False, server_default=text("false"))
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 

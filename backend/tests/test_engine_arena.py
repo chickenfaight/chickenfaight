@@ -204,6 +204,24 @@ async def test_a_failed_cloud_turn_waits_before_retrying(monkeypatch):
     assert engine.arguments["pro"] == "Second try."
 
 
+async def test_the_result_is_saved_before_players_are_told():
+    players = (uuid4(), uuid4())
+    with patch("app.engine.game_engine.OpenAIModelClient"):
+        engine = GameEngine(uuid4(), players, uuid4())
+    events = []
+
+    async def save():
+        events.append("saved")
+
+    async def told(message):
+        events.append(message["type"])
+
+    engine.connections[players[0]] = SimpleNamespace(send_json=told)
+    with patch.object(engine, "report_game", side_effect=save):
+        await engine.broadcast_result({"winner": "pro", "reason": "x", "status": "completed", "end_reason": "judged"})
+    assert events == ["saved", "MATCH_RESULT"]
+
+
 class ArgumentLimitTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         self.player = uuid4()
@@ -243,6 +261,7 @@ class ArgumentLimitTests(unittest.IsolatedAsyncioTestCase):
         self.engine.model_clients[self.player] = client
         await asyncio.wait_for(self.engine.generate_arguments(self.player), 2)
         self.assertEqual(self.engine.arguments["pro"], "x" * 1990 + "y" * 10)
+        self.assertEqual(self.engine.truncated, {"pro"})
         # The browser sees exactly the kept text, then the normal end of the turn.
         self.assertEqual("".join(p["delta"] for p in self.sent("TURN_DELTA")), self.engine.arguments["pro"])
         self.assertEqual(self.sent("TURN_END"), [{}])

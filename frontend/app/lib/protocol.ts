@@ -273,3 +273,63 @@ export function parseBilcDevices(data: unknown): BilcDevice[] {
     return item as BilcDevice;
   });
 }
+
+// Match history (PROTOCOL.md, "Shared types").
+export type MatchOutcome = "win" | "loss" | "void";
+export type MatchParticipant = { side: Side; user: UserPublic | null; elo_before: number | null; elo_after: number | null };
+export type MatchSummary = {
+  id: string; topic: string | null; status: "completed" | "forfeited" | "voided"; winner_side: Side | null; end_reason: string;
+  challenge_day: string | null; you: Side; outcome: MatchOutcome; model: string | null; participants: MatchParticipant[]; ended_at: string;
+};
+export type MatchTurn = { id: string; index: number; side: Side; phase: string; content: string; truncated: boolean };
+export type MatchDetail = MatchSummary & { pro_position: string | null; con_position: string | null; verdict_reasoning: string | null; turns: MatchTurn[] };
+
+function isSide(value: unknown): value is Side {
+  return value === "pro" || value === "con";
+}
+
+function optionalNumber(value: unknown): value is number | null {
+  return value === null || typeof value === "number";
+}
+
+function parseMatchParticipant(data: unknown): MatchParticipant {
+  if (!isObject(data) || !isSide(data.side) || !optionalNumber(data.elo_before) || !optionalNumber(data.elo_after)) throw new Error("Invalid participant");
+  return { side: data.side, user: data.user === null ? null : parseUserPublic(data.user), elo_before: data.elo_before, elo_after: data.elo_after };
+}
+
+function parseMatchSummary(data: unknown): MatchSummary {
+  if (!isObject(data) || typeof data.id !== "string" || !optionalString(data.topic)
+    || !["completed", "forfeited", "voided"].includes(String(data.status)) || !(data.winner_side === null || isSide(data.winner_side))
+    || typeof data.end_reason !== "string" || !optionalString(data.challenge_day) || !isSide(data.you)
+    || !["win", "loss", "void"].includes(String(data.outcome)) || !optionalString(data.model)
+    || !Array.isArray(data.participants) || typeof data.ended_at !== "string") {
+    throw new Error("Invalid match");
+  }
+  return {
+    id: data.id, topic: data.topic, status: data.status as MatchSummary["status"], winner_side: data.winner_side, end_reason: data.end_reason,
+    challenge_day: data.challenge_day, you: data.you, outcome: data.outcome as MatchOutcome, model: data.model,
+    participants: data.participants.map(parseMatchParticipant), ended_at: data.ended_at,
+  };
+}
+
+export function parseMatchPage(data: unknown): { items: MatchSummary[]; next_offset: number | null } {
+  if (!isObject(data) || !Array.isArray(data.items) || !optionalNumber(data.next_offset)) throw new Error("Invalid match page");
+  return { items: data.items.map(parseMatchSummary), next_offset: data.next_offset };
+}
+
+export function parseMatchDetail(data: unknown): MatchDetail {
+  if (!isObject(data) || !optionalString(data.pro_position) || !optionalString(data.con_position)
+    || !optionalString(data.verdict_reasoning) || !Array.isArray(data.turns)) {
+    throw new Error("Invalid match");
+  }
+  return {
+    ...parseMatchSummary(data), pro_position: data.pro_position, con_position: data.con_position, verdict_reasoning: data.verdict_reasoning,
+    turns: data.turns.map((turn: unknown) => {
+      if (!isObject(turn) || typeof turn.id !== "string" || typeof turn.index !== "number" || !isSide(turn.side)
+        || typeof turn.phase !== "string" || typeof turn.content !== "string" || typeof turn.truncated !== "boolean") {
+        throw new Error("Invalid turn");
+      }
+      return { id: turn.id, index: turn.index, side: turn.side, phase: turn.phase, content: turn.content, truncated: turn.truncated };
+    }),
+  };
+}

@@ -20,6 +20,7 @@ from .schemas import (
     UserSearchPage,
     Verdict,
 )
+from .match import MatchHistoryPage, MatchRead, MatchSummary, ParticipantRead, TurnRead
 from .bilc import (
     BilcDeviceRead,
     BilcRegister,
@@ -36,6 +37,11 @@ __all__ = [
     "ArenaStats",
     "FriendshipStatus",
     "FriendsPage",
+    "MatchHistoryPage",
+    "MatchRead",
+    "MatchSummary",
+    "ParticipantRead",
+    "TurnRead",
     "GoogleIdentity",
     "LoginData",
     "SignupData",

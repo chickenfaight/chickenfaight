@@ -17,7 +17,7 @@ from pydantic import ValidationError
 from app.config import settings
 from app.db.session import SessionFactory
 from app.inference.model_client import *
-from app.models import Topic, Ladder
+from app.models import Ladder, MatchParticipant, Topic
 from app.models.ladder_rating import DEFAULT_ELO
 from app.services.rating import RatingService
 from app.repositories.topic import TopicRepository
@@ -92,6 +92,10 @@ class GameEngine:
         self.twist: Twist | None = twist_for(challenge_day) if challenge_day else None
         self.reported = False
         self.model_display_name: str | None = None
+        # The model each player used, kept for match history. Read at the start because a BYOM
+        # device may have disconnected by the end.
+        self.model_names: dict[UUID, str | None] = {}
+        self.truncated: set[Side] = set()  # sides whose argument hit MAX_ARGUMENT_CHARS
         self.api_model_id: str | None = None
         self.topic: Topic | None = None
 
@@ -136,6 +140,7 @@ class GameEngine:
                     self.topic = await TopicRepository(session).get_random_active()
                 if self.topic is None:
                     raise RuntimeError("No active topic found")
+            self.model_names = {player: self.model_name(player) for player in self.players}
             for player, device_id in self.devices.items():
                 await self.bilc.assign(device_id, self.match_id, self.sides[player], self.topic.topic)
 
@@ -267,6 +272,12 @@ class GameEngine:
             player = next(player for player, side in self.sides.items() if side == failure.side)
             await self.bilc.forfeit(self.devices[player], self.match_id, failure.reason)
 
+    def model_name(self, player: UUID) -> str | None:
+        if player not in self.devices:
+            return self.model_display_name
+        hello = self.bilc.hello(self.devices[player])
+        return hello.model.name if hello else None
+
     def display_name(self, player: UUID) -> str | None:
         """The model shown in the player's arena; in BYOM, their own device's model."""
         if player in self.devices:
@@ -312,7 +323,7 @@ class GameEngine:
 
     async def report_game(self) -> None:
         """Persist the decided result, points, and streaks; runs at most once per match. A failure
-        is logged, never raised: players already have their result."""
+        is logged, never raised: it must not cost players their result."""
         if self.reported or self.result is None:
             return
         self.reported = True
@@ -323,6 +334,7 @@ class GameEngine:
                 topic_id=getattr(self.topic, "id", None),
                 challenge_day=self.challenge_day, sides=dict(self.sides),
                 result=self.result, ended_at=datetime.now(timezone.utc),
+                model_names=dict(self.model_names), truncated=frozenset(self.truncated),
             )
             async with SessionFactory() as session:
                 await record_match(session, report)
@@ -351,8 +363,13 @@ class GameEngine:
                                 result_type = "win"
                             else:
                                 result_type = "loss"
-                            await rating_service.calculate_and_update_elo(
+                            rating = await rating_service.calculate_and_update_elo(
                                 user_id, ladder.id, starting_elo[opponent_id], result_type,
+                            )
+                            await session.execute(
+                                update(MatchParticipant)
+                                .where(MatchParticipant.match_id == self.match_id, MatchParticipant.user_id == user_id)
+                                .values(elo_before=starting_elo[user_id], elo_after=rating.elo)
                             )
         except Exception:
             logger.exception("Match %s: couldn't record the result", self.match_id)
@@ -382,6 +399,8 @@ class GameEngine:
             await self.send_result()
 
     async def send_result(self) -> None:
+        # Save first: a player who sees the verdict and opens their match history must find it there.
+        await self.report_game()
         message = {"type": "MATCH_RESULT", "payload": self.result}
         for socket in list(self.connections.values()):
             try:
@@ -498,6 +517,7 @@ class GameEngine:
                         except (WebSocketDisconnect, OSError, RuntimeError):
                             pass
                     if len(self.arguments[side]) >= self.MAX_ARGUMENT_CHARS:
+                        self.truncated.add(side)
                         break  # over the limit is truncated, not a failure
         if not self.arguments[side].strip():
             raise ValueError("Model returned an empty turn")

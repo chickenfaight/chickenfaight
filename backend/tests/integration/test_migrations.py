@@ -79,6 +79,28 @@ def test_one_way_friends_become_requests_and_mutual_ones_stay_friends(engine):
         command.upgrade(config, "heads")
 
 
+def test_match_history_backfills_cloud_models_and_leaves_byom_blank(engine):
+    ids = {name: str(uuid4()) for name in ("player", "provider", "model", "cloud_match", "byom_match")}
+    with engine.begin() as connection:
+        config = alembic_config(connection)
+        command.downgrade(config, "5a554947da58")
+        connection.execute(text("INSERT INTO users (id, google_sub) VALUES (:id, 'history')"), {"id": ids["player"]})
+        connection.execute(text("INSERT INTO providers (id, slug, display_name, base_url, adapter) VALUES (:id, 'p', 'P', 'https://x', 'openai_compatible')"), {"id": ids["provider"]})
+        connection.execute(text("INSERT INTO models (id, provider_id, api_model_id, display_name) VALUES (:id, :provider, 'lab/m', 'Lab Model')"), {"id": ids["model"], "provider": ids["provider"]})
+        for match, model in (("cloud_match", ids["model"]), ("byom_match", None)):
+            connection.execute(text("INSERT INTO matches (id, model_id, status, end_reason, ended_at) VALUES (:id, :model, 'completed', 'judged', now())"), {"id": ids[match], "model": model})
+            connection.execute(text("INSERT INTO match_participants (match_id, side, user_id) VALUES (:id, 'pro', :user)"), {"id": ids[match], "user": ids["player"]})
+
+        command.upgrade(config, "heads")
+        names = dict(tuple(row) for row in connection.execute(text("SELECT match_id::text, model_name FROM match_participants")))
+        assert names == {ids["cloud_match"]: "Lab Model", ids["byom_match"]: None}
+
+        command.downgrade(config, "5a554947da58")
+        assert "model_name" not in {column["name"] for column in inspect(connection).get_columns("match_participants")}
+        assert "turns" not in inspect(connection).get_table_names()
+        command.upgrade(config, "heads")
+
+
 def test_migrating_a_current_database_keeps_data(engine, test_database_url):
     execute(engine, "INSERT INTO users (id, google_sub) VALUES (gen_random_uuid(), 'keep-me')")
     migrate(test_database_url, allow_reset=True)
