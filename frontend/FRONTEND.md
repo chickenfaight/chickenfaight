@@ -66,7 +66,7 @@ Do not: add light mode; use colored or gradient fills (no purple/indigo/blue "AI
 | `/play` | Game selection | PLANNED |
 | `/match/[match_id]` | Debate arena | implemented |
 | `/leaderboards` | Top 50 rated players per provided model or BYOM arena, with Elo and an arena selector | implemented |
-| `/search` | Player search results by tag, infinite scroll | implemented |
+| `/search` | Player search results by username or tag, infinite scroll | implemented |
 | `/profile/[tag]` | Username, tag, avatar, win rate; `/profile/me` redirects to your own. Links to your match history on your own profile. Rating per ladder PLANNED | implemented |
 | `/matches` | Your finished debates: win, loss, or void, the model you used, opponent, and Elo change | implemented |
 | `/matches/[match_id]` | One debate you played: verdict and both arguments | implemented |

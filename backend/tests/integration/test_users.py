@@ -273,6 +273,55 @@ async def test_search_ranks_exact_then_prefix_then_contains_then_fuzzy(client, l
     assert await search_tags(client, q="ROOSTER") == ["Rooster", "roosterking", "the_rooster", "roostre_99"]
 
 
+async def named(make_user, db_session, tag, username):
+    user = await make_user(tag)
+    user.username = username
+    await db_session.commit()
+    return user
+
+
+async def test_search_finds_usernames_ignoring_case(client, log_in, make_user, db_session):
+    await named(make_user, db_session, "hen_1", "Captain Cluck")
+    await make_user("unrelated")
+    log_in(await make_user("viewer"))
+    for query in ["captain cluck", "CAPTAIN", "cluck", "aptain cl"]:
+        assert await search_tags(client, q=query) == ["hen_1"]
+
+
+async def test_search_tolerates_username_typos(client, log_in, make_user, db_session):
+    await named(make_user, db_session, "hen_1", "Rooster Prime")
+    log_in(await make_user("viewer"))
+    assert await search_tags(client, q="roostr") == ["hen_1"]
+
+
+async def test_search_ranks_tags_and_usernames_together(client, log_in, make_user, db_session):
+    await named(make_user, db_session, "hen_contains", "the rooster")
+    await named(make_user, db_session, "hen_prefix", "roosterking")
+    await named(make_user, db_session, "hen_exact", "ROOSTER")
+    await make_user("roosters")  # a prefix on the tag, and no username: a null mustn't sort first
+    log_in(await make_user("viewer"))
+    assert await search_tags(client, q="rooster") == ["hen_exact", "roosters", "hen_prefix", "hen_contains"]
+
+
+async def test_an_exact_tag_beats_someone_using_it_as_their_username(client, log_in, make_user, db_session):
+    await named(make_user, db_session, "impostor", "real_hen")
+    await make_user("real_hen")
+    log_in(await make_user("viewer"))
+    assert await search_tags(client, q="real_hen") == ["real_hen", "impostor"]
+
+
+async def test_search_skips_a_matching_username_without_a_tag(client, log_in, make_user, db_session):
+    await named(make_user, db_session, None, "Captain Cluck")
+    log_in(await make_user("viewer"))
+    assert await search_tags(client, q="captain") == []
+
+
+async def test_search_treats_wildcards_in_a_username_query_literally(client, log_in, make_user, db_session):
+    await named(make_user, db_session, "hen_1", "Captain Cluck")
+    log_in(await make_user("viewer"))
+    assert await search_tags(client, q="c%k") == []
+
+
 async def test_search_tolerates_typos(client, log_in, make_user):
     await make_user("Rooster_42")
     log_in(await make_user("viewer"))

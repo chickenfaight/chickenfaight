@@ -60,7 +60,7 @@ bilc/              BYOM Interface Layer Client (Go CLI; partially built)
 | Rate limits | In-memory token buckets: per signed-in user on routes that read other users' data or edit friends; per IP and per tag on password sign-in and signup | Slows scraping and password guessing; one process, like matchmaking |
 | Passwords | Sent as typed over HTTPS; the server stores a salted scrypt hash (stdlib); one generic error for every failed sign-in | A client-side hash would itself be the password; no account enumeration |
 | Friends | Mutual: one player sends a request, the other accepts; any number of friends; each list visible only to its owner | Nobody becomes your friend without agreeing; no scraping friend graphs |
-| Tags vs usernames | Permanent unique `tag` (URLs, search, sign-in) plus a changeable, non-unique `username` (display) | Players can rename without breaking links or logins |
+| Tags vs usernames | Permanent unique `tag` (URLs, sign-in) plus a changeable, non-unique `username` (display); search matches both | Players can rename without breaking links or logins |
 | Daily challenge | PvP queue per model with a UTC-daily topic and an engine-enforced twist; points, streaks, and a once-a-day bonus recorded from saved match results | Same challenge for everyone; awards can't be double-counted |
 | Profile pictures | Uploads re-encoded to 256×256 WebP with Pillow and stored in Postgres (`avatars`) | Strips EXIF/GPS and disguised files; no separate file storage |
 | Tips coach | Stateless streamed chat; conversation kept only in the browser | Nothing to store or leak; capped per request |
@@ -75,8 +75,8 @@ bilc/              BYOM Interface Layer Client (Go CLI; partially built)
 Use these terms exactly, in code and docs.
 
 - **match** — one debate between two players. Use "debate" only in UI copy.
-- **tag** — a user's permanent unique identifier (`users.tag`), set once. Used in URLs, search, and password sign-in.
-- **username** — a user's changeable display name (`users.username`); not unique. Never use it to identify a user.
+- **tag** — a user's permanent unique identifier (`users.tag`), set once. Used in URLs and password sign-in, and searchable.
+- **username** — a user's changeable display name (`users.username`); not unique, but searchable. Never use it to identify a user.
 - **player** — a user in a match; each is assigned a **side**: `pro` or `con`.
 - **turn** — one model generation for one side in one **phase** (`opening`, `rebuttal`, `closing`).
 - **ladder** — a model's separate Elo pool; the BYOM arena is one ladder.

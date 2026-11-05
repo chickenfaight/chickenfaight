@@ -25,23 +25,26 @@ class UserRepository:
         result = await self.session.execute(statement)
         return result.scalar_one_or_none()
 
-    async def search_by_tag(self, query: str, limit: int, offset: int) -> list[User]:
-        """Tagged users matching `query`, best first: exact, prefix, contains, then fuzzy."""
+    async def search(self, query: str, limit: int, offset: int) -> list[User]:
+        """Tagged users whose tag or username matches `query`, best first: exact tag, exact
+        username, prefix, contains, then fuzzy. An exact tag wins because usernames aren't unique:
+        anyone could take the name of the player being looked up."""
         tag = func.lower(User.tag)
+        username = func.lower(User.username)
         needle = query.lower()
-        exact = tag == needle
-        prefix = tag.startswith(needle, autoescape=True)
-        contains = tag.contains(needle, autoescape=True)
-        # `%>`: some part of the tag is trigram-similar to the query (pg_trgm word similarity).
-        fuzzy = tag.op("%>")(needle)
+        contains = or_(tag.contains(needle, autoescape=True), username.contains(needle, autoescape=True))
+        # `%>`: some part of the text is trigram-similar to the query (pg_trgm word similarity).
+        fuzzy = or_(tag.op("%>")(needle), username.op("%>")(needle))
         statement = (
             select(User)
             .where(User.tag.is_not(None), or_(contains, fuzzy))
             .order_by(
-                exact.desc(),
-                prefix.desc(),
-                contains.desc(),
-                func.word_similarity(needle, tag).desc(),
+                # `is_(True)`: a null username makes these NULL, which would sort first.
+                (tag == needle).desc(),
+                (username == needle).is_(True).desc(),
+                or_(tag.startswith(needle, autoescape=True), username.startswith(needle, autoescape=True)).is_(True).desc(),
+                contains.is_(True).desc(),
+                func.greatest(func.word_similarity(needle, tag), func.word_similarity(needle, username)).desc(),
                 func.length(User.tag),
                 tag,
                 User.id,

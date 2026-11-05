@@ -5,7 +5,7 @@ import SearchResults from "../components/search-results";
 
 export const metadata: Metadata = {
   title: "Search players · Chicken fAIght",
-  description: "Find Chicken fAIght players by tag.",
+  description: "Find Chicken fAIght players by username or tag.",
 };
 
 export default async function SearchPage({ searchParams }: PageProps<"/search">) {
@@ -21,7 +21,7 @@ export default async function SearchPage({ searchParams }: PageProps<"/search">)
         </h1>
         {query
           ? <SearchResults key={query} query={query} />
-          : <p className="text-sm text-zinc-500">Type a tag in the search bar to find a player.</p>}
+          : <p className="text-sm text-zinc-500">Type a username or tag in the search bar to find a player.</p>}
       </main>
     </AppShell>
   );

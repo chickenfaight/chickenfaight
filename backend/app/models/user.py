@@ -54,3 +54,9 @@ Index(
     postgresql_using="gin",
     postgresql_ops={"tag_lower": "gin_trgm_ops"},
 )
+Index(
+    "ix_users_username_lower_trgm",
+    func.lower(User.username).label("username_lower"),
+    postgresql_using="gin",
+    postgresql_ops={"username_lower": "gin_trgm_ops"},
+)

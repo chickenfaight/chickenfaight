@@ -16,7 +16,7 @@ type Suggestions =
   | { status: "done"; items: UserPublic[] }
   | { status: "error"; detail: string };
 
-// Tag search with live completion. Enter opens the highlighted player, or the full results page.
+// Player search with live completion. Enter opens the highlighted player, or the full results page.
 export default function UserSearch({ initialQuery = "" }: { initialQuery?: string }) {
   const router = useRouter();
   const listId = useId();
@@ -72,7 +72,7 @@ export default function UserSearch({ initialQuery = "" }: { initialQuery?: strin
 
   return (
     <div className="relative w-72" role="search" onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget)) setOpen(false); }}>
-      <label htmlFor={`${listId}-input`} className="sr-only">Search players by tag</label>
+      <label htmlFor={`${listId}-input`} className="sr-only">Search players by username or tag</label>
       <input
         id={`${listId}-input`}
         type="search"

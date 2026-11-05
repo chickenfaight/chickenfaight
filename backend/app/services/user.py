@@ -155,7 +155,7 @@ class UserService:
         if not query:
             return UserSearchPage(items=[], next_offset=None)
         # Fetch one extra row to learn whether another page exists.
-        found = await self.users.search_by_tag(query, limit + 1, offset)
+        found = await self.users.search(query, limit + 1, offset)
         return UserSearchPage(
             items=[UserPublic.model_validate(user) for user in found[:limit]],
             next_offset=offset + limit if len(found) > limit else None,
