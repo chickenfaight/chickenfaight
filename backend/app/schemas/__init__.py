@@ -20,6 +20,7 @@ from .schemas import (
     UserSearchPage,
     Verdict,
 )
+from .topic import AdminTopic, AdminTopicsPage, TopicUpload, TopicUploadResult
 from .match import MatchHistoryPage, MatchRead, MatchSummary, ParticipantRead, TurnRead
 from .bilc import (
     BilcDeviceRead,
@@ -48,6 +49,10 @@ __all__ = [
     "PromptSubmission",
     "Rating",
     "TopicRead",
+    "AdminTopic",
+    "AdminTopicsPage",
+    "TopicUpload",
+    "TopicUploadResult",
     "UserProfile",
     "UserPublic",
     "UserRead",

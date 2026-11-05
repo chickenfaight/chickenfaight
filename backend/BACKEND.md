@@ -87,6 +87,10 @@ Live state (matchmaking queues, running engines, connected BILC devices in `Bilc
 
 `app/services/tips.py` holds the coach's fixed system prompt (the game's rules, the judge's criteria, and the 6 `TIPS`) and `format_tips()`, the only path from tips text to a model. `POST /v1/tips/chat` (`app/api/tips.py`) validates the conversation, looks up the active model, closes its database session, and waits for the first delta before returning a `StreamingResponse`, so a dead model is a clean 502 instead of an empty 200. Conversations are never stored.
 
+## Admins
+
+`ADMIN_TAGS` in `app/auth/admins.py` is the fixed list of admin tags (compared ignoring case; tags never change, so each names one account for good). Routes that need an admin take `AdminUserDependency` (`app/auth/dependencies.py`), which raises 403 `FORBIDDEN` for anyone else. `UserRead.is_admin` exposes the check so the frontend can show admin pages; the routes check again. Admin routes live in `app/api/admin.py`: uploading topics (`TopicService` in `app/services/topics.py`) and listing the newest. Uploads use the same parser as the importer below.
+
 ## Account deletion
 
 `DELETE /v1/users/me` calls `Matchmaker.remove_user()` (leave the queue, or `GameEngine.resign()` in a live match), then `UserService.delete_account()` deletes the `users` row. Every table that references users must declare `ON DELETE CASCADE` or `SET NULL`, so deletion never leaves user data behind or fails on a foreign key.
@@ -182,7 +186,7 @@ Alembic migrations live in `app/db/migrations/versions/` (config in `pyproject.t
 | Local DB is in a strange state | — | `uv run python -m app.db.migrate --reset` (development only) |
 | Production | Migrations run on startup; never auto-reset (`APP_ENV` unset) | Run one server process; concurrent startups would race on migrations |
 
-The temporary topic importer lives in `app/db/seed.py`.
+The temporary topic importer lives in `app/db/seed.py`; its parser and duplicate-skipping (`parse_topics`, `add_topics`) are in `app/services/topics.py`, shared with the admin upload route (see "Admins").
 Migrations create the `topics` table; from `backend/`, run
 `uv run python -m app.db.seed topics.example.txt`.
 New topics are active by default; pass `--inactive` to add inactive topics. Each UTF-8 line is

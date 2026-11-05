@@ -127,6 +127,22 @@ class TagRequiredError(TagError):
     detail = "Create your tag before joining a debate."
 
 
+class AdminRequiredError(TagError):
+    code = "FORBIDDEN"
+    status_code = 403
+    detail = "Only admins can do that."
+
+
+class TopicsInvalidError(TagError):
+    """An uploaded topic list failed validation; `detail` names the first bad line."""
+    code = "TOPICS_INVALID"
+    status_code = 422
+
+    def __init__(self, detail: str):
+        self.detail = detail
+        super().__init__()
+
+
 class PairingCodeInvalidError(TagError):
     code = "PAIRING_CODE_INVALID"
     status_code = 400

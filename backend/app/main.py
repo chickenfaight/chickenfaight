@@ -19,6 +19,7 @@ from app.api.ladders import router as ladders_router
 from app.api.tips import router as tips_router
 from app.api.challenge import router as challenge_router
 from app.api.bilc import router as bilc_router
+from app.api.admin import router as admin_router
 from app.config import settings
 from app.services.auth_session import SESSION_LIFETIME
 from app.db.migrate import migrate
@@ -99,6 +100,7 @@ app.include_router(ladders_router, prefix="/v1")
 app.include_router(tips_router, prefix="/v1")
 app.include_router(challenge_router, prefix="/v1")
 app.include_router(bilc_router, prefix="/v1")
+app.include_router(admin_router, prefix="/v1")
 
 
 @app.get("/health")
