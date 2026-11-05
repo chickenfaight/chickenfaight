@@ -3,6 +3,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import AddFriendButton from "../../components/add-friend";
 import BlockButton from "../../components/block-button";
+import BlockedPlayers from "../../components/blocked-players";
 import FriendRequests from "../../components/friend-requests";
 import ProfileEditor from "../../components/profile-editor";
 import Avatar from "../../components/avatar";
@@ -90,6 +91,16 @@ async function ownFriends(): Promise<UserPage | null> {
   }
 }
 
+// The players the signed-in player has blocked; null if they couldn't be loaded.
+async function ownBlocked(): Promise<UserPage | null> {
+  try {
+    const response = await backendGet(`/v1/block?limit=${FRIENDS_SHOWN}`);
+    return response.ok ? parseUserPage(await response.json()) : null;
+  } catch {
+    return null;
+  }
+}
+
 // The signed-in player's pending requests in one direction; null if they couldn't be loaded.
 async function ownRequests(direction: "incoming" | "outgoing"): Promise<UserPage | null> {
   try {
@@ -131,9 +142,9 @@ function Stat({ label, value }: { label: string; value: string }) {
   return <div><p className="text-[10px] text-zinc-400">{label}</p><p className="mt-1 text-2xl font-bold tracking-tight">{value}</p></div>;
 }
 
-type ProfileProps = { profile: UserProfile; me: User | null; friends: UserPage | null; incoming: UserPage | null; outgoing: UserPage | null };
+type ProfileProps = { profile: UserProfile; me: User | null; friends: UserPage | null; incoming: UserPage | null; outgoing: UserPage | null; blocked: UserPage | null };
 
-function Profile({ profile, me, friends, incoming, outgoing }: ProfileProps) {
+function Profile({ profile, me, friends, incoming, outgoing, blocked }: ProfileProps) {
   const meId = me?.id ?? null;
   const games = profile.ratings.reduce((sum, rating) => sum + rating.games_played, 0);
   const wins = profile.ratings.reduce((sum, rating) => sum + rating.wins, 0);
@@ -179,6 +190,7 @@ function Profile({ profile, me, friends, incoming, outgoing }: ProfileProps) {
       </section>
       {meId === profile.id && <FriendRequests incoming={incoming} outgoing={outgoing} shown={FRIENDS_SHOWN} />}
       {meId === profile.id && <Friends friends={friends} />}
+      {meId === profile.id && <BlockedPlayers blocked={blocked} shown={FRIENDS_SHOWN} />}
     </div>
   );
 }
@@ -190,14 +202,14 @@ export default async function ProfilePage({ params }: PageProps<"/profile/[tag]"
   const [result, me] = await Promise.all([lookUp(tag), viewer()]);
   const meId = me?.id ?? null;
   const own = result.status === "found" && meId === result.profile.id;
-  const [friends, incoming, outgoing] = own
-    ? await Promise.all([ownFriends(), ownRequests("incoming"), ownRequests("outgoing")])
-    : [null, null, null];
+  const [friends, incoming, outgoing, blocked] = own
+    ? await Promise.all([ownFriends(), ownRequests("incoming"), ownRequests("outgoing"), ownBlocked()])
+    : [null, null, null, null];
 
   return (
     <AppShell header={<SiteHeader />}>
       <main className="mx-auto w-full max-w-[1100px] flex-1 px-6 py-10 xl:px-10">
-        {result.status === "found" ? <Profile profile={result.profile} me={me} friends={friends} incoming={incoming} outgoing={outgoing} /> : (
+        {result.status === "found" ? <Profile profile={result.profile} me={me} friends={friends} incoming={incoming} outgoing={outgoing} blocked={blocked} /> : (
           <section aria-labelledby="profile-title" className={`${panel} p-9`}>
             <h1 id="profile-title" className="text-xl font-bold">{result.status === "missing" ? "Player not found" : "Profile unavailable"}</h1>
             <p className="mt-2 truncate text-sm text-zinc-500">

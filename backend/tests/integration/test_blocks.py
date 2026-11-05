@@ -1,6 +1,7 @@
+from datetime import timedelta
 from uuid import uuid4
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 
 from app.models import FriendRequest, Friendship, UserBlock
 
@@ -128,3 +129,63 @@ async def test_block_changes_are_rate_limited(client, log_in, make_user):
     codes = [(await client.put(f"{BLOCK}/{blocked.id}")).status_code for _ in range(11)]
     assert codes[:10] == [204] * 10
     assert codes[10] == 429
+
+
+# Listing
+
+async def blocked_tags(client, **params) -> list[str]:
+    response = await client.get(BLOCK, params=params)
+    assert response.status_code == 200
+    return [item["tag"] for item in response.json()["items"]]
+
+
+async def test_list_shows_only_the_callers_blocks_newest_first(client, log_in, make_user, db_session):
+    blocker, first, second = await make_user("blocker"), await make_user("first"), await make_user("second")
+    log_in(blocker)
+    assert await blocked_tags(client) == []
+    await client.put(f"{BLOCK}/{first.id}")
+    await client.put(f"{BLOCK}/{second.id}")
+    # `now()` is fixed for the test's whole transaction, so give the blocks distinct times.
+    for blocked, minutes_ago in ((first, 2), (second, 1)):
+        await db_session.execute(
+            update(UserBlock)
+            .where(UserBlock.blocked_id == blocked.id)
+            .values(created_at=func.now() - timedelta(minutes=minutes_ago))
+        )
+    await db_session.commit()
+    assert await blocked_tags(client) == ["second", "first"]
+    # Being blocked doesn't put the blocker on your list.
+    log_in(first)
+    assert await blocked_tags(client) == []
+
+
+async def test_list_carries_only_public_fields(client, log_in, make_user, db_session):
+    blocker, blocked = await make_user("blocker"), await make_user("blocked")
+    blocked.email = "secret@example.com"
+    await db_session.commit()
+    log_in(blocker)
+    await client.put(f"{BLOCK}/{blocked.id}")
+    response = await client.get(BLOCK)
+    assert set(response.json()["items"][0]) == {"id", "tag", "username", "avatar_url"}
+    assert "secret@example.com" not in response.text
+
+
+async def test_list_pages(client, log_in, make_user):
+    blocker = await make_user("blocker")
+    log_in(blocker)
+    for index in range(3):
+        await client.put(f"{BLOCK}/{(await make_user(f'player{index}')).id}")
+    first = (await client.get(BLOCK, params={"limit": 2})).json()
+    assert len(first["items"]) == 2
+    assert first["next_offset"] == 2
+    rest = (await client.get(BLOCK, params={"limit": 2, "offset": 2})).json()
+    assert len(rest["items"]) == 1
+    assert rest["next_offset"] is None
+
+
+async def test_unblocked_players_leave_the_list(client, log_in, make_user):
+    blocker, blocked = await make_user("blocker"), await make_user("blocked")
+    log_in(blocker)
+    await client.put(f"{BLOCK}/{blocked.id}")
+    await client.delete(f"{BLOCK}/{blocked.id}")
+    assert await blocked_tags(client) == []

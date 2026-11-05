@@ -69,6 +69,18 @@ class FriendRepository:
         )
         await self.session.execute(statement)
 
+    async def list_blocked(self, blocker_id: UUID, limit: int, offset: int) -> list[User]:
+        """Players `blocker_id` has blocked, newest first (`id` breaks ties)."""
+        statement = (
+            select(User)
+            .join(UserBlock, UserBlock.blocked_id == User.id)
+            .where(UserBlock.user_id == blocker_id)
+            .order_by(UserBlock.created_at.desc(), User.id)
+            .limit(limit)
+            .offset(offset)
+        )
+        return list((await self.session.execute(statement)).scalars())
+
     async def remove_block(self, blocker_id: UUID, blocked_id: UUID) -> None:
         statement = delete(UserBlock).where(
             UserBlock.user_id == blocker_id,

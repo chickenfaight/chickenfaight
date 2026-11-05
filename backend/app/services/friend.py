@@ -91,6 +91,9 @@ class FriendService:
         await self.friends.remove_pair(user.id, friend_id)
         await self.session.commit()
 
+    async def list_blocked(self, user: User, limit: int, offset: int) -> FriendsPage:
+        return self.page(await self.friends.list_blocked(user.id, limit + 1, offset), limit, offset)
+
     async def block(self, user: User, blocked_id: UUID) -> None:
         """Hide the caller's profile from `blocked_id`. Ends any friendship and pending requests
         between them, in both directions, and stops either from asking again until unblocked."""
