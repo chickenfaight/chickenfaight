@@ -7,6 +7,7 @@ Compared ignoring case, like tag uniqueness. No imports, so schemas can use it w
 
 ADMIN_TAGS: frozenset[str] = frozenset({
     "Jacky720",
+    # Admins may add more here.
 })
 
 _ADMIN_TAGS_LOWER = frozenset(tag.lower() for tag in ADMIN_TAGS)
