@@ -5,6 +5,7 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.friend import FriendRequest, Friendship
+from app.models.block import UserBlock
 from app.models.user import User
 
 
@@ -42,6 +43,14 @@ class FriendRepository:
             and_(Friendship.user_id == second, Friendship.friend_id == first),
         ))
         await self.session.execute(statement)
+
+    # Checks if blocked_id is blocked by user_id. For inverse, just switch args.
+    async def is_blocked(self, blocked_id: UUID, user_id: UUID) -> bool:
+        statement = select(exists().where(
+            UserBlock.user_id == user_id,
+            UserBlock.blocked_id == blocked_id,
+        ))
+        return bool(await self.session.scalar(statement))
 
     async def is_friend(self, user_id: UUID, friend_id: UUID) -> bool:
         statement = select(exists().where(

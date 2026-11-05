@@ -112,7 +112,7 @@ export function parseUserPage(data: unknown): UserPage {
 export type Rating = { ladder: string; elo: number; games_played: number; wins: number; losses: number };
 // A pending friend request between the caller and a player: "sent" by the caller, or "received" from them.
 export type FriendRequestState = "sent" | "received" | null;
-export type UserProfile = UserPublic & { ratings: Rating[]; is_friend: boolean; friend_request: FriendRequestState; points: number; streak: number; rank: number | null };
+export type UserProfile = UserPublic & { ratings: Rating[]; read_blocked: boolean; is_blocked: boolean; is_friend: boolean; friend_request: FriendRequestState; points: number; streak: number; rank: number | null };
 
 function isFriendRequestState(value: unknown): value is FriendRequestState {
   return value === null || value === "sent" || value === "received";
@@ -156,7 +156,11 @@ export function parseUserProfile(data: unknown): UserProfile {
     || typeof data.points !== "number" || typeof data.streak !== "number" || !(data.rank === null || typeof data.rank === "number")) {
     throw new Error("Invalid profile");
   }
-  return { ...parseUserPublic(data), ratings: data.ratings.map(parseRating), is_friend: data.is_friend, friend_request: data.friend_request, points: data.points, streak: data.streak, rank: data.rank };
+  if (data.read_blocked === true) {
+    // All other data returned in this case is dummied from viewer, but remove it anyway.
+    throw new Error("Blocked profile");
+  }
+  return { ...parseUserPublic(data), ratings: data.ratings.map(parseRating), is_friend: data.is_friend, friend_request: data.friend_request, points: data.points, streak: data.streak, rank: data.rank, is_blocked: data.is_blocked };
 }
 
 // The daily challenge's twist, as announced in MATCH_STATE and GET /v1/challenge/today.

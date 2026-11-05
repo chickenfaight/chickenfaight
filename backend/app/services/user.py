@@ -112,7 +112,12 @@ class UserService:
         """A player's public profile, as seen by `viewer`."""
         user = await self.get_by_tag(tag)
         friends = FriendRepository(self.session)
+        read_blocked = await friends.is_blocked(viewer.id, user.id)
+        if read_blocked:
+            # Viewer is blocked, stop here. Don't access blocked user data.
+            return UserProfile.model_validate(viewer).model_copy(update={ "read_blocked": True })
         is_friend = await friends.is_friend(viewer.id, user.id)
+        is_blocked = await friends.is_blocked(user.id, viewer.id)
         friend_request = None
         if await friends.request_exists(viewer.id, user.id):
             friend_request = "sent"
@@ -135,6 +140,7 @@ class UserService:
 
         return UserProfile.model_validate(user).model_copy(update={
             "is_friend": is_friend,
+            "is_blocked": is_blocked,
             "friend_request": friend_request,
             "streak": effective_streak(user, datetime.now(UTC)),
             "rank": await points_rank(self.session, user),

@@ -50,9 +50,13 @@ class FriendshipStatus(BaseModel):
 
 class UserProfile(UserPublic):
     ratings: list[Rating] = []
+    # Whether this player has blocked the caller (invalidates other data)
+    read_blocked: bool = False
     # Whether this player and the caller are friends, and any pending request between them.
     is_friend: bool = False
     friend_request: Literal["sent", "received"] | None = None
+    # Whether the caller has blocked this player
+    is_blocked: bool = False
     # Daily-play rewards; `streak` already lapses to 0 after 48 hours without a finished match.
     points: int = 0
     streak: int = 0

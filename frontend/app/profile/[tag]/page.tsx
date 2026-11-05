@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import AddFriendButton from "../../components/add-friend";
+import BlockButton from "../../components/block-button";
 import FriendRequests from "../../components/friend-requests";
 import ProfileEditor from "../../components/profile-editor";
 import Avatar from "../../components/avatar";
@@ -21,7 +22,7 @@ const panel = "rounded-3xl border border-white/[0.07] bg-[#202124]";
 const focus = "focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white";
 const FRIENDS_SHOWN = 100;
 
-type Lookup = { status: "found"; profile: UserProfile } | { status: "missing" | "error" };
+type Lookup = { status: "found"; profile: UserProfile } | { status: "missing" | "error" | "blocked" };
 
 // Server-side fetches forward the browser's session cookie to the backend.
 async function backendGet(path: string): Promise<Response> {
@@ -72,7 +73,10 @@ async function lookUp(tag: string): Promise<Lookup> {
   if (!response.ok) return { status: "error" };
   try {
     return { status: "found", profile: parseUserProfile(await response.json()) };
-  } catch {
+  } catch (err : Error) {
+    if (err.message === "Blocked profile") {
+      return { status: "blocked" };
+    }
     return { status: "error" };
   }
 }
@@ -146,7 +150,10 @@ function Profile({ profile, me, friends, incoming, outgoing }: ProfileProps) {
           <p className="mt-1 truncate text-sm text-zinc-400"><span className="sr-only">Tag: </span>{profile.tag}</p>
           {meId === profile.id && me?.email && <p className="mt-2 truncate text-xs text-zinc-500">{me.email} <span className="text-zinc-600">· only you can see this</span></p>}
           {meId === profile.id && <ProfileEditor username={profile.username} avatarUrl={profile.avatar_url} />}
-          {meId && meId !== profile.id && <AddFriendButton key={profile.id} userId={profile.id} initialIsFriend={profile.is_friend} initialRequest={profile.friend_request} />}
+          {meId && meId !== profile.id && <>
+            <AddFriendButton key={profile.id} userId={profile.id} initialIsFriend={profile.is_friend} initialRequest={profile.friend_request} />
+            <BlockButton userId={profile.id} initialIsBlocked={profile.is_blocked} />
+          </>}
         </div>
       </section>
       <section aria-labelledby="record-title" className={`${panel} p-6`}>
@@ -194,7 +201,9 @@ export default async function ProfilePage({ params }: PageProps<"/profile/[tag]"
           <section aria-labelledby="profile-title" className={`${panel} p-9`}>
             <h1 id="profile-title" className="text-xl font-bold">{result.status === "missing" ? "Player not found" : "Profile unavailable"}</h1>
             <p className="mt-2 truncate text-sm text-zinc-500">
-              {result.status === "missing" ? `No player goes by “${tag}”. Check the tag or search for them above.` : "Couldn’t load this profile. Try again in a moment."}
+              {result.status === "missing" ? `No player goes by “${tag}”. Check the tag or search for them above.`
+              : (result.status === "blocked" ? "You have been blocked from this profile."
+              : "Couldn’t load this profile. Try again in a moment.")}
             </p>
           </section>
         )}
