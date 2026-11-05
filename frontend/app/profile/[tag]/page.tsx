@@ -22,7 +22,8 @@ const panel = "rounded-3xl border border-white/[0.07] bg-[#202124]";
 const focus = "focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white";
 const FRIENDS_SHOWN = 100;
 
-type Lookup = { status: "found"; profile: UserProfile } | { status: "missing" | "error" | "blocked" };
+// "blocked": the player blocked the viewer; only `profile.id`, `tag`, and `is_blocked` are real.
+type Lookup = { status: "found" | "blocked"; profile: UserProfile } | { status: "missing" | "error" };
 
 // Server-side fetches forward the browser's session cookie to the backend.
 async function backendGet(path: string): Promise<Response> {
@@ -72,11 +73,9 @@ async function lookUp(tag: string): Promise<Lookup> {
   if (response.status === 404) return { status: "missing" };
   if (!response.ok) return { status: "error" };
   try {
-    return { status: "found", profile: parseUserProfile(await response.json()) };
-  } catch (err : Error) {
-    if (err.message === "Blocked profile") {
-      return { status: "blocked" };
-    }
+    const profile = parseUserProfile(await response.json());
+    return { status: profile.read_blocked ? "blocked" : "found", profile };
+  } catch {
     return { status: "error" };
   }
 }
@@ -151,8 +150,9 @@ function Profile({ profile, me, friends, incoming, outgoing }: ProfileProps) {
           {meId === profile.id && me?.email && <p className="mt-2 truncate text-xs text-zinc-500">{me.email} <span className="text-zinc-600">· only you can see this</span></p>}
           {meId === profile.id && <ProfileEditor username={profile.username} avatarUrl={profile.avatar_url} />}
           {meId && meId !== profile.id && <>
-            <AddFriendButton key={profile.id} userId={profile.id} initialIsFriend={profile.is_friend} initialRequest={profile.friend_request} />
-            <BlockButton userId={profile.id} initialIsBlocked={profile.is_blocked} />
+            {/* Neither player can send a request while blocked; unblocking remounts it with fresh state. */}
+            {!profile.is_blocked && <AddFriendButton key={profile.id} userId={profile.id} initialIsFriend={profile.is_friend} initialRequest={profile.friend_request} />}
+            <BlockButton key={`block-${profile.id}`} userId={profile.id} initialIsBlocked={profile.is_blocked} />
           </>}
         </div>
       </section>
@@ -205,6 +205,9 @@ export default async function ProfilePage({ params }: PageProps<"/profile/[tag]"
               : (result.status === "blocked" ? "You have been blocked from this profile."
               : "Couldn’t load this profile. Try again in a moment.")}
             </p>
+            {result.status === "blocked" && meId && (
+              <BlockButton key={`block-${result.profile.id}`} userId={result.profile.id} initialIsBlocked={result.profile.is_blocked} />
+            )}
           </section>
         )}
       </main>

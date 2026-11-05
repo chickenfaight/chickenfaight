@@ -1,7 +1,7 @@
 """create_blocking
 
 Revision ID: 7d8324088403
-Revises: 5a554947da58
+Revises: c4e19b7a2d35
 Create Date: 2026-11-04 23:22:23.704094
 
 """
@@ -13,7 +13,7 @@ import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision: str = '7d8324088403'
-down_revision: Union[str, Sequence[str], None] = '5a554947da58'
+down_revision: Union[str, Sequence[str], None] = 'c4e19b7a2d35'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

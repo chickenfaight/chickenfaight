@@ -8,8 +8,9 @@ from app.db.base import Base
 
 
 class UserBlock(Base):
-    """`user_id` has blocked `blocked_id`. A blocked user cannot access the blocker's profile,
-    but can block back. Blocked users automatically cancel friendships."""
+    """`user_id` has blocked `blocked_id`. The blocked player can't see the blocker's profile,
+    and neither can send the other a friend request; blocking ends any friendship and pending
+    requests between them. See BACKEND.md, "Friends"."""
     __tablename__ = "blocks"
     __table_args__ = (CheckConstraint("user_id <> blocked_id", name="not_self"),)
 

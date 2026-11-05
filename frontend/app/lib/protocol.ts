@@ -152,15 +152,13 @@ export function parseLeaderboard(data: unknown): LeaderboardEntry[] {
 }
 
 export function parseUserProfile(data: unknown): UserProfile {
-  if (!isObject(data) || !Array.isArray(data.ratings) || typeof data.is_friend !== "boolean" || !isFriendRequestState(data.friend_request)
-    || typeof data.points !== "number" || typeof data.streak !== "number" || !(data.rank === null || typeof data.rank === "number")) {
+  if (!isObject(data) || !Array.isArray(data.ratings) || typeof data.is_friend !== "boolean" || typeof data.is_blocked !== "boolean"
+    || !isFriendRequestState(data.friend_request) || typeof data.points !== "number" || typeof data.streak !== "number" || !(data.rank === null || typeof data.rank === "number")) {
     throw new Error("Invalid profile");
   }
-  if (data.read_blocked === true) {
-    // All other data returned in this case is dummied from viewer, but remove it anyway.
-    throw new Error("Blocked profile");
-  }
-  return { ...parseUserPublic(data), ratings: data.ratings.map(parseRating), is_friend: data.is_friend, friend_request: data.friend_request, points: data.points, streak: data.streak, rank: data.rank, is_blocked: data.is_blocked };
+  if (typeof data.read_blocked !== "boolean") throw new Error("Invalid profile");
+  // When `read_blocked`, only `id`, `tag`, and `is_blocked` describe the player; the rest are blanks.
+  return { ...parseUserPublic(data), ratings: data.ratings.map(parseRating), read_blocked: data.read_blocked, is_friend: data.is_friend, friend_request: data.friend_request, points: data.points, streak: data.streak, rank: data.rank, is_blocked: data.is_blocked };
 }
 
 // The daily challenge's twist, as announced in MATCH_STATE and GET /v1/challenge/today.

@@ -36,6 +36,11 @@ class FriendSelfError(ServiceError):
         super().__init__("You can't add yourself as a friend.")
 
 
+class BlockSelfError(ServiceError):
+    def __init__(self):
+        super().__init__("You can't block yourself.")
+
+
 class RateLimitedError(ServiceError):
     def __init__(self, retry_after: int):
         self.retry_after = retry_after

@@ -5,6 +5,7 @@ from app.services.exceptions import (
     AlreadyMatchedError,
     AlreadyQueuedError,
     ArenaNotFoundError,
+    BlockSelfError,
     FriendSelfError,
     InvalidCredentialsError,
     RateLimitedError,
@@ -88,6 +89,16 @@ async def handle_friend_self(
     )
 
 
+async def handle_block_self(
+        request: Request,
+        error: BlockSelfError,
+) -> JSONResponse:
+    return JSONResponse(
+        status_code=422,
+        content={"code": "BLOCK_SELF", "detail": str(error)},
+    )
+
+
 async def handle_rate_limited(
         request: Request,
         error: RateLimitedError,
@@ -106,6 +117,7 @@ EXCEPTION_HANDLERS = {
     TagError: handle_tag_error,
     UserNotFoundError: handle_user_not_found,
     FriendSelfError: handle_friend_self,
+    BlockSelfError: handle_block_self,
     InvalidCredentialsError: handle_invalid_credentials,
     RateLimitedError: handle_rate_limited,
 }

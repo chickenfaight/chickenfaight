@@ -50,7 +50,7 @@ class FriendshipStatus(BaseModel):
 
 class UserProfile(UserPublic):
     ratings: list[Rating] = []
-    # Whether this player has blocked the caller (invalidates other data)
+    # Whether this player has blocked the caller; then only `id`, `tag`, and `is_blocked` are real.
     read_blocked: bool = False
     # Whether this player and the caller are friends, and any pending request between them.
     is_friend: bool = False

@@ -44,13 +44,37 @@ class FriendRepository:
         ))
         await self.session.execute(statement)
 
-    # Checks if blocked_id is blocked by user_id. For inverse, just switch args.
-    async def is_blocked(self, blocked_id: UUID, user_id: UUID) -> bool:
+    async def is_blocked(self, *, blocker_id: UUID, blocked_id: UUID) -> bool:
+        """Whether `blocker_id` has blocked `blocked_id` (one direction only)."""
         statement = select(exists().where(
-            UserBlock.user_id == user_id,
+            UserBlock.user_id == blocker_id,
             UserBlock.blocked_id == blocked_id,
         ))
         return bool(await self.session.scalar(statement))
+
+    async def either_blocked(self, first: UUID, second: UUID) -> bool:
+        """Whether either player has blocked the other."""
+        statement = select(exists().where(or_(
+            and_(UserBlock.user_id == first, UserBlock.blocked_id == second),
+            and_(UserBlock.user_id == second, UserBlock.blocked_id == first),
+        )))
+        return bool(await self.session.scalar(statement))
+
+    async def add_block(self, blocker_id: UUID, blocked_id: UUID) -> None:
+        """Record the block; blocking again changes nothing."""
+        statement = (
+            insert(UserBlock)
+            .values(user_id=blocker_id, blocked_id=blocked_id)
+            .on_conflict_do_nothing(index_elements=[UserBlock.user_id, UserBlock.blocked_id])
+        )
+        await self.session.execute(statement)
+
+    async def remove_block(self, blocker_id: UUID, blocked_id: UUID) -> None:
+        statement = delete(UserBlock).where(
+            UserBlock.user_id == blocker_id,
+            UserBlock.blocked_id == blocked_id,
+        )
+        await self.session.execute(statement)
 
     async def is_friend(self, user_id: UUID, friend_id: UUID) -> bool:
         statement = select(exists().where(

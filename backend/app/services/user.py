@@ -112,12 +112,15 @@ class UserService:
         """A player's public profile, as seen by `viewer`."""
         user = await self.get_by_tag(tag)
         friends = FriendRepository(self.session)
-        read_blocked = await friends.is_blocked(viewer.id, user.id)
-        if read_blocked:
-            # Viewer is blocked, stop here. Don't access blocked user data.
-            return UserProfile.model_validate(viewer).model_copy(update={ "read_blocked": True })
+        is_blocked = await friends.is_blocked(blocker_id=viewer.id, blocked_id=user.id)
+        if await friends.is_blocked(blocker_id=user.id, blocked_id=viewer.id):
+            # The viewer is blocked: only the ID and tag (public through search anyway), so they
+            # can still block back or lift their own block, and nothing else of the blocker's.
+            return UserProfile(
+                id=user.id, tag=user.tag, username=None, avatar_url=None,
+                read_blocked=True, is_blocked=is_blocked,
+            )
         is_friend = await friends.is_friend(viewer.id, user.id)
-        is_blocked = await friends.is_blocked(user.id, viewer.id)
         friend_request = None
         if await friends.request_exists(viewer.id, user.id):
             friend_request = "sent"
