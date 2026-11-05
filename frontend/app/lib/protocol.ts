@@ -1,6 +1,7 @@
 // `tag` is the permanent unique identifier (set once); `username` is the changeable display name.
 // `email` is private: only `/auth/me` returns it, to its owner.
-export type User = { id: string; tag: string | null; username: string | null; email: string | null };
+// `is_admin`: the backend lists this tag as an admin. It only decides what to show; admin routes check it again.
+export type User = { id: string; tag: string | null; username: string | null; email: string | null; is_admin: boolean };
 
 export type ArenaStats = { points: number; debates_played: number; wins: number; win_rate: number | null; recent_form: ("W" | "L")[] };
 
@@ -24,7 +25,7 @@ export function parseUser(data: unknown): User {
     || !optionalString(data.tag) || !optionalString(data.username) || !("email" in data) || !optionalString(data.email)) {
     throw new Error("Invalid user");
   }
-  return { id: data.id, tag: data.tag, username: data.username, email: data.email };
+  return { id: data.id, tag: data.tag, username: data.username, email: data.email, is_admin: "is_admin" in data && data.is_admin === true };
 }
 
 // What to call a player: their username, or their tag if they haven't set one.
@@ -334,4 +335,29 @@ export function parseMatchDetail(data: unknown): MatchDetail {
       return { id: turn.id, index: turn.index, side: turn.side, phase: turn.phase, content: turn.content, truncated: turn.truncated };
     }),
   };
+}
+
+export type AdminTopic = {
+  id: string; category: string; topic: string; pro_position: string; con_position: string; is_active: boolean; created_at: string;
+};
+export type AdminTopicsPage = { total: number; topics: AdminTopic[] };
+export type TopicUploadResult = { added: number; skipped: number };
+
+function isCount(value: unknown): value is number {
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
+}
+
+export function parseAdminTopicsPage(data: unknown): AdminTopicsPage {
+  if (!isObject(data) || !isCount(data.total) || !Array.isArray(data.topics)
+    || !data.topics.every(topic => isObject(topic)
+      && [topic.id, topic.category, topic.topic, topic.pro_position, topic.con_position, topic.created_at].every(value => typeof value === "string")
+      && typeof topic.is_active === "boolean")) {
+    throw new Error("Invalid topics page");
+  }
+  return data as AdminTopicsPage;
+}
+
+export function parseTopicUploadResult(data: unknown): TopicUploadResult {
+  if (!isObject(data) || !isCount(data.added) || !isCount(data.skipped)) throw new Error("Invalid upload result");
+  return { added: data.added, skipped: data.skipped };
 }

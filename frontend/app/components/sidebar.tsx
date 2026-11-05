@@ -2,12 +2,13 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import Icon from "./line-icon";
+import Icon, { type IconName } from "./line-icon";
 import { useFriendRequests } from "./providers/friend-requests-provider";
+import { useSession } from "./providers/session-provider";
 
 const focus = "focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white";
 
-const SECTIONS = [
+const SECTIONS: { href: string; label: string; icon: IconName; matches: (path: string) => boolean }[] = [
   { href: "/", label: "Play", icon: "play", matches: (path: string) => path === "/" },
   { href: "/leaderboards", label: "Leaderboards", icon: "trophy", matches: (path: string) => path === "/leaderboards" },
   { href: "/challenge", label: "Daily challenge", icon: "bolt", matches: (path: string) => path.startsWith("/challenge") },
@@ -15,16 +16,21 @@ const SECTIONS = [
   { href: "/bilc", label: "BILC", icon: "chip", matches: (path: string) => path.startsWith("/bilc") },
   { href: "/profile/me", label: "Profile", icon: "user", matches: (path: string) => path.startsWith("/profile") || path.startsWith("/matches") },
   { href: "/settings", label: "Settings", icon: "gear", matches: (path: string) => path.startsWith("/settings") },
-] as const;
+];
+
+// Only for tags the backend lists as admins; the page itself is gated by the backend.
+const ADMIN_SECTION = { href: "/admin/topics", label: "Admin", icon: "shield", matches: (path: string) => path.startsWith("/admin") } as const;
 
 // Page navigation for signed-in pages; labels collapse to icons on narrow screens.
 export default function Sidebar() {
   const pathname = usePathname();
   const { count } = useFriendRequests();
+  const { user } = useSession();
+  const sections = user?.is_admin ? [...SECTIONS, ADMIN_SECTION] : SECTIONS;
   return (
     <nav aria-label="Sections" className="shrink-0 border-r border-white/[0.07] px-3 py-5 lg:w-56 lg:px-4">
       <ul className="flex flex-col gap-1">
-        {SECTIONS.map((section) => {
+        {sections.map((section) => {
           const current = section.matches(pathname);
           const waiting = section.href === "/profile/me" ? count : 0;
           const waitingLabel = `${waiting} friend ${waiting === 1 ? "request" : "requests"}`;

@@ -2,7 +2,9 @@ from datetime import date, datetime
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, computed_field
+
+from app.auth.admins import is_admin_tag
 
 
 class UserRead(BaseModel):
@@ -13,6 +15,12 @@ class UserRead(BaseModel):
     tag: str | None
     username: str | None
     avatar_url: str | None
+
+    @computed_field
+    @property
+    def is_admin(self) -> bool:
+        """Whether this user's tag is in `ADMIN_TAGS`, so clients can show admin pages."""
+        return is_admin_tag(self.tag)
 
 
 class ArenaStats(BaseModel):

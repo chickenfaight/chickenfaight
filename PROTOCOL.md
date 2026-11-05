@@ -57,6 +57,7 @@ Everything here is PLANNED unless marked **(implemented)**. Remove a PLANNED sta
 | `MODEL_UNAVAILABLE`, `MODEL_ERROR`, `MODEL_TIMEOUT` | — | — | Sent by BILC about the local model (implemented) |
 | `HEARTBEAT_TIMEOUT` | — | 4408 | No message within the timeout |
 | `REPLACED` | — | 4409 | A newer connection for the same user+match or device |
+| `TOPICS_INVALID` | 422 | — | An uploaded topic list has a malformed line (the `detail` names the first one), no topics, or over 1,000 topics; nothing is added (implemented) |
 | `FRIEND_SELF` | 422 | — | Players can't send themselves a friend request (implemented) |
 | `BLOCK_SELF` | 422 | — | Players can't block themselves (implemented) |
 | `INVALID_CREDENTIALS` | 401 | — | Password sign-in failed. Same response for a wrong password, an unknown tag, or an account without a password (implemented) |
@@ -94,7 +95,7 @@ Rate limits apply per signed-in user on routes that read other users' data or ch
 ## Shared types
 
 ```
-UserRead         { id: uuid, email: str|null, tag: str|null, username: str|null, avatar_url: str|null }   (implemented)
+UserRead         { id: uuid, email: str|null, tag: str|null, username: str|null, avatar_url: str|null, is_admin: bool }   (implemented; `is_admin`: the tag is in the backend's fixed admin list, see "REST — admin")
 UserPublic       { id: uuid, tag: str|null, username: str|null, avatar_url: str|null }   (implemented)
                  `tag` is the permanent unique identifier, null until set and never changed. `username` is the changeable display name: not unique, null until set; clients show it, falling back to the tag.
 UserProfile      UserPublic + { ratings: [Rating], read_blocked: bool, is_friend: bool, friend_request: "sent"|"received"|null, is_blocked: bool, points: int, streak: int, rank: int|null }   (implemented; `read_blocked` is whether this player has blocked the caller; when true, only `id`, `tag`, and `is_blocked` are real and the rest are blanks (`username` and `avatar_url` null, no ratings, zero points); `is_blocked` is whether the caller has blocked this player; `ratings` contains the player's per-ladder ratings; `is_friend` is whether this player and the caller are friends; `friend_request` is any pending request between them, "sent" by the caller or "received" from this player; `streak` is already 0 if 48 h passed without a finished match; `rank` is the 1-based position by points among tagged players, ties sharing a rank)
@@ -183,6 +184,15 @@ The BYOM arena is `ArenaRead { id: "6f1c9a52-3d8e-4b7a-9e21-b10c0000b10c", displ
 ### Current matchmaking integration
 
 The current session-authenticated `POST /v1/match/queue` requires `{ model_id: uuid, daily?: bool, bilc_id?: uuid }` from `GET /v1/arenas`. `bilc_id` is required for the BYOM arena and refused (422 `VALIDATION_ERROR`) otherwise; see "BYOM arena" (implemented). `daily: true` joins today's daily-challenge queue for that model, separate from the regular queue, and returns 409 `CHALLENGE_ALREADY_COMPLETED` once the caller has completed today's challenge (implemented); an unknown or inactive model returns 404 `NOT_FOUND`, and malformed input returns 422. It returns HTTP 202 queue status. `GET /v1/match/status` returns HTTP 200 queue status. Both return `{ status: "none"|"queued"|"matched", match_id?: uuid }`. Cloud matchmaking uses independent queues keyed by model UUID and challenge day. It loads the player’s `ratings.elo` for that model’s ladder, using 1000 for an unrated player. It selects the first eligible pair in queue order, with a rating difference under 50 or a wait of more than 15 seconds for the earlier player. The matchmaker passes the selected model UUID to the engine, which resolves its exact `api_model_id` and display name before inference. The client still uses the configured OpenRouter base URL and API key; provider-specific connection settings remain pending. The frontend integration is implemented: the lobby loads the arena catalog, displays model names, and sends the selected UUID in the required body. Selection stays locked during queue operations; recovered queues have an unknown model until `MATCH_STATE` arrives. Catalog failures do not block queue cancellation. `POST /v1/match/queue` returns 403 `TAG_REQUIRED` until the caller has a tag. `DELETE /v1/match/queue` (session, no body) cancels the caller’s queue entry in its selected model queue and returns HTTP 204, including if already absent; an existing match returns HTTP 409 `IN_MATCH`. The versioned routes above remain the target contract. The lobby polls until matched, then navigates to `/match/[match_id]`, where the arena opens the match WebSocket.
+
+## REST — admin (implemented)
+
+Only users whose tag is in `ADMIN_TAGS` (`backend/app/auth/admins.py`, compared ignoring case) may call these. The list is fixed in code, so granting admin takes a reviewed commit. Without a session: 401; signed in but not an admin: 403 `FORBIDDEN`, checked before the body is read.
+
+| Method | Path | Auth | Request | Response |
+|---|---|---|---|---|
+| GET | `/v1/admin/topics` | admin | — | `{ total: int, topics: [{ id: uuid, category, topic, pro_position, con_position: str, is_active: bool, created_at: str }] }`: the 50 newest topics, active or not |
+| POST | `/v1/admin/topics` | admin | `{ text: str (1–200,000 chars), is_active?: bool = true }`. `text` uses the importer's format: one `category \| topic \| pro position \| con position` per line, each field 1–255 characters after trimming; blank lines and `#` comments are skipped | `{ added: int, skipped: int }`. The whole list is validated first, then added in one transaction; topics identical to a stored one or an earlier line are skipped. 422 `TOPICS_INVALID` for a bad line, no topics, or over 1,000 topics |
 
 ## REST — BILC
 

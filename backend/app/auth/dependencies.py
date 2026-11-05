@@ -5,10 +5,12 @@ from fastapi import Depends, HTTPException, WebSocket, WebSocketException, statu
 from fastapi.requests import HTTPConnection
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.auth.admins import is_admin_tag
 from app.config import settings
 from app.db.session import SessionFactory, get_session
 from app.models.user import User
 from app.services.auth_session import SessionService
+from app.services.exceptions import AdminRequiredError
 
 
 SessionDependency = Annotated[AsyncSession, Depends(get_session)]
@@ -42,6 +44,16 @@ async def get_current_user(
 
 
 CurrentUserDependency = Annotated[User, Depends(get_current_user)]
+
+
+async def get_admin_user(user: CurrentUserDependency) -> User:
+    """The signed-in user, if their tag is in `ADMIN_TAGS`; 403 `FORBIDDEN` otherwise."""
+    if not is_admin_tag(user.tag):
+        raise AdminRequiredError()
+    return user
+
+
+AdminUserDependency = Annotated[User, Depends(get_admin_user)]
 
 
 async def get_websocket_user_id(websocket: WebSocket) -> UUID:
