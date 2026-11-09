@@ -8,7 +8,7 @@ from starlette.concurrency import run_in_threadpool
 from app.api.rate_limit import rate_limit
 from app.auth.dependencies import CurrentUserDependency
 from app.db.session import get_session
-from app.schemas import ArenaStats, UserProfile, UserRead, TagAvailability, TagUpdate, UsernameUpdate, UserSearchPage
+from app.schemas import AccountUpdate, ArenaStats, UserProfile, UserRead, TagAvailability, TagUpdate, UserSearchPage
 from app.services.arena_stats import arena_stats
 from app.services.avatars import MAX_UPLOAD_BYTES, process_avatar
 from app.services.exceptions import AvatarInvalidError
@@ -88,13 +88,14 @@ async def delete_account(request: Request, user: CurrentUserDependency, session:
 
 
 @router.patch("/me", response_model=UserRead)
-async def change_username(
-    body: UsernameUpdate,
+async def update_account(
+    body: AccountUpdate,
     user: CurrentUserDependency,
     session: SessionDependency,
 ) -> UserRead:
-    changed = await UserService(session).change_username(user, body.username)
+    changed = await UserService(session).update_account(user, body)
     return UserRead.model_validate(changed)
+
 
 @router.get("/search", response_model=UserSearchPage, dependencies=[rate_limit(burst=20, per_minute=60)])
 async def search_users(

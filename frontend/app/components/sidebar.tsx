@@ -2,11 +2,13 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { profileHref } from "../lib/routes";
 import Icon, { type IconName } from "./line-icon";
 import { useFriendRequests } from "./providers/friend-requests-provider";
 import { useSession } from "./providers/session-provider";
 
 const focus = "focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white";
+const PROFILE_ALIAS = "/profile/me";
 
 const SECTIONS: { href: string; label: string; icon: IconName; matches: (path: string) => boolean }[] = [
   { href: "/", label: "Play", icon: "play", matches: (path: string) => path === "/" },
@@ -14,7 +16,7 @@ const SECTIONS: { href: string; label: string; icon: IconName; matches: (path: s
   { href: "/challenge", label: "Daily challenge", icon: "bolt", matches: (path: string) => path.startsWith("/challenge") },
   { href: "/tips", label: "Debate tips", icon: "chat", matches: (path: string) => path.startsWith("/tips") },
   { href: "/bilc", label: "BILC", icon: "chip", matches: (path: string) => path.startsWith("/bilc") },
-  { href: "/profile/me", label: "Profile", icon: "user", matches: (path: string) => path.startsWith("/profile") || path.startsWith("/matches") },
+  { href: PROFILE_ALIAS, label: "Profile", icon: "user", matches: (path: string) => path.startsWith("/profile") || path.startsWith("/matches") },
   { href: "/settings", label: "Settings", icon: "gear", matches: (path: string) => path.startsWith("/settings") },
 ];
 
@@ -32,10 +34,12 @@ export default function Sidebar() {
       <ul className="flex flex-col gap-1">
         {sections.map((section) => {
           const current = section.matches(pathname);
-          const waiting = section.href === "/profile/me" ? count : 0;
+          const profile = section.href === PROFILE_ALIAS;
+          const href = profile && user?.tag ? profileHref(user.tag) : section.href;
+          const waiting = profile ? count : 0;
           const waitingLabel = `${waiting} friend ${waiting === 1 ? "request" : "requests"}`;
           return <li key={section.href}>
-            <Link href={section.href} aria-current={current ? "page" : undefined} title={waiting ? `${section.label}: ${waitingLabel}` : section.label}
+            <Link href={href} aria-current={current ? "page" : undefined} title={waiting ? `${section.label}: ${waitingLabel}` : section.label}
               className={`relative flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold transition-colors ${current ? "bg-[#f04b58]/10 text-[#ff7882]" : "text-zinc-400 hover:bg-white/5 hover:text-white"} ${focus}`}>
               <Icon name={section.icon} className="h-5 w-5 shrink-0" />
               <span className="sr-only lg:not-sr-only">{section.label}</span>

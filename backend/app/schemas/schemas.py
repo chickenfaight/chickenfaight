@@ -1,8 +1,8 @@
 from datetime import date, datetime
-from typing import Literal
+from typing import Literal, Self
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, computed_field
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, computed_field, model_validator
 
 from app.auth.admins import is_admin_tag
 
@@ -81,9 +81,18 @@ class TagUpdate(BaseModel):
     tag: str = Field(max_length=64)
 
 
-class UsernameUpdate(BaseModel):
+class AccountUpdate(BaseModel):
     # Length and content rules are checked in the service so rejections use PROTOCOL error codes.
-    username: str = Field(max_length=64)
+    username: str | None = Field(default=None, max_length=64)
+    email: EmailStr | None = None
+
+    @model_validator(mode="after")
+    def validate_update(self) -> Self:
+        if not self.model_fields_set:
+            raise ValueError("Supply a username or email.")
+        if "username" in self.model_fields_set and self.username is None:
+            raise ValueError("Username cannot be null.")
+        return self
 
 
 class TagAvailability(BaseModel):

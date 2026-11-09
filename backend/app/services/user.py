@@ -12,6 +12,7 @@ from app.models.ladder_rating import Rating as RatingM
 from app.repositories.friend import FriendRepository
 from app.repositories.user import UserRepository
 from app.schemas import (
+    AccountUpdate,
     GoogleIdentity,
     UserProfile,
     UserPublic,
@@ -50,14 +51,12 @@ class UserService:
             user = await self.users.get_by_google_sub(identity.sub)
 
             if user is None:
-                # Start with the Google name as the username; it's changeable, so only on creation.
+                # Import the editable username and email only when creating the account.
                 name = (identity.name or "").strip()[:32] or None
-                user = User(google_sub=identity.sub, username=name)
+                user = User(google_sub=identity.sub, username=name, email=identity.email)
                 self.users.add(user)
 
-            # Refresh profile fields on every login because users can change their email or pfp at Google.
-            # Never touch `tag`: a tag is permanent once set. Keep an uploaded picture over Google's.
-            user.email = identity.email
+            # Refresh the Google picture unless the user uploaded their own.
             if user.id is None or await self.session.get(Avatar, user.id) is None:
                 user.avatar_url = identity.picture
 
@@ -196,9 +195,11 @@ class UserService:
         # Loading the session user already began this session's transaction.
         await self.session.commit()
 
-    async def change_username(self, user: User, username: str) -> User:
-        """Change the caller's display name; unlike the tag, any number of times."""
-        user.username = validate_username(username)
+    async def update_account(self, user: User, data: AccountUpdate) -> User:
+        if data.username is not None:
+            user.username = validate_username(data.username)
+        if "email" in data.model_fields_set:
+            user.email = data.email
         # Loading the session user already began this session's transaction.
         await self.session.commit()
         return user

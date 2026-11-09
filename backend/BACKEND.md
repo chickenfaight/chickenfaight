@@ -75,6 +75,8 @@ Live state (matchmaking queues, running engines, connected BILC devices in `Bilc
 - Search (`UserRepository.search`): tagged users whose lowercased tag or username contains the query (LIKE wildcards escaped) or is trigram-similar to it (`%>`, pg_trgm's word similarity ≥ 0.6). Ordered exact tag, exact username, prefix, contains, then the better word similarity, tag length, tag, and `id`, so offset pages are stable. An exact tag comes first because usernames aren't unique, so nobody can bury a player by taking their tag as a username.
 - Set once: `UPDATE ... WHERE tag IS NULL` makes the write atomic, and nothing else writes the column (sign-in never touches it). Matchmaking refuses users without a tag.
 
+The signed-in player can change or clear their private email via `PATCH /v1/users/me`. Google sign-in identifies the account by `google_sub` and seeds email only at account creation, so later sign-ins preserve edits. Password sign-in uses the permanent tag.
+
 ## Daily challenges, points, and streaks
 
 `app/services/challenge.py` derives each UTC day's topic (a stable pick from active topics) and twist (rotating through `TWISTS`: character limits and banned or required whole words), and `check_prompt()` enforces the twist when a prompt is submitted. The matchmaker keys queues by `(model_id, challenge_day)`, so daily players only meet each other on the same model, and the engine loads that day's topic. `record_match()` writes `matches` and `match_participants`, then, under a row lock per finishing player, adds points, advances the streak (`users.points`, `users.streak`, `users.last_played_at`), and inserts into `challenge_completions` with `ON CONFLICT DO NOTHING` to award the challenge at most once. Values are in PROTOCOL.md.

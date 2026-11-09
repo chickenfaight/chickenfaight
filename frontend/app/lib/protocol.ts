@@ -1,7 +1,7 @@
 // `tag` is the permanent unique identifier (set once); `username` is the changeable display name.
-// `email` is private: only `/auth/me` returns it, to its owner.
+// `email` is private and only returned to its owner in UserRead.
 // `is_admin`: the backend lists this tag as an admin. It only decides what to show; admin routes check it again.
-export type User = { id: string; tag: string | null; username: string | null; email: string | null; is_admin: boolean };
+export type User = { id: string; tag: string | null; username: string | null; email: string | null; avatar_url: string | null; is_admin: boolean };
 
 export type ArenaStats = { points: number; debates_played: number; wins: number; win_rate: number | null; recent_form: ("W" | "L")[] };
 
@@ -22,10 +22,11 @@ function optionalString(value: unknown): value is string | null {
 export function parseUser(data: unknown): User {
   if (typeof data !== "object" || data === null || !("id" in data) || !("tag" in data) || !("username" in data)
     || typeof data.id !== "string"
-    || !optionalString(data.tag) || !optionalString(data.username) || !("email" in data) || !optionalString(data.email)) {
+    || !optionalString(data.tag) || !optionalString(data.username) || !("email" in data) || !optionalString(data.email)
+    || !("avatar_url" in data) || !optionalString(data.avatar_url)) {
     throw new Error("Invalid user");
   }
-  return { id: data.id, tag: data.tag, username: data.username, email: data.email, is_admin: "is_admin" in data && data.is_admin === true };
+  return { id: data.id, tag: data.tag, username: data.username, email: data.email, avatar_url: data.avatar_url, is_admin: "is_admin" in data && data.is_admin === true };
 }
 
 // What to call a player: their username, or their tag if they haven't set one.

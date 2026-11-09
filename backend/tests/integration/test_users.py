@@ -401,7 +401,7 @@ async def test_search_rejects_invalid_params(client, log_in, make_user, params):
     assert response.status_code == 422
 
 
-# PATCH /v1/users/me (username: the changeable display name)
+# PATCH /v1/users/me
 
 async def test_change_username_any_number_of_times(client, log_in, make_user, db_session):
     user = await make_user("Rooster_42")
@@ -437,6 +437,35 @@ async def test_profane_username_is_rejected(client, log_in, make_user):
 
 async def test_change_username_requires_auth(client):
     assert (await client.patch(PATCH_ME, json={"username": "Hen"})).status_code == 401
+
+
+async def test_change_email_is_private_and_persists_after_google_sign_in(client, log_in, make_user, db_session):
+    user = await make_user("Rooster_42")
+    identity = GoogleIdentity(sub=user.google_sub, email="google@example.com", email_verified=True)
+    log_in(user)
+    response = await client.patch(PATCH_ME, json={"email": "new@example.com", "username": "Hen Solo"})
+    assert response.status_code == 200
+    assert response.json()["email"] == "new@example.com"
+    assert response.json()["username"] == "Hen Solo"
+
+    await UserService(db_session).sign_in_with_google(identity)
+    assert (await client.get("/auth/me")).json()["email"] == "new@example.com"
+    log_in(await make_user("another_player"))
+    assert "email" not in (await client.get(PROFILE + "Rooster_42")).json()
+
+    log_in(user)
+    response = await client.patch(PATCH_ME, json={"email": None})
+    assert response.status_code == 200
+    assert response.json()["username"] == "Hen Solo"
+    await UserService(db_session).sign_in_with_google(identity)
+    assert (await client.get("/auth/me")).json()["email"] is None
+
+
+@pytest.mark.parametrize("body", [{}, {"username": None}, {"email": "invalid", "username": "Hen Solo"}])
+async def test_invalid_account_update_does_not_change_user(client, log_in, make_user, body):
+    log_in(await make_user("Rooster_42"))
+    assert (await client.patch(PATCH_ME, json=body)).status_code == 422
+    assert (await client.get("/auth/me")).json()["username"] is None
 
 
 async def test_profile_and_search_show_username(client, log_in, make_user):

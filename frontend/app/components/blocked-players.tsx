@@ -52,7 +52,7 @@ export default function BlockedPlayers({ blocked, shown }: { blocked: UserPage |
   const count = blocked === null ? "" : ` (${blocked.next_offset === null ? blocked.items.length : `${shown}+`})`;
   const row = "flex items-center justify-between gap-4 rounded-2xl border border-white/[0.07] p-3";
 
-  return <section aria-labelledby="blocked-title" className="col-span-2 rounded-3xl border border-white/[0.07] bg-[#202124] p-6">
+  return <section aria-labelledby="blocked-title" className="rounded-3xl border border-white/[0.07] bg-[#202124] p-6">
     <details>
       <summary className={`cursor-pointer text-sm font-bold ${focus}`}><h2 id="blocked-title" className="inline">Blocked players{count}</h2></summary>
       <div className="mt-5">

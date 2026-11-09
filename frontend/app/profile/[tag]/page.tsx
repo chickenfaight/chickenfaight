@@ -5,7 +5,6 @@ import AddFriendButton from "../../components/add-friend";
 import BlockButton from "../../components/block-button";
 import BlockedPlayers from "../../components/blocked-players";
 import FriendRequests from "../../components/friend-requests";
-import ProfileEditor from "../../components/profile-editor";
 import Avatar from "../../components/avatar";
 import AppShell from "../../components/app-shell";
 import SiteHeader from "../../components/site-header";
@@ -111,10 +110,11 @@ async function ownRequests(direction: "incoming" | "outgoing"): Promise<UserPage
   }
 }
 
-function Friends({ friends }: { friends: UserPage | null }) {
+function Friends({ friends, incoming, outgoing }: Pick<ProfileProps, "friends" | "incoming" | "outgoing">) {
   return (
-    <section aria-labelledby="friends-title" className={`${panel} col-span-2 p-6`}>
+    <section aria-labelledby="friends-title" className={`${panel} p-6`}>
       <h2 id="friends-title" className="mb-5 text-sm font-bold">Friends</h2>
+      <FriendRequests incoming={incoming} outgoing={outgoing} shown={FRIENDS_SHOWN} />
       {friends === null ? (
         <p className="text-sm text-zinc-500">Couldn’t load your friends. Try again in a moment.</p>
       ) : friends.items.length === 0 ? (
@@ -151,15 +151,14 @@ function Profile({ profile, me, friends, incoming, outgoing, blocked }: ProfileP
   const losses = profile.ratings.reduce((sum, rating) => sum + rating.losses, 0);
 
   return (
-    <div className="grid grid-cols-[minmax(0,1fr)_320px] gap-5">
-      <section aria-labelledby="profile-title" className={`${panel} flex items-center gap-7 p-9`}>
+    <div className="flex flex-col gap-5">
+      <section aria-labelledby="profile-title" className="flex items-center gap-7 px-6 py-4">
         <Avatar name={displayName(profile)} url={profile.avatar_url} size={112} />
         <div className="min-w-0">
           <p className="mb-1 text-[10px] font-semibold uppercase tracking-[0.2em] text-[#f37981]">Player</p>
           <h1 id="profile-title" className="truncate text-4xl font-black tracking-[-0.045em]">{displayName(profile)}</h1>
           <p className="mt-1 truncate text-sm text-zinc-400"><span className="sr-only">Tag: </span>{profile.tag}</p>
           {meId === profile.id && me?.email && <p className="mt-2 truncate text-xs text-zinc-500">{me.email} <span className="text-zinc-600">· only you can see this</span></p>}
-          {meId === profile.id && <ProfileEditor username={profile.username} avatarUrl={profile.avatar_url} />}
           {meId && meId !== profile.id && <>
             {/* Neither player can send a request while blocked; unblocking remounts it with fresh state. */}
             {!profile.is_blocked && <AddFriendButton key={profile.id} userId={profile.id} initialIsFriend={profile.is_friend} initialRequest={profile.friend_request} />}
@@ -180,7 +179,7 @@ function Profile({ profile, me, friends, incoming, outgoing, blocked }: ProfileP
         {games === 0 ? (
           <p className="text-sm text-zinc-500">No debates yet.</p>
         ) : (
-          <div className="grid grid-cols-2 gap-y-5">
+          <div className="grid grid-cols-4 gap-3">
             <Stat label="Win rate" value={`${Math.round((wins / games) * 100)}%`} />
             <Stat label="Debates played" value={games.toLocaleString()} />
             <Stat label="Wins" value={wins.toLocaleString()} />
@@ -188,8 +187,7 @@ function Profile({ profile, me, friends, incoming, outgoing, blocked }: ProfileP
           </div>
         )}
       </section>
-      {meId === profile.id && <FriendRequests incoming={incoming} outgoing={outgoing} shown={FRIENDS_SHOWN} />}
-      {meId === profile.id && <Friends friends={friends} />}
+      {meId === profile.id && <Friends friends={friends} incoming={incoming} outgoing={outgoing} />}
       {meId === profile.id && <BlockedPlayers blocked={blocked} shown={FRIENDS_SHOWN} />}
     </div>
   );

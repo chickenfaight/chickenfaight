@@ -61,35 +61,39 @@ export default function FriendRequests({ incoming, outgoing, shown }: { incoming
   }
 
   const request = (id: string) => `/v1/friends/requests/${encodeURIComponent(id)}`;
-  const empty = incoming?.items.length === 0 && outgoing?.items.length === 0;
-  const row = "flex items-center justify-between gap-4 rounded-2xl border border-white/[0.07] p-3";
+  const count = (incoming?.items.length ?? 0) + (outgoing?.items.length ?? 0);
+  if (count === 0) return null;
+
+  const more = incoming?.next_offset != null || outgoing?.next_offset != null;
+  const row = "flex items-center justify-between gap-4";
   const label = "mb-2 text-[10px] font-semibold uppercase tracking-widest text-zinc-400";
 
-  return <section aria-labelledby="friend-requests-title" className="col-span-2 rounded-3xl border border-white/[0.07] bg-[#202124] p-6">
-    <h2 id="friend-requests-title" className="mb-5 text-sm font-bold">Friend requests</h2>
-    {incoming === null || outgoing === null ? <p className="text-sm text-zinc-500">Couldn’t load your friend requests. Try again in a moment.</p>
-      : empty ? <p className="text-sm text-zinc-500">No friend requests right now.</p>
-      : <div className="grid gap-5">
-          {incoming.items.length > 0 && <div>
-            <h3 className={label}>Waiting for you</h3>
-            <ul className="grid gap-2">{incoming.items.map((player) => <li key={player.id} className={row}>
-              <Player player={player} />
-              <div className="flex shrink-0 gap-2">
-                <button type="button" aria-disabled={blocked} onClick={() => void answer(`${request(player.id)}/accept`, "POST")} className={primary}>Accept</button>
-                <button type="button" aria-disabled={blocked} onClick={() => void answer(request(player.id), "DELETE")} className={secondary}>Decline</button>
-              </div>
-            </li>)}</ul>
-            {incoming.next_offset !== null && <p className="mt-2 text-xs text-zinc-500">Showing your newest {shown}.</p>}
-          </div>}
-          {outgoing.items.length > 0 && <div>
-            <h3 className={label}>Sent by you</h3>
-            <ul className="grid gap-2">{outgoing.items.map((player) => <li key={player.id} className={row}>
-              <Player player={player} />
-              <button type="button" aria-disabled={blocked} onClick={() => void answer(request(player.id), "DELETE")} className={`${secondary} shrink-0`}>Cancel</button>
-            </li>)}</ul>
-            {outgoing.next_offset !== null && <p className="mt-2 text-xs text-zinc-500">Showing your newest {shown}.</p>}
-          </div>}
-        </div>}
+  return <details className="mb-4">
+    <summary className={`w-fit cursor-pointer text-xs font-semibold text-[#ff7882] hover:underline ${focus}`}>
+      {count}{more ? "+" : ""} pending friend {count === 1 && !more ? "request" : "requests"}
+    </summary>
+    <div className="mt-3 grid gap-4">
+      {incoming && incoming.items.length > 0 && <div>
+        <h3 className={label}>Waiting for you</h3>
+        <ul className="grid gap-2">{incoming.items.map((player) => <li key={player.id} className={row}>
+          <Player player={player} />
+          <div className="flex shrink-0 gap-2">
+            <button type="button" aria-disabled={blocked} onClick={() => void answer(`${request(player.id)}/accept`, "POST")} className={primary}>Accept</button>
+            <button type="button" aria-disabled={blocked} onClick={() => void answer(request(player.id), "DELETE")} className={secondary}>Decline</button>
+          </div>
+        </li>)}</ul>
+        {incoming.next_offset !== null && <p className="mt-2 text-xs text-zinc-500">Showing your newest {shown}.</p>}
+      </div>}
+      {outgoing && outgoing.items.length > 0 && <div>
+        <h3 className={label}>Sent by you</h3>
+        <ul className="grid gap-2">{outgoing.items.map((player) => <li key={player.id} className={row}>
+          <Player player={player} />
+          <button type="button" aria-disabled={blocked} onClick={() => void answer(request(player.id), "DELETE")} className={`${secondary} shrink-0`}>Cancel</button>
+        </li>)}</ul>
+        {outgoing.next_offset !== null && <p className="mt-2 text-xs text-zinc-500">Showing your newest {shown}.</p>}
+      </div>}
+    </div>
+    {(incoming === null || outgoing === null) && <p className="mt-2 text-xs text-zinc-500">Couldn’t load all friend requests. Try again in a moment.</p>}
     <p aria-live="polite" className="mt-2 text-xs text-[#f37981]">{error}</p>
-  </section>;
+  </details>;
 }
