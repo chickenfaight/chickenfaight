@@ -57,7 +57,8 @@ class Matchmaker:
         # One queue per (model_id, challenge_day): regular matches use challenge_day None; daily-challenge
         # players wait in their own queue so they only meet others playing today's challenge.
         self.queues: defaultdict[QueueKey, list[tuple[UUID, float, int]]] = defaultdict(list)
-        self.queued_users: dict[UUID, QueueKey] = {} # dict[user_id, queue key] for checks and cancellation
+        # The current queue for each user. None means they are still in Quick Queue.
+        self.queued_users: dict[UUID, QueueKey | None] = {}
         self.assignments: dict[UUID, UUID] = {} # dict[user_id, match_id]
         self.randomqueue: deque[tuple[UUID, float]] = deque()
         self.engines: dict[UUID, GameEngine] = {}       # dict[match_id, engine]
@@ -71,9 +72,10 @@ class Matchmaker:
     async def match_available_players(self):
         # TODO more sophisticated matching algorithm with elo and shi coming soon
         for (model_id, challenge_day), queue in self.queues.items():
-            if len(self.randomqueue) > 0 and len(queue) % 2 == 1:
-                toqueue = self.randomqueue.popleft()
-                queue.append((toqueue[0],toqueue[1],1000))
+            if self.randomqueue and len(queue) % 2 == 1:
+                user_id, joined_at = self.randomqueue.popleft()
+                queue.append((user_id, joined_at, 1000))
+                self.queued_users[user_id] = (model_id, challenge_day)
             while len(queue) >= 2:
                 player1pos = -1
                 player2pos = -1
@@ -160,7 +162,7 @@ class Matchmaker:
         self.check_free(user_id)
         if model_id is None:
             self.randomqueue.append((user_id, time.time()))
-            self.queued_users[user_id] = (None, challenge_day)
+            self.queued_users[user_id] = None
         else:
             key = (model_id, challenge_day)
             self.queues[key].append((user_id, time.time(), elo))
@@ -206,7 +208,9 @@ class Matchmaker:
             return
 
         key = self.queued_users[user_id]
-        if key == BYOM_KEY:
+        if key is None:
+            self.randomqueue = deque(entry for entry in self.randomqueue if entry[0] != user_id)
+        elif key == BYOM_KEY:
             self.byom_queue = [entry for entry in self.byom_queue if entry.user_id != user_id]
         else:
             self.queues[key] = [entry for entry in self.queues[key] if entry[0] != user_id]

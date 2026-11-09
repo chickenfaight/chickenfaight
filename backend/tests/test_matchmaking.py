@@ -145,6 +145,56 @@ class CancellationTests(unittest.TestCase):
 
 
 class PairingTests(unittest.IsolatedAsyncioTestCase):
+    async def test_quick_queue_cancel_and_rejoin_pairs_only_once(self):
+        matchmaker = Matchmaker()
+        quick_player, first, second, third = (uuid4() for _ in range(4))
+        model_id = uuid4()
+        matchmaker.register(quick_player, None, elo=1000)
+        matchmaker.cancel(quick_player)
+        matchmaker.cancel(quick_player)
+        self.assertEqual(matchmaker.get_status(quick_player), {"status": "none"})
+        matchmaker.register(quick_player, None, elo=1000)
+
+        with patch('app.services.matchmaking.GameEngine') as engine, patch.object(matchmaker, 'start'):
+            matchmaker.register(first, model_id, elo=1000)
+            await matchmaker.match_available_players()
+            engine.assert_called_once()
+            self.assertEqual(engine.call_args.args[1], (first, quick_player))
+            self.assertEqual(matchmaker.get_status(quick_player), matchmaker.get_status(first))
+
+            matchmaker.register(second, model_id, elo=1000)
+            await matchmaker.match_available_players()
+            engine.assert_called_once()
+            self.assertEqual(matchmaker.get_status(second), {"status": "queued"})
+
+            matchmaker.register(third, model_id, elo=1000)
+            await matchmaker.match_available_players()
+            self.assertEqual(engine.call_count, 2)
+            self.assertEqual(engine.call_args.args[1], (second, third))
+
+    async def test_quick_queue_cancel_after_transfer_removes_model_queue_entry(self):
+        matchmaker = Matchmaker()
+        quick_player, waiting = uuid4(), uuid4()
+        model_id = uuid4()
+        with patch('app.services.matchmaking.time.time', return_value=100.0):
+            matchmaker.register(waiting, model_id, elo=1100)
+            matchmaker.register(quick_player, None, elo=1000)
+
+            with patch('app.services.matchmaking.GameEngine') as engine, patch.object(matchmaker, 'start'):
+                await matchmaker.match_available_players()
+                engine.assert_not_called()
+                self.assertEqual(matchmaker.get_status(quick_player), {"status": "queued"})
+
+                matchmaker.cancel(quick_player)
+                self.assertEqual(matchmaker.get_status(quick_player), {"status": "none"})
+                self.assertEqual(matchmaker.queues[(model_id, None)], [(waiting, 100.0, 1100)])
+
+                matchmaker.register(quick_player, model_id, elo=1100)
+                await matchmaker.match_available_players()
+                engine.assert_called_once()
+                self.assertEqual(engine.call_args.args[1], (waiting, quick_player))
+                self.assertFalse(matchmaker.queues[(model_id, None)])
+
     async def test_players_in_different_arenas_do_not_match(self):
         matchmaker = Matchmaker()
         users = [uuid4(), uuid4()]
