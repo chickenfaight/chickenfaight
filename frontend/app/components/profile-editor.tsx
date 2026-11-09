@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { type ChangeEvent, type FormEvent, useEffect, useId, useRef, useState } from "react";
+import { type ChangeEvent, type FormEvent, type ReactNode, useEffect, useId, useRef, useState } from "react";
 import { api, ApiError } from "../lib/api";
 import { backendUrl } from "../lib/auth";
 import { parseUser, type User } from "../lib/protocol";
@@ -11,9 +11,17 @@ import { useSession } from "./providers/session-provider";
 const focus = "focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white";
 const button = `h-10 rounded-xl border border-white/15 px-4 text-xs font-semibold hover:bg-white/5 disabled:opacity-40 ${focus}`;
 const primary = `h-10 rounded-xl bg-[#e53848] px-5 text-sm font-bold text-white enabled:hover:bg-[#c92d3c] disabled:opacity-50 ${focus}`;
+const editValue = `max-w-full cursor-pointer truncate rounded-sm underline-offset-4 hover:text-[#ff7882] hover:underline focus-visible:text-[#ff7882] focus-visible:underline ${focus}`;
 const MAX_USERNAME = 32;
 const MAX_UPLOAD = 2 * 1024 * 1024;
 const TYPES = ["image/png", "image/jpeg", "image/webp"];
+
+function Row({ label, children }: { label: string; children: ReactNode }) {
+  return <div className="flex items-baseline justify-between gap-4 border-b border-white/[0.07] py-3 last:border-0">
+    <dt className="shrink-0 text-xs text-zinc-400">{label}</dt>
+    <dd className="min-w-0 text-right text-sm font-semibold">{children}</dd>
+  </div>;
+}
 
 function Modal({ open, title, onClose, busy, children }: { open: boolean; title: string; onClose: () => void; busy: boolean; children: React.ReactNode }) {
   const dialog = useRef<HTMLDialogElement>(null);
@@ -114,12 +122,23 @@ export default function ProfileEditor({ user }: { user: User }) {
   }
 
   const custom = user.avatar_url?.startsWith("/v1/") ?? false;
+  const name = user.username || user.tag || "Player";
 
   return <>
-    <div className="mt-4 flex flex-wrap gap-2">
-      <button onClick={() => open("username")} className={button}>Change username</button>
-      <button onClick={() => open("email")} className={button}>Change email</button>
-      <button onClick={() => open("picture")} className={button}>Change picture</button>
+    <div className="flex items-center gap-6">
+      <button type="button" onClick={() => open("picture")} aria-label="Edit profile picture" aria-haspopup="dialog" className={`group relative shrink-0 cursor-pointer rounded-full ${focus}`}>
+        <Avatar name={name} url={user.avatar_url} size={96} />
+        <span aria-hidden="true" className="absolute inset-0 grid place-items-center rounded-full bg-black/70 text-xs font-bold text-white opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100">Edit picture</span>
+      </button>
+      <dl className="min-w-0 flex-1">
+        <Row label="Tag (permanent)"><span className="block truncate">{user.tag ?? "Not set yet"}</span></Row>
+        <Row label="Username">
+          <button type="button" onClick={() => open("username")} aria-label={`Edit username: ${user.username ?? "Not set"}`} aria-haspopup="dialog" className={editValue}>{user.username ?? "Not set"}</button>
+        </Row>
+        <Row label="Email">
+          <button type="button" onClick={() => open("email")} aria-label={`Edit email: ${user.email ?? "None"}`} aria-haspopup="dialog" className={editValue}>{user.email ?? "None"}</button>
+        </Row>
+      </dl>
     </div>
     <Modal open={editing === "username" || editingEmail} title={`Change ${fieldLabel.toLowerCase()}`} onClose={() => setEditing(null)} busy={busy}>
       <form method="post" onSubmit={saveDetails}>
@@ -141,7 +160,7 @@ export default function ProfileEditor({ user }: { user: User }) {
         {preview
           // eslint-disable-next-line @next/next/no-img-element -- a local object URL preview; next/image can't optimize it
           ? <img src={preview} alt="Preview of your new picture" className="h-20 w-20 shrink-0 rounded-full border border-white/10 object-cover" />
-          : <Avatar name={user.username || user.tag || "Player"} url={user.avatar_url} size={80} />}
+          : <Avatar name={name} url={user.avatar_url} size={80} />}
         <label className={`${button} inline-flex cursor-pointer items-center`}>
           Choose image…
           <input type="file" accept={TYPES.join(",")} onChange={choose} className="sr-only" />

@@ -9,10 +9,6 @@ import { useSession } from "./providers/session-provider";
 const focus = "focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white";
 const panel = "rounded-3xl border border-white/[0.07] bg-[#202124]";
 
-function Row({ label, value }: { label: string; value: string }) {
-  return <div className="flex items-baseline justify-between gap-4 border-b border-white/[0.07] py-3 last:border-0"><dt className="text-xs text-zinc-400">{label}</dt><dd className="truncate text-sm font-semibold">{value}</dd></div>;
-}
-
 // "Are you sure?" before deleting; can't be dismissed while the request is running.
 function DeleteDialog({ open, deleting, error, onConfirm, onClose }: { open: boolean; deleting: boolean; error: string; onConfirm: () => void; onClose: () => void }) {
   const dialog = useRef<HTMLDialogElement>(null);
@@ -64,14 +60,7 @@ export default function AccountSettings() {
   return <div className="grid gap-5">
     <section aria-labelledby="account-title" className={`${panel} p-7`}>
       <h2 id="account-title" className="mb-3 text-sm font-bold">Account</h2>
-      {status === "loading" ? <p className="text-sm text-zinc-500">Loading…</p> : status === "error" ? <p className="text-sm text-red-300">Couldn’t load your account.</p> : user && <>
-        <dl>
-          <Row label="Tag (permanent)" value={user.tag ?? "Not set yet"} />
-          <Row label="Username" value={user.username ?? "Not set"} />
-          <Row label="Email" value={user.email ?? "None"} />
-        </dl>
-        <ProfileEditor user={user} />
-      </>}
+      {status === "loading" ? <p className="text-sm text-zinc-500">Loading…</p> : status === "error" ? <p className="text-sm text-red-300">Couldn’t load your account.</p> : user && <ProfileEditor user={user} />}
     </section>
     <section aria-labelledby="danger-title" className={`${panel} border-[#e53848]/30 p-7`}>
       <h2 id="danger-title" className="text-sm font-bold text-[#ff7882]">Delete account</h2>
