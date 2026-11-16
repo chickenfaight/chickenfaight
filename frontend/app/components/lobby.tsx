@@ -42,11 +42,11 @@ export default function Lobby() {
   }, [session]);
 
   return (
-    <AppShell header={<SiteHeader current="play" />} fill>
-      <main aria-labelledby="lobby-title" className="mx-auto flex w-full max-w-[1540px] flex-1 flex-col gap-stack px-gutter py-6 min-[1024px]:min-h-0">
+    <AppShell header={<SiteHeader current="play" />}>
+      <main aria-labelledby="lobby-title" className="mx-auto flex w-full max-w-[1540px] flex-1 flex-col gap-stack px-gutter py-6">
         <div className="shrink-0 animate-rise"><p className="eyebrow mb-2 text-accent-ink">The debate arena</p><h1 id="lobby-title" className="headline text-4xl">Welcome to the coop.</h1></div>
 
-        <div className="grid flex-1 grid-cols-[minmax(0,1fr)_300px] gap-stack max-[900px]:grid-cols-1 xl:grid-cols-[minmax(0,1fr)_320px] min-[1024px]:min-h-0">
+        <div className="grid flex-1 grid-cols-[minmax(0,1fr)_300px] gap-stack max-[900px]:grid-cols-1 xl:grid-cols-[minmax(0,1fr)_320px]">
           <section aria-labelledby="play-title" className="panel flex min-h-[300px] items-center p-panel xl:p-10">
             <div className="grid w-full grid-cols-[1fr_minmax(0,0.9fr)] items-center gap-8 max-[1100px]:grid-cols-1">
               <div className="animate-rise">
@@ -68,7 +68,7 @@ export default function Lobby() {
           </aside>
         </div>
 
-        <section aria-label="Explore the arena" className="grid shrink-0 grid-cols-3 gap-stack max-[900px]:grid-cols-1">
+        <section aria-label="Explore the arena" className="mt-4 grid shrink-0 grid-cols-3 gap-stack max-[900px]:grid-cols-1 xl:mt-6">
           <Link href="/challenge" className={card}>
             <CardTop icon="bolt" tone="bg-gold/10 text-gold" note={challenge?.completed ? "Completed today" : `+${challenge?.reward_points ?? 50} points`} />
             <CardTitle>Daily challenge</CardTitle>
@@ -87,7 +87,7 @@ export default function Lobby() {
             <span className="mt-1 block text-xs text-ink-faint">Your machine. Your model. Our arena.</span>
           </button>
         </section>
-        <footer className="flex shrink-0 items-center justify-between text-xs text-ink-faint"><span>All brains. A little bit of bird.</span><span>Chicken fAIght <span className="mx-2 text-line-strong">/</span> Made for a good argument.</span></footer>
+        <footer className="mt-4 flex shrink-0 items-center justify-between border-t border-line pt-5 text-xs text-ink-faint xl:mt-6"><span>All brains. A little bit of bird.</span><span>Chicken fAIght <span className="mx-2 text-line-strong">/</span> Made for a good argument.</span></footer>
       </main>
       {session === "in" && user?.tag === null && <TagDialog onCreated={setUser} onSignOut={logout} signingOut={loggingOut} signOutError={logoutError} />}
       <InfoDialog title={detail} onClose={() => setDetail(null)} />

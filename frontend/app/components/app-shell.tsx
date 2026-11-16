@@ -3,12 +3,13 @@ import PageTransition from "./page-transition";
 import Sidebar from "./sidebar";
 
 // Layout for signed-in pages: the header on top, the sidebar beside the page.
-// `fill` gives the lobby a minimum desktop height; `scrollContent` scrolls only the page body.
+// The page always fills the window and grows with its content (never shrinks below it, so panels
+// can't overlap); `scrollContent` scrolls only the page body.
 // The header and sidebar hold still while the page body transitions (globals.css).
-export default function AppShell({ header, children, fill = false, scrollContent = false }: {
-  header: ReactNode; children: ReactNode; fill?: boolean; scrollContent?: boolean;
+export default function AppShell({ header, children, scrollContent = false }: {
+  header: ReactNode; children: ReactNode; scrollContent?: boolean;
 }) {
-  const height = scrollContent ? "h-svh overflow-hidden" : fill ? "min-[1024px]:h-svh min-[1024px]:min-h-[800px]" : "";
+  const height = scrollContent ? "h-svh overflow-hidden" : "";
   return (
     <div className={`flex min-h-svh flex-col bg-canvas font-sans text-ink ${height}`}>
       {header}
