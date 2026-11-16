@@ -15,7 +15,7 @@ export default async function MatchDetailPage({ params }: PageProps<"/matches/[m
   const { match_id: matchId } = await params;
   return (
     <AppShell header={<SiteHeader />} scrollContent>
-      <main className="mx-auto w-full max-w-[1100px] flex-1 px-6 py-8 xl:px-10">
+      <main className="mx-auto w-full max-w-[1100px] flex-1 px-gutter py-8 xl:py-10">
         <MatchDetail matchId={matchId} />
       </main>
     </AppShell>

@@ -73,9 +73,22 @@ def _advance_streak(user: User, now: datetime) -> int:
     return 0
 
 
-async def record_match(session: AsyncSession, report: MatchReport) -> None:
-    """Store the result and award points, streaks, and the daily challenge, in one transaction."""
+# Each player's Elo on the match's ladder before and after it, by user ID; empty when ratings didn't change.
+RatingChanges = dict[UUID, tuple[int, int]]
+
+
+async def saved_rating_changes(session: AsyncSession, match_id: UUID) -> RatingChanges:
+    """The rating changes an already committed match recorded."""
+    rows = await session.scalars(select(MatchParticipant).where(MatchParticipant.match_id == match_id))
+    return {row.user_id: (row.elo_before, row.elo_after) for row in rows
+            if row.user_id is not None and row.elo_before is not None and row.elo_after is not None}
+
+
+async def record_match(session: AsyncSession, report: MatchReport) -> RatingChanges:
+    """Store the result and award points, streaks, and the daily challenge, in one transaction.
+    Returns the rating changes, also when the match was already recorded."""
     result = report.result
+    changes: RatingChanges = {}
     async with session.begin():
         # A fixed lock order serializes overlapping results and account deletion.
         users = {user.id: user for user in await session.scalars(
@@ -92,7 +105,8 @@ async def record_match(session: AsyncSession, report: MatchReport) -> None:
             challenge_day=report.challenge_day, ended_at=report.ended_at,
         ).on_conflict_do_nothing(index_elements=[Match.id]).returning(Match.id))
         if inserted is None:
-            return  # Retrying a committed report must not award anything twice.
+            # Retrying a committed report must not award anything twice.
+            return await saved_rating_changes(session, report.match_id)
         # A player who deleted their account mid-match is saved as the deleted player they now are,
         # so the opponent keeps their result.
         existing = set(users)
@@ -132,7 +146,7 @@ async def record_match(session: AsyncSession, report: MatchReport) -> None:
         if result["status"] == "completed" and report.rating_ladder_slug and len(users) == 2:
             ladder = await session.scalar(select(Ladder).where(Ladder.slug == report.rating_ladder_slug))
             if ladder is None:
-                return  # A removed ladder cannot receive ratings; keep history and rewards.
+                return changes  # A removed ladder cannot receive ratings; keep history and rewards.
             service = RatingService(session)
             starting = {}
             for user_id in report.sides:
@@ -146,6 +160,8 @@ async def record_match(session: AsyncSession, report: MatchReport) -> None:
                 rating = await service.calculate_and_update_elo(user_id, ladder.id, starting[opponent], outcome)
                 participant = await session.get(MatchParticipant, (report.match_id, report.sides[user_id]))
                 participant.elo_before, participant.elo_after = starting[user_id], rating.elo
+                changes[user_id] = (starting[user_id], rating.elo)
+    return changes
 
 
 async def completed_challenge(session: AsyncSession, user_id: UUID, day: date) -> bool:

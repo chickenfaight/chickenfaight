@@ -3,12 +3,12 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { api, ApiError } from "../lib/api";
+import { buttonClass } from "./button";
 import { useFriendRequests } from "./providers/friend-requests-provider";
 
-const focus = "focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white";
-const button = `rounded-full px-5 py-2 text-sm font-bold transition-colors aria-disabled:cursor-not-allowed aria-disabled:opacity-50 ${focus}`;
-const primary = `${button} bg-[#e53848] text-white not-aria-disabled:hover:bg-[#c92d3c]`;
-const secondary = `${button} border border-white/20 text-white not-aria-disabled:hover:bg-white/10`;
+// Blocking is destructive, so it never takes the primary style from Add friend.
+const danger = buttonClass("danger", "md");
+const secondary = buttonClass("secondary", "md");
 
 type Props = {
   userId: string;
@@ -66,11 +66,11 @@ export default function BlockButton({ userId, initialIsBlocked }: Props) {
     <div className="mt-4">
       {/* aria-disabled, not disabled: Firefox restores a stale disabled state on reload (frontend/AGENTS.md). */}
       <div className="flex gap-2">
-        {!isBlocked && <button type="button" onClick={block} aria-disabled={pending} className={primary}>Block</button>}
+        {!isBlocked && <button type="button" onClick={block} aria-disabled={pending} className={danger}>Block</button>}
         {isBlocked && <button type="button" onClick={unblock} aria-disabled={pending} className={secondary}>Unblock</button>}
       </div>
-      {isBlocked && <p className="mb-2 text-xs text-zinc-400">They can&apos;t see your profile.</p>}
-      <p aria-live="polite" className="mt-2 text-xs text-[#f37981]">{error}</p>
+      {isBlocked && <p className="mt-2 text-xs text-ink-muted">They can&apos;t see your profile.</p>}
+      <p aria-live="polite" className="mt-2 text-xs text-danger">{error}</p>
     </div>
   );
 }

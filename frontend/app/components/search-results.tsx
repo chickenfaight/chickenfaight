@@ -7,8 +7,10 @@ import { api, ApiError } from "../lib/api";
 import { displayName, parseUserPage, type UserPublic } from "../lib/protocol";
 import { profileHref } from "../lib/routes";
 import Avatar from "./avatar";
-
-const focus = "focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white";
+import Button from "./button";
+import EmptyState from "./empty-state";
+import ErrorState from "./error-state";
+import Skeleton from "./skeleton";
 const PAGE_SIZE = 20;
 
 type State = {
@@ -67,32 +69,34 @@ export default function SearchResults({ query }: { query: string }) {
     return () => observer.disconnect();
   }, [loadPage, nextOffset, status]);
 
-  const message = status === "loading" ? (items.length ? "Loading more…" : "Searching…")
-    : status === "error" ? "Couldn’t load results."
-    : items.length === 0 ? `No players match “${query}”.`
+  const message = status === "loading" ? (items.length ? "Loading more…" : "")
+    : status === "error" ? (items.length ? "Couldn’t load more results." : "")
+    : items.length === 0 ? ""
     : nextOffset === null ? `${items.length} ${items.length === 1 ? "player" : "players"} found.`
     : "";
 
+  if (items.length === 0) {
+    return status === "loading" ? <Skeleton label="Searching…" variant="cards" count={6} />
+      : status === "error" ? <ErrorState message="Couldn’t load results." onRetry={() => loadPage(nextOffset ?? 0)} />
+      : <EmptyState title={`No players match “${query}”.`}>Check the spelling, or search by their tag.</EmptyState>;
+  }
+
   return (
     <>
-      {items.length > 0 && (
-        <ul className="grid grid-cols-2 gap-3 xl:grid-cols-3">
-          {items.map((user) => (
-            <li key={user.id}>
-              <Link href={profileHref(user.tag)} className={`flex items-center gap-4 rounded-3xl border border-white/[0.07] bg-[#202124] p-4 hover:border-white/20 ${focus}`}>
-                <Avatar name={displayName(user)} url={user.avatar_url} size={44} />
-                <span className="min-w-0"><span className="block truncate text-sm font-bold">{displayName(user)}</span><span className="block truncate text-xs text-zinc-500">{user.tag}</span></span>
-              </Link>
-            </li>
-          ))}
-          <li ref={sentinel} aria-hidden="true" className="col-span-full h-px" />
-        </ul>
-      )}
+      <ul className="grid grid-cols-[repeat(auto-fill,minmax(240px,1fr))] gap-3">
+        {items.map((user, index) => (
+          <li key={user.id} className="animate-rise" style={{ animationDelay: `${Math.min(index, 12) * 30}ms` }}>
+            <Link href={profileHref(user.tag)} className="panel flex items-center gap-4 p-4 transition-[border-color,transform] duration-(--duration-fast) hover:-translate-y-0.5 hover:border-line-strong focus-ring">
+              <Avatar name={displayName(user)} url={user.avatar_url} size={44} />
+              <span className="min-w-0"><span className="block truncate text-sm font-bold">{displayName(user)}</span><span className="block truncate text-xs text-ink-faint">{user.tag}</span></span>
+            </Link>
+          </li>
+        ))}
+        <li ref={sentinel} aria-hidden="true" className="col-span-full h-px" />
+      </ul>
       <div className="mt-6 flex items-center gap-4">
-        <p aria-live="polite" className="text-sm text-zinc-500">{message}</p>
-        {status === "error" && (
-          <button onClick={() => loadPage(nextOffset ?? 0)} className={`rounded-full border border-white/20 px-4 py-1.5 text-xs text-white hover:bg-white/10 ${focus}`}>Try again</button>
-        )}
+        <p aria-live="polite" className={`text-sm ${status === "error" ? "text-danger" : "text-ink-faint"}`}>{message}</p>
+        {status === "error" && <Button size="sm" onClick={() => loadPage(nextOffset ?? 0)}>Try again</Button>}
       </div>
     </>
   );

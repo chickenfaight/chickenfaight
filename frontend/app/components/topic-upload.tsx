@@ -4,9 +4,8 @@ import { useRouter } from "next/navigation";
 import { useEffect, useId, useRef, useState, type FormEvent } from "react";
 import { api, ApiError } from "../lib/api";
 import { parseTopicUploadResult } from "../lib/protocol";
+import Button, { buttonClass } from "./button";
 
-const focus = "focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white";
-const panel = "rounded-3xl border border-white/[0.07] bg-[#202124]";
 // Mirrors the server's limit; the server checks it again, along with every line.
 const MAX_CHARS = 200_000;
 const EXAMPLE = "Food | Is a hot dog a sandwich? | A hot dog is a sandwich. | A hot dog is not a sandwich.";
@@ -78,36 +77,36 @@ export default function TopicUpload() {
     }
   }
 
-  return <section aria-labelledby="upload-title" className={`${panel} p-7`}>
+  return <section aria-labelledby="upload-title" className="panel p-panel">
     <h2 id="upload-title" className="text-sm font-bold">Upload topics</h2>
-    <p className="mt-2 max-w-2xl text-sm leading-relaxed text-zinc-400">
-      One topic per line: <span className="font-mono text-xs text-zinc-300">category | topic | pro position | con position</span>.
+    <p className="mt-2 max-w-2xl text-sm leading-relaxed text-ink-muted">
+      One topic per line: <span className="font-mono text-xs text-ink">category | topic | pro position | con position</span>.
       Each field is 1–255 characters. Blank lines and lines starting with # are skipped, and topics already listed are left alone.
     </p>
     <form method="post" onSubmit={upload} className="mt-5 grid gap-4">
       <label htmlFor={textId} className="sr-only">Topic list</label>
       <textarea id={textId} value={text} onChange={(event) => { setText(event.target.value); setMessage(""); }} autoComplete="off" spellCheck={false} rows={10}
         placeholder={EXAMPLE}
-        className={`w-full resize-y rounded-xl border border-white/10 bg-black/30 p-4 font-mono text-xs leading-relaxed text-[#f5f3ef] placeholder:text-zinc-600 ${focus}`} />
+        className="w-full resize-y rounded-control border border-line-strong bg-inset p-4 font-mono text-xs leading-relaxed text-ink placeholder:text-ink-faint focus-ring" />
       <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
-        <label htmlFor={fileId} className={`cursor-pointer rounded-xl border border-white/15 px-4 py-2.5 text-sm font-semibold transition-colors hover:bg-white/5 has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-4 has-[:focus-visible]:outline-white`}>
+        <label htmlFor={fileId} className={buttonClass("secondary", "md", "cursor-pointer has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-3 has-[:focus-visible]:outline-ink")}>
           Load a .txt file
           <input id={fileId} type="file" accept=".txt,text/plain" autoComplete="off" className="sr-only"
             onChange={(event) => { void loadFile(event.target.files?.[0]); event.target.value = ""; }} />
         </label>
-        <label className="flex items-center gap-2 text-sm text-zinc-300">
-          <input type="checkbox" checked={active} onChange={(event) => setActive(event.target.checked)} autoComplete="off" className={`h-4 w-4 accent-[#e53848] ${focus}`} />
+        <label className="flex items-center gap-2 text-sm text-ink-muted">
+          <input type="checkbox" checked={active} onChange={(event) => setActive(event.target.checked)} autoComplete="off" className="h-4 w-4 accent-accent focus-ring" />
           Active right away
         </label>
-        <p className={`text-xs ${tooLong ? "text-red-300" : "text-zinc-500"}`}>
+        <p className={`text-xs ${tooLong ? "text-danger" : "text-ink-faint"}`}>
           {tooLong ? `Too long: ${text.length.toLocaleString()} of ${MAX_CHARS.toLocaleString()} characters.` : plural(topics, "line") + " to upload"}
         </p>
-        <button type="submit" aria-disabled={blocked} className={`ml-auto h-11 rounded-xl bg-[#e53848] px-5 text-sm font-bold text-white transition-colors aria-disabled:cursor-not-allowed aria-disabled:opacity-50 [&:not([aria-disabled=true])]:hover:bg-[#c92d3c] ${focus}`}>
+        <Button type="submit" variant="primary" aria-disabled={blocked} className="ml-auto">
           {uploading ? "Uploading…" : "Upload topics"}
-        </button>
+        </Button>
       </div>
       <p aria-live="polite" className="min-h-4 text-xs">
-        {error ? <span className="text-red-300">{error}</span> : <span className="text-zinc-300">{message}</span>}
+        {error ? <span className="text-danger">{error}</span> : <span className="text-win">{message}</span>}
       </p>
     </form>
   </section>;

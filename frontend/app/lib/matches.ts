@@ -1,11 +1,22 @@
-import { displayName, type MatchOutcome, type MatchSummary } from "./protocol";
+import { displayName, type MatchOutcome, type MatchSummary, type Side } from "./protocol";
 
 export const OUTCOME_LABEL: Record<MatchOutcome, string> = { win: "Win", loss: "Loss", void: "Void" };
+// Outcome badges: green win, red loss, neutral void.
 export const OUTCOME_COLOR: Record<MatchOutcome, string> = {
-  win: "border-emerald-400/40 text-emerald-400",
-  loss: "border-red-400/40 text-red-300",
-  void: "border-white/15 text-zinc-400",
+  win: "border-win/40 bg-win/10 text-win",
+  loss: "border-loss/40 bg-loss/10 text-loss",
+  void: "border-line-strong text-ink-faint",
 };
+
+// How each side is named and colored. The only place side wording lives, so another "vs" pair
+// (beyond pro and con) changes here.
+export const SIDE_LABEL: Record<Side, string> = { pro: "Pro", con: "Con" };
+export const SIDE_TEXT: Record<Side, string> = { pro: "text-side-pro", con: "text-side-con" };
+export const SIDE_BORDER: Record<Side, string> = { pro: "border-side-pro/45", con: "border-side-con/45" };
+
+export function otherSide(side: Side): Side {
+  return side === "pro" ? "con" : "pro";
+}
 
 const END_REASON: Record<string, string> = {
   judged: "Decided by the judge",
@@ -36,5 +47,14 @@ export function eloChange(match: MatchSummary): number | null {
 }
 
 export function formatEloChange(change: number): string {
-  return `${change > 0 ? "+" : change < 0 ? "−" : "±"}${Math.abs(change)} Elo`;
+  return `${signed(change)} Elo`;
+}
+
+// "+16", "−16", or "±0", with a true minus sign.
+export function signed(change: number): string {
+  return `${change > 0 ? "+" : change < 0 ? "−" : "±"}${Math.abs(change)}`;
+}
+
+export function eloChangeColor(change: number): string {
+  return change > 0 ? "text-win" : change < 0 ? "text-loss" : "text-ink-muted";
 }

@@ -8,6 +8,11 @@ export function saveSelectedArena(id: string): void {
   try { localStorage.setItem(KEY, id); } catch { /* not remembered; harmless */ }
 }
 
+// The remembered arena's ID, if any.
+export function savedArena(): string | null {
+  try { return localStorage.getItem(KEY); } catch { return null; }
+}
+
 // The remembered arena if it's still offered, else the first playable one.
 export function preferredArena(arenas: Arena[], current = ""): string {
   let stored: string | null = null;

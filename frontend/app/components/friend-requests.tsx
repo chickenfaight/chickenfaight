@@ -7,17 +7,16 @@ import { api, ApiError } from "../lib/api";
 import { displayName, type UserPage, type UserPublic } from "../lib/protocol";
 import { profileHref } from "../lib/routes";
 import Avatar from "./avatar";
+import { buttonClass } from "./button";
 import { useFriendRequests } from "./providers/friend-requests-provider";
 
-const focus = "focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white";
-const button = `h-9 rounded-xl px-4 text-xs font-bold transition-colors aria-disabled:cursor-not-allowed aria-disabled:opacity-50 ${focus}`;
-const primary = `${button} bg-[#e53848] text-white not-aria-disabled:hover:bg-[#c92d3c]`;
-const secondary = `${button} border border-white/15 not-aria-disabled:hover:bg-white/5`;
+const primary = buttonClass("primary", "sm");
+const secondary = buttonClass("secondary", "sm");
 
 function Player({ player }: { player: UserPublic }) {
-  return <Link href={profileHref(player.tag)} className={`flex min-w-0 items-center gap-3 ${focus}`}>
+  return <Link href={profileHref(player.tag)} className="flex min-w-0 items-center gap-3 rounded-control focus-ring">
     <Avatar name={displayName(player)} url={player.avatar_url} size={40} />
-    <span className="min-w-0"><span className="block truncate text-sm font-bold">{displayName(player)}</span><span className="block truncate text-xs text-zinc-500">{player.tag}</span></span>
+    <span className="min-w-0"><span className="block truncate text-sm font-bold">{displayName(player)}</span><span className="block truncate text-xs text-ink-faint">{player.tag}</span></span>
   </Link>;
 }
 
@@ -66,10 +65,10 @@ export default function FriendRequests({ incoming, outgoing, shown }: { incoming
 
   const more = incoming?.next_offset != null || outgoing?.next_offset != null;
   const row = "flex items-center justify-between gap-4";
-  const label = "mb-2 text-[10px] font-semibold uppercase tracking-widest text-zinc-400";
+  const label = "eyebrow mb-2";
 
   return <details className="mb-4">
-    <summary className={`w-fit cursor-pointer text-xs font-semibold text-[#ff7882] hover:underline ${focus}`}>
+    <summary className="w-fit cursor-pointer rounded-control text-xs font-semibold text-accent-ink hover:underline focus-ring">
       {count}{more ? "+" : ""} pending friend {count === 1 && !more ? "request" : "requests"}
     </summary>
     <div className="mt-3 grid gap-4">
@@ -82,7 +81,7 @@ export default function FriendRequests({ incoming, outgoing, shown }: { incoming
             <button type="button" aria-disabled={blocked} onClick={() => void answer(request(player.id), "DELETE")} className={secondary}>Decline</button>
           </div>
         </li>)}</ul>
-        {incoming.next_offset !== null && <p className="mt-2 text-xs text-zinc-500">Showing your newest {shown}.</p>}
+        {incoming.next_offset !== null && <p className="mt-2 text-xs text-ink-faint">Showing your newest {shown}.</p>}
       </div>}
       {outgoing && outgoing.items.length > 0 && <div>
         <h3 className={label}>Sent by you</h3>
@@ -90,10 +89,10 @@ export default function FriendRequests({ incoming, outgoing, shown }: { incoming
           <Player player={player} />
           <button type="button" aria-disabled={blocked} onClick={() => void answer(request(player.id), "DELETE")} className={`${secondary} shrink-0`}>Cancel</button>
         </li>)}</ul>
-        {outgoing.next_offset !== null && <p className="mt-2 text-xs text-zinc-500">Showing your newest {shown}.</p>}
+        {outgoing.next_offset !== null && <p className="mt-2 text-xs text-ink-faint">Showing your newest {shown}.</p>}
       </div>}
     </div>
-    {(incoming === null || outgoing === null) && <p className="mt-2 text-xs text-zinc-500">Couldn’t load all friend requests. Try again in a moment.</p>}
-    <p aria-live="polite" className="mt-2 text-xs text-[#f37981]">{error}</p>
+    {(incoming === null || outgoing === null) && <p className="mt-2 text-xs text-danger">Couldn’t load all friend requests. Try again in a moment.</p>}
+    <p aria-live="polite" className="mt-2 text-xs text-danger">{error}</p>
   </details>;
 }

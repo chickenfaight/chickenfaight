@@ -6,9 +6,9 @@ import { useEffect, useRef, useState } from "react";
 import { api, ApiError } from "../lib/api";
 import { parseArenas, parseBilcDevices, parseQueueStatus, SIZE_CLASS_LABELS, type Arena, type BilcDevice } from "../lib/protocol";
 import { preferredArena, saveSelectedArena } from "../lib/selected-arena";
+import Button, { buttonClass } from "./button";
 
 type Phase = "checking" | "idle" | "joining" | "cancelling" | "queued" | "matched" | "error" | "signed-out";
-const focus = "focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white";
 
 // `daily` joins today's daily-challenge queue for the chosen model instead of a regular match.
 export default function MatchmakingCard({ daily = false, onChallengeDone }: { daily?: boolean; onChallengeDone?: () => void }) {
@@ -223,30 +223,32 @@ export default function MatchmakingCard({ daily = false, onChallengeDone }: { da
     cancelling: "Leaving queue…", queued: "Finding an opponent…", matched: "Opponent found!", error: "Queue status unavailable", "signed-out": "Join the debate",
   }[phase];
 
-  return <div className={`min-w-0 rounded-3xl border p-4 xl:p-6 ${queued ? "border-[#f04b58]/35 bg-[#f04b58]/[0.035]" : "border-white/[0.08] bg-[#191a1d]"}`}>
-    <div className="mb-5 flex items-center gap-3" role="status">
-      {waiting && <span aria-hidden="true" className="h-8 w-8 shrink-0 rounded-full border-[3px] border-[#f04b58]/20 border-t-[#f04b58] motion-safe:animate-spin" />}
-      <h3 className={`text-sm font-bold ${queued ? "text-[#f04b58]" : "text-[#f5f3ef]"}`}>{title}</h3>
+  const select = "h-12 w-full rounded-control border border-line-strong bg-inset px-3 text-sm text-ink transition-colors duration-(--duration-fast) hover:border-ink-faint disabled:text-ink-muted disabled:hover:border-line-strong focus-ring";
+  const smallLink = "font-semibold text-accent-ink underline underline-offset-2 focus-ring";
+  return <div className={`min-w-0 rounded-panel border p-panel shadow-raised transition-[border-color,background-color] duration-(--duration-slow) ${queued ? "border-accent/40 bg-accent-wash" : "border-line bg-inset/60"}`}>
+    <div className="mb-5 flex min-h-8 items-center gap-3" role="status">
+      {waiting && <span aria-hidden="true" className="h-7 w-7 shrink-0 rounded-full border-[3px] border-accent/20 border-t-accent motion-safe:animate-spin" />}
+      <h3 className={`text-base font-bold ${queued ? "text-accent-ink" : "text-ink"}`}>{title}</h3>
     </div>
-    <label htmlFor="queue-model" className="mb-2 block text-[10px] font-semibold uppercase tracking-widest text-zinc-400">AI model</label>
+    <label htmlFor="queue-model" className="eyebrow mb-2 block">AI model</label>
     {/* autoComplete="off": on reload, Firefox restores the previous page's enabled/disabled state
         before React loads, which no longer matches the server HTML and breaks hydration. */}
-    <select id="queue-model" autoComplete="off" value={showQueue ? "" : selectedId} onChange={event => { setSelectedId(event.target.value); saveSelectedArena(event.target.value); }} disabled={selectionLocked} className={`h-12 w-full rounded-xl border border-white/10 bg-[#242529] px-3 text-sm text-zinc-300 disabled:text-zinc-400 ${focus}`}>
+    <select id="queue-model" autoComplete="off" value={showQueue ? "" : selectedId} onChange={event => { setSelectedId(event.target.value); saveSelectedArena(event.target.value); }} disabled={selectionLocked} className={select}>
       {showQueue ? <option value="">{queuedModel?.display_name ?? "Existing queue · model unknown"}</option> : <>
         {!selectedId && <option value="">{signedOut ? "Sign in to choose an arena" : catalogPhase === "loading" ? "Loading arenas…" : "Choose an arena"}</option>}
         {listed.map(arena => <option key={arena.id} value={arena.id}>{arena.display_name}</option>)}
       </>}
     </select>
-    <div aria-live="polite" className="mt-2 text-xs text-zinc-400">
+    <div aria-live="polite" className="mt-2 text-xs text-ink-muted">
       {catalogPhase === "loading" && <p>Loading arenas…</p>}
-      {catalogPhase === "error" && <p>Couldn’t load arenas. <button onClick={refreshArenas} className={`underline ${focus}`}>Retry arenas</button></p>}
-      {catalogPhase === "ready" && !arenas.some(arena => arena.kind === "provided") && <p>No arenas available yet. <button onClick={refreshArenas} className={`underline ${focus}`}>Refresh arenas</button></p>}
+      {catalogPhase === "error" && <p className="text-danger">Couldn’t load arenas. <button type="button" onClick={refreshArenas} className={smallLink}>Retry arenas</button></p>}
+      {catalogPhase === "ready" && !arenas.some(arena => arena.kind === "provided") && <p>No arenas available yet. <button type="button" onClick={refreshArenas} className={smallLink}>Refresh arenas</button></p>}
       {signedOut && <p>Sign in to choose an arena.</p>}
       {showQueue && !queuedModel && <p>Your existing queue’s model will be shown when the debate starts.</p>}
     </div>
     {byomSelected && !showQueue && <>
-      <label htmlFor="queue-device" className="mb-2 mt-3 block text-[10px] font-semibold uppercase tracking-widest text-zinc-400">Your device</label>
-      <select id="queue-device" autoComplete="off" value={deviceId} onChange={event => setDeviceId(event.target.value)} disabled={selectionLocked || !devices?.length} className={`h-12 w-full rounded-xl border border-white/10 bg-[#242529] px-3 text-sm text-zinc-300 disabled:text-zinc-400 ${focus}`}>
+      <label htmlFor="queue-device" className="eyebrow mb-2 mt-3 block">Your device</label>
+      <select id="queue-device" autoComplete="off" value={deviceId} onChange={event => setDeviceId(event.target.value)} disabled={selectionLocked || !devices?.length} className={select}>
         {devices === null ? <option value="">{devicesError ? "Couldn’t load devices" : "Loading devices…"}</option>
           : devices.length === 0 ? <option value="">No paired devices</option>
           : <>
@@ -256,23 +258,23 @@ export default function MatchmakingCard({ daily = false, onChallengeDone }: { da
               </option>)}
             </>}
       </select>
-      <div aria-live="polite" className="mt-2 text-xs text-zinc-400">
-        {devicesError ? <p>Couldn’t load your devices. <button onClick={refreshDevices} className={`underline ${focus}`}>Retry</button></p>
-          : devices?.length === 0 ? <p>Pair a computer running your model on the <Link href="/bilc" className={`underline ${focus}`}>BILC page</Link>.</p>
-          : devices && !deviceReady ? <p>None of your devices is online. Run <span className="font-mono">bilc run</span> on one, then <button onClick={refreshDevices} className={`underline ${focus}`}>refresh</button>.</p>
+      <div aria-live="polite" className="mt-2 text-xs text-ink-muted">
+        {devicesError ? <p className="text-danger">Couldn’t load your devices. <button type="button" onClick={refreshDevices} className={smallLink}>Retry</button></p>
+          : devices?.length === 0 ? <p>Pair a computer running your model on the <Link href="/bilc" className={smallLink}>BILC page</Link>.</p>
+          : devices && !deviceReady ? <p>None of your devices is online. Run <span className="font-mono">bilc run</span> on one, then <button type="button" onClick={refreshDevices} className={smallLink}>refresh</button>.</p>
           : null}
       </div>
     </>}
-    <div className="flex min-h-12 items-center justify-between gap-2 text-[11px] text-zinc-500">
+    <div className="flex min-h-12 items-center justify-between gap-2 text-xs text-ink-faint">
       <span>{queued ? "Time searching on this page" : byomSelected ? "Paired with models of a similar size" : "Players are paired within the same arena"}</span>
-      {queued && <span className="font-mono text-sm tabular-nums text-[#ff7882]">{String(Math.floor(elapsed / 60)).padStart(2, "0")}:{String(elapsed % 60).padStart(2, "0")}</span>}
+      {queued && <span className="stat text-2xl text-accent-ink">{String(Math.floor(elapsed / 60)).padStart(2, "0")}:{String(elapsed % 60).padStart(2, "0")}</span>}
     </div>
-    {phase === "matched" ? <p role="status" className="py-3 text-sm text-zinc-300">Entering the arena…</p>
-      : signedOut && !queueActive ? <Link href="/login" className={`flex h-12 items-center justify-center rounded-xl bg-[#e53848] text-sm font-bold ${focus}`}>Sign in to queue</Link>
-      : phase === "error" ? <div className="flex gap-2"><button onClick={() => request("GET")} className={`h-12 flex-1 rounded-xl bg-[#e53848] text-sm font-bold ${focus}`}>Retry queue status</button>{queueActive && <button onClick={() => request("DELETE")} className={`rounded-xl border border-white/15 px-3 text-sm ${focus}`}>Cancel queue</button>}</div>
+    {phase === "matched" ? <p role="status" className="py-3 text-sm font-semibold text-accent-ink">Opponent found. Entering the arena…</p>
+      : signedOut && !queueActive ? <Link href="/login" className={buttonClass("primary", "lg", "w-full")}>Sign in to queue</Link>
+      : phase === "error" ? <div className="flex gap-2"><Button variant="primary" size="lg" className="flex-1" onClick={() => request("GET")}>Retry queue status</Button>{queueActive && <Button size="lg" onClick={() => request("DELETE")}>Cancel queue</Button>}</div>
       // Firefox restores native disabled state on reload, which can break hydration.
-      : <button type="button" aria-disabled={buttonDisabled} onClick={() => { if (!buttonDisabled) request(queued ? "DELETE" : "POST"); }} className={`flex h-12 w-full items-center justify-center rounded-xl text-sm font-bold aria-disabled:cursor-not-allowed aria-disabled:opacity-50 ${focus} ${queued ? "border border-white/15 bg-white/5" : "bg-[#e53848] text-white not-aria-disabled:hover:bg-[#c92d3c]"}`}>{queued ? "Cancel queue" : phase === "cancelling" ? "Cancelling…" : phase === "checking" ? "Checking…" : phase === "joining" ? "Joining…" : "Join game"}</button>}
-    {error && <p role="alert" className="mt-3 text-xs leading-relaxed text-red-300">{error}</p>}
-    <p className="mt-3 text-center text-[10px] leading-relaxed text-zinc-500">{phase === "matched" ? "Your debate is ready." : queued ? "You can leave the queue anytime before an opponent is found." : "Choose a model to enter its arena."}</p>
+      : <Button variant={queued ? "secondary" : "primary"} size="lg" className="w-full" aria-disabled={buttonDisabled} onClick={() => { if (!buttonDisabled) request(queued ? "DELETE" : "POST"); }}>{queued ? "Cancel queue" : phase === "cancelling" ? "Cancelling…" : phase === "checking" ? "Checking…" : phase === "joining" ? "Joining…" : "Join game"}</Button>}
+    {error && <p role="alert" className="mt-3 text-xs leading-relaxed text-danger">{error}</p>}
+    <p className="mt-3 text-center text-xs leading-relaxed text-ink-faint">{phase === "matched" ? "Your debate is ready." : queued ? "You can leave the queue anytime before an opponent is found." : "Choose a model to enter its arena."}</p>
   </div>;
 }

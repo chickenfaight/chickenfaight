@@ -195,15 +195,21 @@ export function parseChallengeToday(data: unknown): ChallengeToday {
 // Current arena wire format in PROTOCOL.md; full reconnect snapshots are planned.
 export type Side = "pro" | "con";
 export type ArenaTopic = { topic: string; pro_position: string; con_position: string };
+// A player as MATCH_STATE introduces them: public profile and Elo on this ladder (null if unknown).
+export type ArenaPlayer = { user_id: string; side: Side; user: UserPublic | null; elo: number | null };
+// Each side's Elo around the match, from MATCH_RESULT; null when ratings didn't change or aren't saved yet.
+export type ArenaRatingChange = { user_id: string; side: Side; elo_before: number | null; elo_after: number | null };
 export type ArenaResult = {
   winner: Side | null;
   reason: string;
   status: "completed" | "forfeited" | "voided";
   end_reason: "judged" | "no_show" | "no_prompt" | "resigned" | "model_failure" | "judge_failure";
   arguments: Record<Side, string>;
+  participants: ArenaRatingChange[];
 };
+export type MatchState = { model_display_name: string; topic: ArenaTopic; you: Side; deadline: string | null; challenge: MatchChallenge | null; participants: ArenaPlayer[] };
 export type MatchMessage =
-  | { type: "MATCH_STATE"; payload: { model_display_name: string; topic: ArenaTopic; you: Side; deadline: string | null; challenge: MatchChallenge | null } }
+  | { type: "MATCH_STATE"; payload: MatchState }
   | { type: "TURN_DELTA"; payload: { delta: string } }
   | { type: "TURN_END" | "JUDGING"; payload: Record<string, unknown> }
   | { type: "MATCH_RESULT"; payload: ArenaResult }
@@ -214,6 +220,31 @@ function record(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
 function side(value: unknown): value is Side { return value === "pro" || value === "con"; }
+function nullableNumber(value: unknown): value is number | null { return value === null || (typeof value === "number" && Number.isFinite(value)); }
+
+// `participants` arrived after the first arena release, so a message without it is still valid.
+function parseList<T>(value: unknown, item: (entry: Record<string, unknown>) => T): T[] {
+  if (value === undefined) return [];
+  if (!Array.isArray(value)) throw new Error("Invalid participants");
+  return value.map((entry: unknown) => {
+    if (!record(entry) || typeof entry.user_id !== "string" || !side(entry.side)) throw new Error("Invalid participant");
+    return item(entry);
+  });
+}
+
+function parseArenaPlayers(value: unknown): ArenaPlayer[] {
+  return parseList(value, (entry) => {
+    if (!(entry.elo === undefined || nullableNumber(entry.elo))) throw new Error("Invalid participant");
+    return { user_id: entry.user_id as string, side: entry.side as Side, user: entry.user == null ? null : parseUserPublic(entry.user), elo: entry.elo ?? null };
+  });
+}
+
+function parseRatingChanges(value: unknown): ArenaRatingChange[] {
+  return parseList(value, (entry) => {
+    if (!nullableNumber(entry.elo_before) || !nullableNumber(entry.elo_after)) throw new Error("Invalid participant");
+    return { user_id: entry.user_id as string, side: entry.side as Side, elo_before: entry.elo_before, elo_after: entry.elo_after };
+  });
+}
 
 export function parseMatchMessage(raw: string): MatchMessage {
   const data: unknown = JSON.parse(raw);
@@ -224,7 +255,7 @@ export function parseMatchMessage(raw: string): MatchMessage {
       if (typeof p.model_display_name === "string" && p.model_display_name.trim() && record(p.topic) && typeof p.topic.topic === "string" && typeof p.topic.pro_position === "string"
         && typeof p.topic.con_position === "string" && side(p.you)
         && (p.deadline === null || (typeof p.deadline === "string" && Number.isFinite(Date.parse(p.deadline))))) {
-        return { type: data.type, payload: { model_display_name: p.model_display_name, topic: p.topic as ArenaTopic, you: p.you, deadline: p.deadline, challenge: parseChallenge(p.challenge) } };
+        return { type: data.type, payload: { model_display_name: p.model_display_name, topic: p.topic as ArenaTopic, you: p.you, deadline: p.deadline, challenge: parseChallenge(p.challenge), participants: parseArenaPlayers(p.participants) } };
       }
       break;
     case "TURN_DELTA":
@@ -237,7 +268,10 @@ export function parseMatchMessage(raw: string): MatchMessage {
         && ["completed", "forfeited", "voided"].includes(String(p.status))
         && ["judged", "no_show", "no_prompt", "resigned", "model_failure", "judge_failure"].includes(String(p.end_reason))
         && record(p.arguments) && typeof p.arguments.pro === "string" && typeof p.arguments.con === "string") {
-        return { type: data.type, payload: p as ArenaResult };
+        return { type: data.type, payload: {
+          winner: p.winner, reason: p.reason, status: p.status as ArenaResult["status"], end_reason: p.end_reason as ArenaResult["end_reason"],
+          arguments: { pro: p.arguments.pro, con: p.arguments.con }, participants: parseRatingChanges(p.participants),
+        } };
       }
       break;
     case "ERROR":

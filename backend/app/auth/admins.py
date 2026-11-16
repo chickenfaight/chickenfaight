@@ -6,7 +6,7 @@ Compared ignoring case, like tag uniqueness. No imports, so schemas can use it w
 """
 
 ADMIN_TAGS: frozenset[str] = frozenset({
-    "Jacky720",
+    "gamin_john",
     # Admins may add more here.
 })
 

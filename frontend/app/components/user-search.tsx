@@ -6,8 +6,6 @@ import { api, ApiError } from "../lib/api";
 import { displayName, parseUserPage, type UserPublic } from "../lib/protocol";
 import { profileHref, searchHref } from "../lib/routes";
 import Avatar from "./avatar";
-
-const focus = "focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white";
 const SUGGESTION_LIMIT = 5;
 const DEBOUNCE_MS = 200;
 
@@ -71,7 +69,7 @@ export default function UserSearch({ initialQuery = "" }: { initialQuery?: strin
   }
 
   return (
-    <div className="relative w-72" role="search" onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget)) setOpen(false); }}>
+    <div className="relative w-72 max-[1100px]:w-52" role="search" onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget)) setOpen(false); }}>
       <label htmlFor={`${listId}-input`} className="sr-only">Search players by username or tag</label>
       <input
         id={`${listId}-input`}
@@ -89,11 +87,11 @@ export default function UserSearch({ initialQuery = "" }: { initialQuery?: strin
         onChange={(event) => { setQuery(event.target.value); setOpen(true); setActive(-1); setSuggestions({ status: "loading" }); }}
         onFocus={() => setOpen(true)}
         onKeyDown={onKeyDown}
-        className={`w-full rounded-xl border border-white/10 bg-[#202124] px-4 py-2.5 text-sm text-[#f5f3ef] placeholder:text-zinc-500 hover:border-white/20 ${focus}`}
+        className="h-11 w-full rounded-control border border-line-strong bg-inset px-4 text-sm text-ink placeholder:text-ink-faint transition-colors duration-(--duration-fast) hover:border-ink-faint focus-ring"
       />
       {expanded && (
         <div className="absolute right-0 top-full z-30 w-full pt-2">
-          <div className="rounded-3xl border border-white/[0.07] bg-[#202124] p-2 text-sm">
+          <div className="rounded-panel border border-line-strong bg-surface p-2 text-sm shadow-overlay animate-pop">
             <ul id={listId} role="listbox" aria-label="Matching players">
               {items.map((user, index) => (
                 <li
@@ -104,14 +102,14 @@ export default function UserSearch({ initialQuery = "" }: { initialQuery?: strin
                   onMouseDown={(event) => event.preventDefault()}
                   onClick={() => go(profileHref(user.tag))}
                   onMouseEnter={() => setActive(index)}
-                  className={`flex cursor-pointer items-center gap-3 rounded-xl px-3 py-2 ${index === active ? "bg-white/5" : ""}`}
+                  className={`flex cursor-pointer items-center gap-3 rounded-control px-3 py-2 transition-colors duration-(--duration-instant) ${index === active ? "bg-white/[0.07]" : ""}`}
                 >
                   <Avatar name={displayName(user)} url={user.avatar_url} size={28} />
-                  <span className="min-w-0 truncate"><span className="font-semibold">{displayName(user)}</span> <span className="text-xs text-zinc-500">{user.tag}</span></span>
+                  <span className="min-w-0 truncate"><span className="font-semibold">{displayName(user)}</span> <span className="text-xs text-ink-faint">{user.tag}</span></span>
                 </li>
               ))}
             </ul>
-            <p aria-live="polite" className="px-3 py-2 text-xs text-zinc-500">
+            <p aria-live="polite" className="px-3 py-2 text-xs text-ink-faint">
               {suggestions.status === "loading" ? "Searching…"
                 : suggestions.status === "error" ? suggestions.detail
                 : items.length === 0 ? `No players match “${trimmed}”.`

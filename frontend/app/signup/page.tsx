@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import AuthLayout from "../components/auth-layout";
+import { linkClass } from "../components/button";
 import SignupForm from "../components/signup-form";
 import { serverSession } from "../lib/server-session";
 
@@ -18,7 +19,7 @@ export default async function SignupPage({ searchParams }: PageProps<"/signup">)
   return (
     <AuthLayout eyebrow="Join the coop" heading="Create your account." intro="Pick a tag, a username, and a password.">
       <SignupForm />
-      <p className="mt-2 text-center text-[11px] leading-5 text-zinc-500">Already have an account? <Link href="/login" className="font-semibold text-[#ff7882] hover:underline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white">Sign in</Link></p>
+      <p className="mt-2 text-center text-xs leading-5 text-ink-faint">Already have an account? <Link href="/login" className={linkClass}>Sign in</Link></p>
     </AuthLayout>
   );
 }

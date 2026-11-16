@@ -12,16 +12,18 @@ from uuid import UUID
 from fastapi import WebSocket, WebSocketDisconnect
 from openai import OpenAIError
 from pydantic import ValidationError
+from sqlalchemy import select
 
 from app.config import settings
 from app.db.session import SessionFactory
 from app.inference.model_client import *
-from app.models import Topic
+from app.models import Ladder, Rating, Topic, User
+from app.models.ladder_rating import DEFAULT_ELO
 from app.repositories.topic import TopicRepository
 from app.services.challenge import Twist, check_prompt, topic_for, twist_for
-from app.services.rewards import MatchReport, record_match
+from app.services.rewards import MatchReport, RatingChanges, record_match
 from app.services import result_outbox
-from app.schemas.schemas import TopicRead, PromptSubmission
+from app.schemas.schemas import TopicRead, PromptSubmission, UserPublic
 from app.services.arena import ArenaService
 
 Side = Literal["pro", "con"]
@@ -99,6 +101,12 @@ class GameEngine:
         self.truncated: set[Side] = set()  # sides whose argument hit MAX_ARGUMENT_CHARS
         self.api_model_id: str | None = None
         self.topic: Topic | None = None
+        # Shown in both arenas' face-off: each player's public profile and Elo on this ladder at the
+        # start. Missing (null in MATCH_STATE) if they couldn't be loaded; the match plays on regardless.
+        self.player_info: dict[UUID, dict] = {}
+        self.starting_elo: dict[UUID, int] = {}
+        # Filled once the result is committed; MATCH_RESULT reports them (null while unknown).
+        self.rating_changes: RatingChanges = {}
 
         pro, con = random.sample(players, k=2)
         self.sides: dict[UUID, Side] = {
@@ -141,6 +149,7 @@ class GameEngine:
                     self.topic = await TopicRepository(session).get_random_active()
                 if self.topic is None:
                     raise RuntimeError("No active topic found")
+                await self.load_players(session)
             self.model_names = {player: self.model_name(player) for player in self.players}
             for player, device_id in self.devices.items():
                 await self.bilc.assign(device_id, self.match_id, self.sides[player], self.topic.topic)
@@ -293,6 +302,29 @@ class GameEngine:
             player = next(player for player, side in self.sides.items() if side == failure.side)
             await self.bilc.forfeit(self.devices[player], self.match_id, failure.reason)
 
+    @property
+    def ladder_slug(self) -> str:
+        return "byom-arena" if self.devices else f"ladder-{self.model_id}"
+
+    async def load_players(self, session) -> None:
+        """Both players' public profiles and current Elo, for the arena's face-off. Display only:
+        a failure leaves them unknown rather than stopping the match."""
+        try:
+            users = await session.scalars(select(User).where(User.id.in_(self.players)))
+            info = {user.id: UserPublic.model_validate(user).model_dump(mode="json")
+                    for user in users if isinstance(user, User)}
+            ratings = await session.scalars(
+                select(Rating).join(Ladder, Ladder.id == Rating.ladder_id)
+                .where(Ladder.slug == self.ladder_slug, Rating.user_id.in_(self.players))
+            )
+            elo = {rating.user_id: rating.elo for rating in ratings if isinstance(rating, Rating)}
+        except Exception:
+            logger.exception("Match %s: couldn't load the players' profiles", self.match_id)
+            return
+        self.player_info = info
+        # Matchmaking also treats an unrated player as DEFAULT_ELO.
+        self.starting_elo = {player: elo.get(player, DEFAULT_ELO) for player in self.players if player in info}
+
     def model_name(self, player: UUID) -> str | None:
         if player not in self.devices:
             return self.model_display_name
@@ -313,7 +345,8 @@ class GameEngine:
         topic = TopicRead.model_validate(self.topic).model_dump(mode="json")
 
         participants = [
-            {"user_id": str(user_id), "side": side}
+            {"user_id": str(user_id), "side": side, "user": self.player_info.get(user_id),
+             "elo": self.starting_elo.get(user_id)}
             for user_id, side in self.sides.items()
         ]
 
@@ -353,11 +386,14 @@ class GameEngine:
                     topic_id=getattr(self.topic, "id", None), challenge_day=self.challenge_day,
                     sides=dict(self.sides), result=self.result, ended_at=datetime.now(timezone.utc),
                     model_names=dict(self.model_names), truncated=frozenset(self.truncated),
-                    rating_ladder_slug="byom-arena" if self.devices else f"ladder-{self.model_id}",
+                    rating_ladder_slug=self.ladder_slug,
                 )
             async def write(report):
+                # The outbox also flushes other matches' pending results through this writer.
                 async with SessionFactory() as session:
-                    await record_match(session, report)
+                    changes = await record_match(session, report)
+                if report.match_id == self.match_id and isinstance(changes, dict):
+                    self.rating_changes = changes
 
             self.reported = await result_outbox.pending_results.record(self.report, write)
 
@@ -388,13 +424,22 @@ class GameEngine:
     async def send_result(self) -> None:
         # Journal first; database outages may delay history until the recovery worker succeeds.
         await self.report_game()
-        message = {"type": "MATCH_RESULT", "payload": self.result}
+        message = {"type": "MATCH_RESULT", "payload": {**self.result, "participants": self.result_participants()}}
         for socket in list(self.connections.values()):
             try:
                 await socket.send_json(message)
             except (WebSocketDisconnect, OSError, RuntimeError):
                 pass
 
+
+    def result_participants(self) -> list[dict]:
+        """Each side's Elo before and after; null when the match didn't change ratings, or before
+        the result is committed (a database outage delays it)."""
+        participants = []
+        for user_id, side in self.sides.items():
+            before, after = self.rating_changes.get(user_id, (None, None))
+            participants.append({"user_id": str(user_id), "side": side, "elo_before": before, "elo_after": after})
+        return participants
 
     def format_game(self, player: UUID) -> list[Message]:
         if self.topic is None:

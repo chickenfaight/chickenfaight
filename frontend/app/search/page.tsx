@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
 import AppShell from "../components/app-shell";
+import EmptyState from "../components/empty-state";
+import PageHeader from "../components/page-header";
 import SiteHeader from "../components/site-header";
 import SearchResults from "../components/search-results";
 
@@ -14,14 +16,11 @@ export default async function SearchPage({ searchParams }: PageProps<"/search">)
 
   return (
     <AppShell header={<SiteHeader query={query} />}>
-      <main aria-labelledby="search-title" className="mx-auto w-full max-w-[1100px] flex-1 px-6 py-10 xl:px-10">
-        <p className="mb-1 text-[10px] font-semibold uppercase tracking-[0.2em] text-[#f37981]">Players</p>
-        <h1 id="search-title" className="mb-8 truncate text-2xl font-bold tracking-tight">
-          {query ? <>Results for “{query}”</> : "Search players"}
-        </h1>
+      <main aria-labelledby="search-title" className="mx-auto w-full max-w-[1100px] flex-1 px-gutter py-8 xl:py-10">
+        <PageHeader id="search-title" eyebrow="Players" title={query ? <>Results for “{query}”</> : "Search players"} />
         {query
           ? <SearchResults key={query} query={query} />
-          : <p className="text-sm text-zinc-500">Type a username or tag in the search bar to find a player.</p>}
+          : <EmptyState title="Find a player">Type a username or tag in the search bar to find a player.</EmptyState>}
       </main>
     </AppShell>
   );

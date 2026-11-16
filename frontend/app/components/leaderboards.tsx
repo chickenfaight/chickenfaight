@@ -6,12 +6,17 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { api, ApiError } from "../lib/api";
 import { displayName, parseLadders, parseLeaderboard, type Ladder, type LeaderboardEntry } from "../lib/protocol";
 import { profileHref } from "../lib/routes";
+import { savedArena } from "../lib/selected-arena";
 import Avatar from "./avatar";
+import Button from "./button";
+import EmptyState from "./empty-state";
+import ErrorState from "./error-state";
+import PageHeader from "./page-header";
+import { useSession } from "./providers/session-provider";
+import Skeleton from "./skeleton";
 
 const PAGE_SIZE = 20;
 const MAX_PLAYERS = 50;
-const focus = "focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white";
-const buttonStyle = `rounded-full border border-white/20 px-4 py-1.5 text-xs text-white hover:bg-white/10 ${focus}`;
 
 type Standings = {
   entries: LeaderboardEntry[];
@@ -21,6 +26,7 @@ type Standings = {
 
 function StandingsTable({ ladder }: { ladder: Ladder }) {
   const router = useRouter();
+  const meId = useSession().user?.id ?? null;
   const [state, setState] = useState<Standings>({ entries: [], nextOffset: 0, status: "loading" });
   const pending = useRef<AbortController | null>(null);
   const sentinel = useRef<HTMLDivElement>(null);
@@ -80,47 +86,86 @@ function StandingsTable({ ladder }: { ladder: Ladder }) {
     return () => observer.disconnect();
   }, [loadMore, nextOffset, status]);
 
-  const message = status === "loading" ? (entries.length ? "Loading more players…" : "Loading rankings…")
-    : status === "error" ? (entries.length ? "Couldn’t load more players." : "Couldn’t load rankings.")
-    : entries.length === 0 ? "No ranked players in this arena yet."
+  const message = status === "loading" ? (entries.length ? "Loading more players…" : "")
+    : status === "error" ? (entries.length ? "Couldn’t load more players." : "")
+    : entries.length === 0 ? ""
     : nextOffset === null ? `Showing ${entries.length} ranked ${entries.length === 1 ? "player" : "players"}.` : "";
 
+  if (entries.length === 0) {
+    return status === "loading" ? <Skeleton label="Loading rankings…" variant="rows" count={6} />
+      : status === "error" ? <ErrorState message="Couldn’t load rankings." onRetry={loadMore} />
+      : <EmptyState title="No ranked players in this arena yet.">Finish a debate on this model to claim the top spot.</EmptyState>;
+  }
+
+  const podium = entries.slice(0, 3);
+  const rest = entries.slice(3);
   return (
     <div>
-      {entries.length > 0 && (
-        <div className="rounded-xl border border-white/[0.07] bg-[#202124]">
+      <Podium entries={podium} meId={meId} />
+      {rest.length > 0 && (
+        <div className="panel mt-stack overflow-hidden">
           <table className="w-full text-left text-sm">
-            <caption className="sr-only">Rankings for {ladder.display_name}</caption>
-            <thead className="text-xs text-zinc-400">
+            <caption className="sr-only">Rankings for {ladder.display_name}, from fourth place</caption>
+            <thead className="eyebrow">
               <tr>
-                <th scope="col" className="w-24 px-5 py-3 font-semibold">Rank</th>
-                <th scope="col" className="px-3 py-3 font-semibold">Player</th>
-                <th scope="col" className="w-32 px-5 py-3 text-right font-semibold">Elo</th>
+                <th scope="col" className="w-24 px-5 py-3.5 font-semibold">Rank</th>
+                <th scope="col" className="px-3 py-3.5 font-semibold">Player</th>
+                <th scope="col" className="w-32 px-5 py-3.5 text-right font-semibold">Elo</th>
               </tr>
             </thead>
             <tbody>
-              {entries.map(({ rank, user, rating }) => (
-                <tr key={user.id} className="border-t border-white/[0.07]">
-                  <td className="px-5 py-2 text-zinc-300 tabular-nums">{rank}</td>
-                  <td className="px-3 py-2">
-                    <Link href={profileHref(user.tag)} prefetch={false} className={`inline-flex items-center gap-3 rounded-xl hover:underline ${focus}`}>
-                      <Avatar name={displayName(user)} url={user.avatar_url} size={32} />
-                      <span><span className="block font-semibold">{displayName(user)}</span><span className="block text-xs text-zinc-400">@{user.tag}</span></span>
+              {rest.map(({ rank, user, rating }) => {
+                const me = user.id === meId;
+                return <tr key={user.id} className={`border-t border-line transition-colors duration-(--duration-fast) ${me ? "bg-accent-wash" : "hover:bg-white/[0.025]"}`}>
+                  <td className="stat px-5 py-2.5 text-xl text-ink-muted">{rank}</td>
+                  <td className="px-3 py-2.5">
+                    <Link href={profileHref(user.tag)} prefetch={false} className="inline-flex items-center gap-3 rounded-control focus-ring">
+                      <Avatar name={displayName(user)} url={user.avatar_url} size={34} />
+                      <span><span className="block font-semibold hover:underline">{displayName(user)}{me && <span className="eyebrow ml-2 text-accent-ink">You</span>}</span><span className="block text-xs text-ink-faint">@{user.tag}</span></span>
                     </Link>
                   </td>
-                  <td className="px-5 py-2 text-right font-semibold tabular-nums">{rating.elo}</td>
-                </tr>
-              ))}
+                  <td className="stat px-5 py-2.5 text-right text-2xl">{rating.elo}</td>
+                </tr>;
+              })}
             </tbody>
           </table>
         </div>
       )}
       <div ref={sentinel} className="mt-4 flex min-h-8 items-center gap-3">
-        <p aria-live="polite" className="text-sm text-zinc-400">{message}</p>
-        {status === "error" && <button onClick={loadMore} className={buttonStyle}>Try again</button>}
-        {status === "ready" && nextOffset !== null && <button onClick={loadMore} className={buttonStyle}>Load more</button>}
+        <p aria-live="polite" className={`text-sm ${status === "error" ? "text-danger" : "text-ink-faint"}`}>{message}</p>
+        {status === "error" && <Button size="sm" onClick={loadMore}>Try again</Button>}
+        {status === "ready" && nextOffset !== null && <Button size="sm" onClick={loadMore}>Load more</Button>}
       </div>
     </div>
+  );
+}
+
+const MEDAL = [
+  { text: "text-gold", ring: "border-gold/70", border: "border-gold/30", lift: "lg:-mt-6 lg:pb-10" },
+  { text: "text-silver", ring: "border-silver/60", border: "border-silver/20", lift: "" },
+  { text: "text-bronze", ring: "border-bronze/60", border: "border-bronze/25", lift: "" },
+];
+
+// The top three, first place raised in the middle. Read in rank order; laid out 2-1-3.
+function Podium({ entries, meId }: { entries: LeaderboardEntry[]; meId: string | null }) {
+  return (
+    <ol aria-label="Top three" className="grid items-end gap-stack pt-6 lg:grid-cols-3">
+      {entries.map(({ rank, user, rating }, index) => {
+        const medal = MEDAL[index];
+        const me = user.id === meId;
+        return <li key={user.id} className={`animate-rise ${index === 0 ? "lg:order-2" : index === 1 ? "lg:order-1" : "lg:order-3"}`} style={{ animationDelay: `${[0, 90, 180][index]}ms` }}>
+          <Link href={profileHref(user.tag)} prefetch={false}
+            className={`panel group flex flex-col items-center px-5 pb-7 pt-7 text-center transition-[transform,border-color] duration-(--duration-base) hover:-translate-y-1 focus-ring ${medal.border} ${medal.lift} ${me ? "bg-accent-wash" : ""}`}>
+            <span className={`stat text-6xl ${medal.text}`}><span className="sr-only">Rank </span>{rank}</span>
+            <span className="mt-4"><Avatar name={displayName(user)} url={user.avatar_url} size={index === 0 ? 76 : 64} ring={`border-2 ${medal.ring}`} /></span>
+            <span className="mt-3 block max-w-full truncate text-base font-bold group-hover:underline">{displayName(user)}</span>
+            <span className="block max-w-full truncate text-xs text-ink-faint">@{user.tag}{me && <span className="eyebrow ml-2 text-accent-ink">You</span>}</span>
+            <span className="mt-4 flex items-baseline gap-1.5"><span className="stat text-4xl">{rating.elo}</span><span className="eyebrow">Elo</span></span>
+            <span className="mt-1 text-xs text-ink-faint">{rating.wins}–{rating.losses} · {rating.games_played} {rating.games_played === 1 ? "debate" : "debates"}</span>
+          </Link>
+        </li>;
+      })}
+    </ol>
   );
 }
 
@@ -135,7 +180,12 @@ export default function Leaderboards() {
     const controller = new AbortController();
     api("/v1/ladders", controller.signal)
       .then((data) => {
-        if (!controller.signal.aborted) setCatalog(parseLadders(data));
+        if (controller.signal.aborted) return;
+        const ladders = parseLadders(data);
+        setCatalog(ladders);
+        // Open on the arena last chosen in the lobby (a model's ladder is `ladder-<model id>`).
+        const saved = `ladder-${savedArena()}`;
+        setSelected((previous) => previous || (ladders.some(({ slug }) => slug === saved) ? saved : ""));
       })
       .catch((error) => {
         if (controller.signal.aborted) return;
@@ -150,26 +200,20 @@ export default function Leaderboards() {
 
   return (
     <>
-      <div className="mb-4 flex items-center justify-between gap-4">
-        <h1 id="leaderboards-title" className="text-2xl font-bold tracking-tight">Leaderboards</h1>
-        {ladder && <label className="flex items-center gap-3 text-sm font-semibold">
+      <PageHeader id="leaderboards-title" eyebrow="Rankings" title="Leaderboards" description="The top 50 players on each arena’s ladder. Every model keeps its own Elo."
+        actions={ladder && <label className="flex items-center gap-3 text-sm font-semibold">
           Arena
           <select value={ladder.slug} onChange={(event) => setSelected(event.target.value)} autoComplete="off"
-            className={`w-80 max-w-full rounded-xl border border-white/15 bg-[#202124] px-3 py-2.5 text-sm scheme-dark ${focus}`}>
+            className="h-11 w-80 max-w-full rounded-control border border-line-strong bg-inset px-3 text-sm scheme-dark transition-colors duration-(--duration-fast) hover:border-ink-faint focus-ring">
             {catalog?.map((item) => (
               <option key={item.slug} value={item.slug}>{item.kind === "byom" ? "Bring your own model (BYOM)" : item.display_name}</option>
             ))}
           </select>
-        </label>}
-      </div>
-      {ladder ? <StandingsTable key={ladder.slug} ladder={ladder} /> : (
-        <div className="flex items-center gap-3">
-          <p aria-live="polite" className="text-sm text-zinc-400">
-            {failed ? "Couldn’t load arenas." : catalog ? "No arenas available." : "Loading arenas…"}
-          </p>
-          {failed && <button onClick={() => setAttempt((value) => value + 1)} className={buttonStyle}>Try again</button>}
-        </div>
-      )}
+        </label>} />
+      {ladder ? <StandingsTable key={ladder.slug} ladder={ladder} />
+        : failed ? <ErrorState message="Couldn’t load arenas." onRetry={() => setAttempt((value) => value + 1)} />
+        : catalog ? <EmptyState title="No arenas available." />
+        : <Skeleton label="Loading arenas…" variant="block" />}
     </>
   );
 }

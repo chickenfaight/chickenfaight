@@ -2,7 +2,7 @@
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useReducer, useRef, type ReactNode } from "react";
 import { backendUrl } from "../../lib/auth";
-import { parseMatchMessage, type ArenaResult, type ArenaTopic, type MatchChallenge, type MatchMessage, type Side } from "../../lib/protocol";
+import { parseMatchMessage, type ArenaPlayer, type ArenaResult, type ArenaTopic, type MatchChallenge, type MatchMessage, type Side } from "../../lib/protocol";
 
 type State = {
   phase: "connecting" | "prompting" | "generating" | "waiting" | "judging" | "completed";
@@ -11,6 +11,8 @@ type State = {
   side: Side;
   deadline: string | null;
   challenge: MatchChallenge | null;
+  // Both players for the face-off; empty if the server didn't say.
+  participants: ArenaPlayer[];
   prompt: string | null;
   argument: string;
   result: ArenaResult | null;
@@ -18,14 +20,14 @@ type State = {
   disconnected: boolean;
 };
 type Action = MatchMessage | { type: "SUBMITTED"; prompt: string } | { type: "DISCONNECTED"; message: string };
-const initialState: State = { phase: "connecting", topic: null, model_display_name: null, side: "pro", deadline: null, challenge: null, prompt: null, argument: "", result: null, error: "", disconnected: false };
+const initialState: State = { phase: "connecting", topic: null, model_display_name: null, side: "pro", deadline: null, challenge: null, participants: [], prompt: null, argument: "", result: null, error: "", disconnected: false };
 
 // Errors meaning the prompt wasn't accepted, so the player can edit and resubmit.
 const REJECTED_PROMPT = ["PROMPT_TOO_LONG", "BAD_MESSAGE", "PROMPT_BREAKS_CHALLENGE"];
 
 function reducer(state: State, action: Action): State {
   switch (action.type) {
-    case "MATCH_STATE": return { ...state, model_display_name: action.payload.model_display_name, topic: action.payload.topic, side: action.payload.you, deadline: action.payload.deadline, challenge: action.payload.challenge, phase: "prompting" };
+    case "MATCH_STATE": return { ...state, model_display_name: action.payload.model_display_name, topic: action.payload.topic, side: action.payload.you, deadline: action.payload.deadline, challenge: action.payload.challenge, participants: action.payload.participants, phase: "prompting" };
     case "SUBMITTED": return { ...state, prompt: action.prompt, phase: "generating", error: "" };
     case "TURN_DELTA": return { ...state, argument: state.argument + action.payload.delta };
     case "TURN_END": return { ...state, phase: "waiting" };

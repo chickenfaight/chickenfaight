@@ -4,11 +4,11 @@ import { useRouter } from "next/navigation";
 import { type FormEvent, useEffect, useRef, useState } from "react";
 import { api, ApiError } from "../lib/api";
 import { tagFormatError } from "../lib/protocol";
+import { buttonClass } from "./button";
 import { useSession } from "./providers/session-provider";
 
-const focus = "focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white";
-const fieldClass = `block min-h-12 w-full rounded-xl border border-white/10 bg-zinc-800 px-4 py-3 text-sm text-zinc-100 placeholder:text-zinc-500 ${focus}`;
-const labelClass = "mt-4 mb-1.5 block text-xs font-semibold text-zinc-300";
+const fieldClass = "block min-h-12 w-full rounded-control border border-line-strong bg-inset px-4 py-3 text-sm text-ink placeholder:text-ink-faint transition-colors duration-(--duration-fast) hover:border-ink-faint aria-invalid:border-danger/60 focus-ring";
+const labelClass = "mt-4 mb-1.5 block text-xs font-semibold text-ink-muted";
 const MIN_PASSWORD = 8;
 const MAX_PASSWORD = 128;
 const MAX_USERNAME = 32;
@@ -87,7 +87,7 @@ export default function SignupForm() {
         onBlur={() => setTouched((previous) => ({ ...previous, [name]: true }))}
         {...props}
       />
-      <p id={`signup-${name}-note`} className={`mt-1 min-h-4 text-xs ${error ? "text-red-300" : "text-zinc-500"}`}>{error ?? hint}</p>
+      <p id={`signup-${name}-note`} className={`mt-1 min-h-4 text-xs ${error ? "text-danger" : "text-ink-faint"}`}>{error ?? hint}</p>
     </>;
   }
 
@@ -100,8 +100,8 @@ export default function SignupForm() {
       {field("username", "Username", { autoComplete: "nickname", maxLength: 64, placeholder: "How others see you" }, "Shown to other players. You can change it anytime.")}
       {field("password", "Password", { type: "password", autoComplete: "new-password", maxLength: MAX_PASSWORD }, `At least ${MIN_PASSWORD} characters.`)}
       {field("confirm", "Confirm password", { type: "password", autoComplete: "new-password", maxLength: MAX_PASSWORD })}
-      <button type="submit" disabled={pending} className={`mt-2 flex min-h-12 w-full items-center justify-center rounded-xl bg-[#e53848] px-4 py-3 text-sm font-bold text-white transition-colors enabled:hover:bg-[#c92d3c] disabled:opacity-50 ${focus}`}>{pending ? "Creating account…" : "Create account"}</button>
-      <p role="alert" className="mt-2 min-h-4 text-xs text-red-300">{serverErrors.form}</p>
+      <button type="submit" disabled={pending} className={buttonClass("primary", "lg", "mt-2 w-full")}>{pending ? "Creating account…" : "Create account"}</button>
+      <p role="alert" className="mt-2 min-h-4 text-xs text-danger">{serverErrors.form}</p>
     </form>
   );
 }

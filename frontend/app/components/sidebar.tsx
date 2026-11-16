@@ -7,7 +7,6 @@ import Icon, { type IconName } from "./line-icon";
 import { useFriendRequests } from "./providers/friend-requests-provider";
 import { useSession } from "./providers/session-provider";
 
-const focus = "focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white";
 const PROFILE_ALIAS = "/profile/me";
 
 const SECTIONS: { href: string; label: string; icon: IconName; matches: (path: string) => boolean }[] = [
@@ -30,7 +29,7 @@ export default function Sidebar() {
   const { user } = useSession();
   const sections = user?.is_admin ? [...SECTIONS, ADMIN_SECTION] : SECTIONS;
   return (
-    <nav aria-label="Sections" className="shrink-0 border-r border-white/[0.07] px-3 py-5 lg:w-56 lg:px-4">
+    <nav aria-label="Sections" style={{ viewTransitionName: "site-sidebar" }} className="shrink-0 border-r border-line px-2.5 py-5 lg:w-56 lg:px-4">
       <ul className="flex flex-col gap-1">
         {sections.map((section) => {
           const current = section.matches(pathname);
@@ -40,11 +39,11 @@ export default function Sidebar() {
           const waitingLabel = `${waiting} friend ${waiting === 1 ? "request" : "requests"}`;
           return <li key={section.href}>
             <Link href={href} aria-current={current ? "page" : undefined} title={waiting ? `${section.label}: ${waitingLabel}` : section.label}
-              className={`relative flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold transition-colors ${current ? "bg-[#f04b58]/10 text-[#ff7882]" : "text-zinc-400 hover:bg-white/5 hover:text-white"} ${focus}`}>
+              className={`relative flex items-center gap-3 rounded-control px-3 py-2.5 text-sm font-semibold transition-[color,background-color,transform] duration-(--duration-fast) focus-ring active:scale-[0.98] ${current ? "bg-accent-wash text-accent-ink" : "text-ink-muted hover:bg-white/[0.05] hover:text-ink"}`}>
               <Icon name={section.icon} className="h-5 w-5 shrink-0" />
               <span className="sr-only lg:not-sr-only">{section.label}</span>
               {waiting > 0 && <>
-                <span aria-hidden="true" className="absolute right-0.5 top-0.5 flex h-4.5 min-w-4.5 items-center justify-center rounded-full bg-[#e53848] px-1 text-[10px] font-bold tabular-nums text-white lg:static lg:ml-auto lg:h-5 lg:min-w-5 lg:text-[11px]">{waiting > 99 ? "99+" : waiting}</span>
+                <span aria-hidden="true" className="absolute right-0.5 top-0.5 flex h-4.5 min-w-4.5 items-center justify-center rounded-full bg-accent px-1 text-[10px] font-bold tabular-nums text-white shadow-button lg:static lg:ml-auto lg:h-5 lg:min-w-5 lg:text-[11px]">{waiting > 99 ? "99+" : waiting}</span>
                 <span className="sr-only">, {waitingLabel}</span>
               </>}
             </Link>

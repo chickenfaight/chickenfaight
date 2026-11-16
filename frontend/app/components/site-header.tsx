@@ -1,51 +1,55 @@
 "use client";
 
 import Link from "next/link";
-import { useRef, useState } from "react";
+import { useState } from "react";
 import { profileHref } from "../lib/routes";
+import Avatar from "./avatar";
 import Icon from "./line-icon";
 import InfoDialog, { type DetailTitle } from "./info-dialog";
+import PopoverMenu from "./popover-menu";
 import { useSession } from "./providers/session-provider";
 import UserSearch from "./user-search";
 
-const focus = "focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white";
-const panel = "rounded-3xl border border-white/[0.07] bg-[#202124]";
+const navLink = (active: boolean) => `flex h-full items-center border-b-2 transition-colors duration-(--duration-fast) focus-ring ${active ? "border-accent text-ink" : "border-transparent text-ink-muted hover:text-ink"}`;
+const menuItem = "block w-full rounded-control px-4 py-3 text-left transition-colors duration-(--duration-fast) hover:bg-white/[0.06] focus-ring";
+
+export function Wordmark() {
+  return <span className="text-xl font-extrabold tracking-[-0.06em]">chicken<span className="text-accent">fAIght.</span></span>;
+}
 
 // The app's top bar: wordmark, navigation, player search, and the profile menu.
 export default function SiteHeader({ current, query }: { current?: "play" | "leaderboards"; query?: string }) {
   const { user, status: session, logout, loggingOut, logoutError } = useSession();
-  const [menu, setMenu] = useState(false);
   const [detail, setDetail] = useState<DetailTitle | null>(null);
-  const profileButton = useRef<HTMLButtonElement>(null);
-
-  async function signOut() {
-    if (await logout()) setMenu(false);
-  }
+  const name = user?.username || user?.tag || (session === "in" ? "Player" : "Guest player");
 
   return (
     <>
-      <header className="z-20 flex h-16 shrink-0 xl:h-[76px] items-center justify-between border-b border-white/[0.07] px-6 xl:px-10">
-      <Link href="/" className={`flex items-center gap-2.5 rounded-xl ${focus}`} aria-label="Chicken fAIght home"><span className="text-[#f04b58]"></span><span className="text-xl font-extrabold tracking-[-0.06em]">chicken<span className="text-[#f04b58]">fAIght</span><span className="text-[#f04b58]">.</span></span></Link>
-      <nav aria-label="Main navigation" className="flex h-full items-center gap-8 text-sm font-semibold">
-        <Link href="/" aria-current={current === "play" ? "page" : undefined} className={`flex h-full items-center border-b-2 ${current === "play" ? "border-[#f04b58] text-white" : "border-transparent text-zinc-400 hover:text-white"} ${focus}`}>Play</Link>
-        <Link href="/leaderboards" aria-current={current === "leaderboards" ? "page" : undefined} className={`flex h-full items-center border-b-2 ${current === "leaderboards" ? "border-[#f04b58] text-white" : "border-transparent text-zinc-400 hover:text-white"} ${focus}`}>Leaderboards</Link>
-        <button onClick={() => setDetail("How to play")} className={`text-zinc-400 hover:text-white ${focus}`}>How to play</button>
-      </nav>
-      <div className="flex items-center gap-4">
-      <UserSearch key={query} initialQuery={query} />
-      <div className="relative" onMouseEnter={() => setMenu(true)} onMouseLeave={() => setMenu(false)} onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget)) setMenu(false); }} onKeyDown={(event) => { if (event.key === "Escape") { setMenu(false); profileButton.current?.focus(); } }}>
-        <button ref={profileButton} aria-expanded={menu} aria-controls="profile-options" onClick={() => setMenu(true)} className={`flex items-center gap-3 rounded-xl px-2 py-2 text-left ${focus}`}>
-          <span className="flex h-10 w-10 items-center justify-center rounded-full border border-[#f04b58]/30 bg-[#f04b58]/10 text-sm font-bold text-[#ff7882]">{(user?.username || user?.tag)?.slice(0, 2).toUpperCase() || "CF"}</span>
-          <span><span className="block max-w-36 truncate text-xs font-bold">{user?.username || user?.tag || (session === "in" ? "Player" : "Guest player")}</span>{!user && <span className="mt-1 block text-[10px] text-zinc-400">{session === "loading" ? "Checking session…" : session === "error" ? "Session unavailable" : "Lobby preview"}</span>}</span>
-          <Icon name="chevron" className="h-4 w-4 text-zinc-400" />
-        </button>
-        {menu && <div id="profile-options" className="absolute right-0 top-full w-56 pt-2"><div className={`${panel} p-2 text-sm`}>
-          {session === "in" ? <><Link href={user?.tag ? profileHref(user.tag) : "/profile/me"} className={`block rounded-xl px-4 py-3 hover:bg-white/5 ${focus}`}>My profile</Link><button disabled={loggingOut} onClick={signOut} className={`w-full rounded-xl px-4 py-3 text-left text-[#ff7882] hover:bg-white/5 disabled:opacity-50 ${focus}`}>{loggingOut ? "Signing out…" : "Sign out"}</button></> : <Link href="/login" className={`block rounded-xl px-4 py-3 hover:bg-white/5 ${focus}`}>Sign in</Link>}
-          {logoutError && <p role="alert" className="px-4 py-2 text-xs text-red-300">{logoutError}</p>}
-        </div></div>}
-      </div>
-      </div>
-    </header>
+      <header style={{ viewTransitionName: "site-header" }} className="z-20 flex h-16 shrink-0 items-center justify-between gap-6 border-b border-line bg-canvas px-gutter xl:h-[76px]">
+        <Link href="/" className="rounded-control focus-ring" aria-label="Chicken fAIght home"><Wordmark /></Link>
+        <nav aria-label="Main navigation" className="flex h-full items-center gap-8 text-sm font-semibold max-[900px]:hidden">
+          <Link href="/" aria-current={current === "play" ? "page" : undefined} className={navLink(current === "play")}>Play</Link>
+          <Link href="/leaderboards" aria-current={current === "leaderboards" ? "page" : undefined} className={navLink(current === "leaderboards")}>Leaderboards</Link>
+          <button type="button" onClick={() => setDetail("How to play")} className="text-ink-muted transition-colors duration-(--duration-fast) hover:text-ink focus-ring">How to play</button>
+        </nav>
+        <div className="flex items-center gap-4">
+          <div className="max-[640px]:hidden"><UserSearch key={query} initialQuery={query} /></div>
+          <PopoverMenu label="Profile options" buttonClassName="flex items-center gap-3 rounded-control px-2 py-2 text-left transition-colors duration-(--duration-fast) hover:bg-white/[0.04] focus-ring"
+            button={<>
+              <Avatar name={name} url={user?.avatar_url ?? null} size={40} />
+              <span className="max-[1100px]:sr-only"><span className="block max-w-36 truncate text-xs font-bold">{name}</span>{!user && <span className="mt-1 block text-xs text-ink-muted">{session === "loading" ? "Checking session…" : session === "error" ? "Session unavailable" : "Lobby preview"}</span>}</span>
+              <Icon name="chevron" className="h-4 w-4 text-ink-muted" />
+            </>}>
+            {session === "in"
+              ? <>
+                  <Link href={user?.tag ? profileHref(user.tag) : "/profile/me"} className={menuItem}>My profile</Link>
+                  <button type="button" disabled={loggingOut} onClick={() => void logout()} className={`${menuItem} text-accent-ink disabled:opacity-50`}>{loggingOut ? "Signing out…" : "Sign out"}</button>
+                </>
+              : <Link href="/login" className={menuItem}>Sign in</Link>}
+            {logoutError && <p role="alert" className="px-4 py-2 text-xs text-danger">{logoutError}</p>}
+          </PopoverMenu>
+        </div>
+      </header>
       <InfoDialog title={detail} onClose={() => setDetail(null)} />
     </>
   );

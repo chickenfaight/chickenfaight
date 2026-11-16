@@ -15,7 +15,7 @@ export default async function LeaderboardsPage() {
 
   return (
     <AppShell header={<SiteHeader current="leaderboards" />} scrollContent>
-      <main aria-labelledby="leaderboards-title" className="mx-auto w-full max-w-[1080px] px-6 py-5 xl:px-10">
+      <main aria-labelledby="leaderboards-title" className="mx-auto w-full max-w-[1080px] px-gutter py-8 xl:py-10">
         <Leaderboards />
       </main>
     </AppShell>

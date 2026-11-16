@@ -3,8 +3,9 @@
 import { type FormEvent, useEffect, useRef, useState } from "react";
 import { api, ApiError } from "../lib/api";
 import { parseUser, parseTagAvailability, type User, type TagAvailability, tagFormatError } from "../lib/protocol";
+import Button from "./button";
+import Modal from "./modal";
 
-const focus = "focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white";
 type Check = TagAvailability | "error";
 
 type Props = {
@@ -15,18 +16,13 @@ type Props = {
 };
 
 export default function TagDialog({ onCreated, onSignOut, signingOut, signOutError }: Props) {
-  const dialog = useRef<HTMLDialogElement>(null);
-  const created = useRef(false);
   const submitController = useRef<AbortController | null>(null);
   const [value, setValue] = useState("");
   const [checked, setChecked] = useState<{ value: string; check: Check } | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState("");
 
-  useEffect(() => {
-    dialog.current?.showModal();
-    return () => submitController.current?.abort();
-  }, []);
+  useEffect(() => () => submitController.current?.abort(), []);
 
   useEffect(() => {
     if (tagFormatError(value)) return;
@@ -63,8 +59,7 @@ export default function TagDialog({ onCreated, onSignOut, signingOut, signOutErr
     submitController.current = controller;
     try {
       const user = parseUser(await api("/v1/users/me/tag", controller.signal, "PUT", { tag: value }));
-      created.current = true;
-      dialog.current?.close();
+      // The lobby stops rendering this dialog once the session has a tag.
       onCreated(user);
     } catch (err) {
       if (controller.signal.aborted) return;
@@ -81,22 +76,12 @@ export default function TagDialog({ onCreated, onSignOut, signingOut, signOutErr
     }
   }
 
+  // Blocking: Escape is refused, and the only ways out are claiming a tag or signing out.
   return (
-    <dialog
-      ref={dialog}
-      aria-labelledby="tag-title"
-      aria-describedby="tag-description"
-      onCancel={(event) => event.preventDefault()}
-      onClose={() => { if (!created.current) dialog.current?.showModal(); }}
-      className="fixed inset-0 m-auto w-[min(480px,90vw)] rounded-3xl border border-white/10 bg-[#202124] p-8 text-[#f5f3ef] backdrop:bg-black/80"
-    >
-      <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-[#ff7882]">One last step</p>
-      <h2 id="tag-title" className="mt-3 text-2xl font-bold tracking-[-0.045em]">Pick your tag.</h2>
-      <p id="tag-description" className="mt-3 text-sm leading-6 text-zinc-400">
-        Opponents and leaderboards will know you by it. Choose carefully: your tag can’t be changed later.
-      </p>
+    <Modal open blocking title="Pick your tag." eyebrow="One last step" onClose={() => {}}
+      description="Opponents and leaderboards will know you by it. Choose carefully: your tag can’t be changed later.">
       <form onSubmit={submit} className="mt-6" noValidate>
-        <label htmlFor="tag-input" className="mb-2 block text-[10px] font-semibold uppercase tracking-widest text-zinc-400">Your tag</label>
+        <label htmlFor="tag-input" className="eyebrow mb-2 block">Your tag</label>
         <input
           id="tag-input"
           autoFocus
@@ -108,28 +93,19 @@ export default function TagDialog({ onCreated, onSignOut, signingOut, signOutErr
           spellCheck={false}
           aria-invalid={Boolean(formatError) || taken}
           aria-describedby="tag-status"
-          className={`h-12 w-full rounded-xl border bg-[#242529] px-3 font-mono text-sm text-[#f5f3ef] placeholder:text-zinc-600 ${focus} ${formatError || taken ? "border-red-400/50" : "border-white/10"}`}
+          className={`h-12 w-full rounded-control border bg-inset px-3 font-mono text-sm text-ink placeholder:text-ink-faint focus-ring ${formatError || taken ? "border-danger/60" : "border-line-strong"}`}
           placeholder="rooster_42"
         />
-        <p id="tag-status" aria-live="polite" className={`mt-2 min-h-5 text-xs ${status.tone === "error" ? "text-red-300" : status.tone === "ok" ? "text-emerald-400" : "text-zinc-500"}`}>
+        <p id="tag-status" aria-live="polite" className={`mt-2 min-h-5 text-xs ${status.tone === "error" ? "text-danger" : status.tone === "ok" ? "text-win" : "text-ink-faint"}`}>
           {status.text}
         </p>
-        {submitError && <p role="alert" className="mt-2 text-xs text-red-300">{submitError}</p>}
-        <button
-          type="submit"
-          disabled={!canSubmit}
-          className={`mt-5 flex h-12 w-full items-center justify-center rounded-xl bg-[#e53848] text-sm font-bold text-white transition-colors enabled:hover:bg-[#c92d3c] disabled:cursor-not-allowed disabled:opacity-50 ${focus}`}
-        >
-          {submitting ? "Saving…" : "Claim tag"}
-        </button>
+        {submitError && <p role="alert" className="mt-2 text-xs text-danger">{submitError}</p>}
+        <Button type="submit" variant="primary" size="lg" disabled={!canSubmit} className="mt-5 w-full">{submitting ? "Saving…" : "Claim tag"}</Button>
       </form>
-      <div className="mt-6 flex items-center justify-between border-t border-white/[0.07] pt-4 text-xs">
-        <span className="text-zinc-500">{/* Not you? -- doesn't make sense here, kept for padding */}</span>
-        <button type="button" onClick={onSignOut} disabled={signingOut} className={`rounded-xl text-zinc-400 transition-colors hover:text-white disabled:opacity-50 ${focus}`}>
-          {signingOut ? "Signing out…" : "Sign out"}
-        </button>
+      <div className="mt-6 flex items-center justify-end border-t border-line pt-4">
+        <Button variant="ghost" size="sm" onClick={onSignOut} disabled={signingOut}>{signingOut ? "Signing out…" : "Sign out"}</Button>
       </div>
-      {signOutError && <p role="alert" className="mt-2 text-right text-xs text-red-300">{signOutError}</p>}
-    </dialog>
+      {signOutError && <p role="alert" className="mt-2 text-right text-xs text-danger">{signOutError}</p>}
+    </Modal>
   );
 }

@@ -35,3 +35,24 @@ test("stats reject impossible totals and rates", () => {
     assert.throws(() => parseArenaStats({ ...empty, ...bad }));
   }
 });
+test("arena participants are optional and carry players and Elo when sent", () => {
+  const user = { id: "u1", tag: "rooster", username: "Rooster", avatar_url: null };
+  const parsed = parseMatchMessage(JSON.stringify({ ...state, payload: { ...state.payload, participants: [
+    { user_id: "u1", side: "pro", user, elo: 1016 }, { user_id: "u2", side: "con", user: null, elo: null },
+  ] } }));
+  assert.equal(parsed.type, "MATCH_STATE");
+  if (parsed.type !== "MATCH_STATE") return;
+  assert.deepEqual(parsed.payload.participants, [{ user_id: "u1", side: "pro", user, elo: 1016 }, { user_id: "u2", side: "con", user: null, elo: null }]);
+  const older = parseMatchMessage(JSON.stringify(state));
+  assert.deepEqual(older.type === "MATCH_STATE" && older.payload.participants, []);
+
+  const result = { winner: "pro", reason: "x", status: "completed", end_reason: "judged", arguments: { pro: "P", con: "C" } };
+  const rated = parseMatchMessage(JSON.stringify({ type: "MATCH_RESULT", payload: { ...result, participants: [
+    { user_id: "u1", side: "pro", elo_before: 1000, elo_after: 1016 }, { user_id: "u2", side: "con", elo_before: null, elo_after: null },
+  ] } }));
+  assert.deepEqual(rated.type === "MATCH_RESULT" && rated.payload.participants.map(p => p.elo_after), [1016, null]);
+  for (const participants of [{}, [{ user_id: "u1", side: "other" }], [{ user_id: "u1", side: "pro", elo_before: "1000", elo_after: 1016 }]]) {
+    assert.throws(() => parseMatchMessage(JSON.stringify({ type: "MATCH_RESULT", payload: { ...result, participants } })));
+  }
+  assert.throws(() => parseMatchMessage(JSON.stringify({ ...state, payload: { ...state.payload, participants: [{ user_id: "u1", side: "pro", user: { id: 1 }, elo: 1 }] } })));
+});

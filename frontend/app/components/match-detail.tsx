@@ -3,25 +3,35 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { api, ApiError } from "../lib/api";
-import { eloChange, endReasonLabel, formatEloChange, modelLabel, opponentName, OUTCOME_COLOR, OUTCOME_LABEL } from "../lib/matches";
-import { parseMatchDetail, type MatchDetail as Match, type Side } from "../lib/protocol";
+import { eloChange, eloChangeColor, endReasonLabel, formatEloChange, modelLabel, opponentName, otherSide, OUTCOME_COLOR, OUTCOME_LABEL, SIDE_LABEL, SIDE_TEXT } from "../lib/matches";
+import { displayName, parseMatchDetail, type MatchDetail as Match, type Side } from "../lib/protocol";
+import EmptyState from "./empty-state";
+import ErrorState from "./error-state";
+import FaceOff, { type FaceOffPlayer } from "./face-off";
+import Skeleton from "./skeleton";
 
-const focus = "focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white";
-const panel = "rounded-3xl border border-white/[0.07] bg-[#202124]";
-const sideColor = (side: Side) => side === "pro" ? "text-[var(--side-pro)]" : "text-[var(--side-con)]";
 const HEADING = { win: "You won.", loss: "You lost.", void: "Debate voided." };
 
 function Argument({ match, side }: { match: Match; side: Side }) {
   const turn = match.turns.find((candidate) => candidate.side === side);
   const position = side === "pro" ? match.pro_position : match.con_position;
-  return <section aria-label={`${side} argument`} className={`${panel} min-w-0 p-6`}>
-    <p className="text-xs font-bold uppercase tracking-wider"><span className={sideColor(side)}>{side}</span> <span className="text-zinc-400">· {side === match.you ? "You" : opponentName(match)}</span></p>
-    {position && <p className="mt-1 text-xs text-zinc-500">{position}</p>}
+  return <section aria-label={`${SIDE_LABEL[side]} argument`} className="panel min-w-0 p-panel">
+    <p className="text-xs font-bold uppercase tracking-wider"><span className={SIDE_TEXT[side]}>{SIDE_LABEL[side]}</span> <span className="text-ink-muted">· {side === match.you ? "You" : opponentName(match)}</span></p>
+    {position && <p className="mt-1 text-xs text-ink-faint">{position}</p>}
     {/* Model output is untrusted: plain text only. */}
     {turn ? <p className="mt-4 whitespace-pre-wrap break-words text-sm leading-relaxed">{turn.content}</p>
-      : <p className="mt-4 text-sm text-zinc-500">No argument was generated.</p>}
-    {turn?.truncated && <p className="mt-3 text-xs text-zinc-500">Cut off at the length limit.</p>}
+      : <p className="mt-4 text-sm text-ink-faint">No argument was generated.</p>}
+    {turn?.truncated && <p className="mt-3 text-xs text-ink-faint">Cut off at the length limit.</p>}
   </section>;
+}
+
+function player(match: Match, side: Side): FaceOffPlayer {
+  const participant = match.participants.find((candidate) => candidate.side === side);
+  const user = participant?.user ?? null;
+  return {
+    side, you: side === match.you, name: user ? displayName(user) : "Deleted player", tag: user?.tag ?? null, avatarUrl: user?.avatar_url ?? null,
+    elo: participant?.elo_before ?? null, eloAfter: participant?.elo_after ?? null, winner: match.winner_side === side,
+  };
 }
 
 // One finished debate: who won and why, and both arguments. Player prompts are never saved.
@@ -49,39 +59,39 @@ export default function MatchDetail({ matchId }: { matchId: string }) {
     return () => controller.abort();
   }, [matchId, attempt]);
 
-  const back = <Link href="/matches" className={`text-xs text-zinc-400 hover:text-white ${focus}`}>← Match history</Link>;
+  const back = <Link href="/matches" className="rounded-control text-xs text-ink-muted transition-colors duration-(--duration-fast) hover:text-ink focus-ring">← Match history</Link>;
   if (phase !== "ready" || !match) return <>
     {back}
-    <section aria-live="polite" className={`${panel} mt-4 p-6`}>
-      {phase === "loading" ? <p className="text-sm text-zinc-500">Loading this debate…</p>
-        : phase === "missing" ? <><h1 className="text-xl font-bold">Debate not found</h1><p className="mt-2 text-sm text-zinc-500">It may not be one of yours, or it may not have finished yet.</p></>
-        : <p className="text-sm text-red-300">Couldn’t load this debate. <button type="button" onClick={() => setAttempt((value) => value + 1)} className={`underline ${focus}`}>Try again</button></p>}
-    </section>
+    <div aria-live="polite" className="mt-4">
+      {phase === "loading" ? <Skeleton label="Loading this debate…" variant="block" />
+        : phase === "missing" ? <EmptyState title={<h1 className="headline text-3xl">Debate not found</h1>}>It may not be one of yours, or it may not have finished yet.</EmptyState>
+        : <ErrorState message="Couldn’t load this debate." onRetry={() => setAttempt((value) => value + 1)} />}
+    </div>
   </>;
 
   const change = eloChange(match);
   return <>
     {back}
-    <section aria-labelledby="match-title" className={`${panel} mt-4 p-7`}>
-      <div className="flex items-center gap-3">
-        <h1 id="match-title" className="text-3xl font-black tracking-tight">{HEADING[match.outcome]}</h1>
-        <span className={`rounded-full border px-3 py-1 text-xs font-bold ${OUTCOME_COLOR[match.outcome]}`}>{OUTCOME_LABEL[match.outcome]}</span>
-        {change !== null && <span className="text-sm font-semibold tabular-nums text-zinc-300">{formatEloChange(change)}</span>}
+    <section aria-labelledby="match-title" className="panel mt-4 p-panel">
+      <div className="flex flex-wrap items-center gap-4">
+        <h1 id="match-title" className="headline text-5xl">{HEADING[match.outcome]}</h1>
+        <span className={`stat rounded-control border px-3 py-1 text-base uppercase ${OUTCOME_COLOR[match.outcome]}`}>{OUTCOME_LABEL[match.outcome]}</span>
+        {change !== null && <span className={`stat text-2xl ${eloChangeColor(change)}`}>{formatEloChange(change)}</span>}
       </div>
       <p className="mt-3 text-lg font-semibold">{match.topic ?? "Topic removed"}</p>
-      <dl className="mt-4 grid grid-cols-2 gap-x-6 gap-y-3 text-sm xl:grid-cols-4">
-        <div><dt className="text-[10px] uppercase tracking-widest text-zinc-500">Opponent</dt><dd className="mt-0.5 truncate">{opponentName(match)}</dd></div>
-        <div><dt className="text-[10px] uppercase tracking-widest text-zinc-500">Your model</dt><dd className="mt-0.5 truncate">{modelLabel(match)}</dd></div>
-        <div><dt className="text-[10px] uppercase tracking-widest text-zinc-500">Played</dt><dd className="mt-0.5 truncate">{new Date(match.ended_at).toLocaleString()}</dd></div>
-        <div><dt className="text-[10px] uppercase tracking-widest text-zinc-500">Ended</dt><dd className="mt-0.5">{endReasonLabel(match)}</dd></div>
+      <div className="well mt-6 px-5 py-5"><FaceOff you={player(match, match.you)} opponent={player(match, otherSide(match.you))} label="Who debated" /></div>
+      <dl className="mt-6 grid grid-cols-2 gap-x-6 gap-y-3 text-sm xl:grid-cols-3">
+        <div><dt className="eyebrow">Your model</dt><dd className="mt-1 truncate">{modelLabel(match)}</dd></div>
+        <div><dt className="eyebrow">Played</dt><dd className="mt-1 truncate">{new Date(match.ended_at).toLocaleString()}</dd></div>
+        <div><dt className="eyebrow">Ended</dt><dd className="mt-1">{endReasonLabel(match)}</dd></div>
       </dl>
-      {match.verdict_reasoning && <div className="mt-5 border-t border-white/[0.07] pt-4">
-        <h2 className="text-xs font-bold">{match.end_reason === "judged" ? "The judge’s verdict" : "Why it ended"}</h2>
-        <p className="mt-1 whitespace-pre-wrap break-words text-sm leading-relaxed text-zinc-300">{match.verdict_reasoning}</p>
+      {match.verdict_reasoning && <div className="mt-6 border-t border-line pt-5">
+        <h2 className="text-sm font-bold">{match.end_reason === "judged" ? "The judge’s verdict" : "Why it ended"}</h2>
+        <p className="mt-1.5 whitespace-pre-wrap break-words text-sm leading-relaxed text-ink-muted">{match.verdict_reasoning}</p>
       </div>}
     </section>
     {match.turns.length === 0
-      ? <p className={`${panel} mt-4 p-6 text-sm text-zinc-500`}>The arguments from this debate weren’t saved.</p>
-      : <div className="mt-4 grid gap-4 lg:grid-cols-2"><Argument match={match} side="pro" /><Argument match={match} side="con" /></div>}
+      ? <EmptyState className="mt-stack" title="The arguments from this debate weren’t saved." />
+      : <div className="mt-stack grid gap-stack lg:grid-cols-2"><Argument match={match} side="pro" /><Argument match={match} side="con" /></div>}
   </>;
 }

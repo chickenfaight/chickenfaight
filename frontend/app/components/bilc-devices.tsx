@@ -3,9 +3,16 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, ApiError } from "../lib/api";
 import { parseBilcDevices, parsePairingCode, SIZE_CLASS_LABELS, type BilcDevice, type PairingCode } from "../lib/protocol";
+import Button, { linkClass } from "./button";
+import EmptyState from "./empty-state";
+import ErrorState from "./error-state";
+import Skeleton from "./skeleton";
 
-const focus = "focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white";
-const panel = "rounded-3xl border border-white/[0.07] bg-[#202124]";
+const STATUS = {
+  idle: { label: "Online", tone: "border-win/35 bg-win/10 text-win" },
+  busy: { label: "In a debate", tone: "border-gold/35 bg-gold/10 text-gold" },
+  offline: { label: "Offline", tone: "border-line-strong text-ink-faint" },
+} as const;
 const MODEL = "llama3.2:3b";
 const INSTALL = "curl -fsSL https://raw.githubusercontent.com/chickenfaight/chickenfaight/main/bilc/install.sh | sh";
 // While a code is showing, look for the new device often; otherwise just keep online dots fresh.
@@ -43,12 +50,12 @@ function CommandBlock({ command }: { command: string }) {
     }
   }
 
-  return <div className="rounded-xl border border-white/10 bg-black/40">
-    <div className="flex items-center justify-end gap-3 border-b border-white/10 px-3 py-2">
-      <span role="status" className="text-xs text-zinc-400">{status === "error" ? "Couldn’t copy. Select the commands below and copy manually." : status === "copied" ? "Copied!" : ""}</span>
-      <button type="button" onClick={() => void copy()} className={`shrink-0 rounded-xl border border-white/20 px-3 py-1 text-xs text-zinc-300 transition-colors hover:bg-white/10 hover:text-white ${focus}`}>Copy</button>
+  return <div className="well overflow-hidden">
+    <div className="flex items-center justify-end gap-3 border-b border-line px-3 py-2">
+      <span role="status" className={`text-xs ${status === "error" ? "text-danger" : "text-win"}`}>{status === "error" ? "Couldn’t copy. Select the commands below and copy manually." : status === "copied" ? "Copied!" : ""}</span>
+      <Button size="sm" className="h-8" onClick={() => void copy()}>Copy</Button>
     </div>
-    <pre tabIndex={0} className={`overflow-x-auto whitespace-pre px-4 py-3 font-mono text-sm ${focus}`}><code className="select-text">{command}</code></pre>
+    <pre tabIndex={0} className="overflow-x-auto whitespace-pre px-4 py-3 font-mono text-sm focus-ring"><code className="select-text">{command}</code></pre>
   </div>;
 }
 
@@ -60,7 +67,7 @@ function BilcCommands({ setup, args }: { setup?: string; args: string[] }) {
   };
   return <>
     {block("bilc")}
-    <p className="mb-2 mt-3 text-zinc-300">Or from source, which needs Go, in the repo’s <span className="font-mono">bilc/</span> folder:</p>
+    <p className="mb-2 mt-3 text-ink-muted">Or from source, which needs Go, in the repo’s <span className="font-mono">bilc/</span> folder:</p>
     {block("go run ./cmd/bilc/")}
   </>;
 }
@@ -68,28 +75,28 @@ function BilcCommands({ setup, args }: { setup?: string; args: string[] }) {
 function PairPanel({ code, error, creating, onCreate }: { code: PairingCode | null; error: string; creating: boolean; onCreate: () => void }) {
   const left = useCountdown(code?.expires_at ?? null);
   const active = code !== null && left > 0;
-  return <section aria-labelledby="pair-title" className={`${panel} p-7`}>
+  return <section aria-labelledby="pair-title" className="panel p-panel">
     <h2 id="pair-title" className="text-sm font-bold">Pair a device</h2>
-    <p className="mt-2 max-w-2xl text-sm leading-relaxed text-zinc-400">BILC connects a model running on your computer to the BYOM arena.</p>
-    <ol className="mt-5 grid gap-4 text-sm">
-      <li><p className="mb-2 text-zinc-300">1. Install <a href="https://ollama.com" target="_blank" rel="noreferrer" className={`underline ${focus}`}>Ollama</a> and get a model:</p><CommandBlock command={`ollama pull ${MODEL}`} /></li>
-      <li><p className="mb-2 text-zinc-300">2. Install or update BILC (Linux and macOS). Skip this if you run it from source.</p><CommandBlock command={INSTALL} /></li>
-      <li>
-        <p className="mb-2 text-zinc-300">3. Get a code, then run these three commands. Each code works once, for 10 minutes.</p>
+    <p className="mt-2 max-w-2xl text-sm leading-relaxed text-ink-muted">BILC connects a model running on your computer to the BYOM arena.</p>
+    <ol className="mt-6 grid gap-6 text-sm">
+      <li className="grid grid-cols-[auto_minmax(0,1fr)] gap-4"><span className="stat text-3xl text-accent-ink">1</span><div><p className="mb-2 text-ink-muted">Install <a href="https://ollama.com" target="_blank" rel="noreferrer" className={linkClass}>Ollama</a> and get a model:</p><CommandBlock command={`ollama pull ${MODEL}`} /></div></li>
+      <li className="grid grid-cols-[auto_minmax(0,1fr)] gap-4"><span className="stat text-3xl text-accent-ink">2</span><div><p className="mb-2 text-ink-muted">Install or update BILC (Linux and macOS). Skip this if you run it from source.</p><CommandBlock command={INSTALL} /></div></li>
+      <li className="grid grid-cols-[auto_minmax(0,1fr)] gap-4"><span className="stat text-3xl text-accent-ink">3</span><div>
+        <p className="mb-2 text-ink-muted">Get a code, then run these three commands. Each code works once, for 10 minutes.</p>
         {active
           ? <BilcCommands args={[`pair ${grouped(code.code)}`, `model set --model ${MODEL}`, "run"]} />
           // aria-disabled, not disabled: Firefox restores a stale disabled state on reload (frontend/AGENTS.md).
-          : <button onClick={() => { if (!creating) onCreate(); }} aria-disabled={creating} className={`h-11 rounded-xl bg-[#e53848] px-5 text-sm font-bold text-white hover:bg-[#c92d3c] aria-disabled:opacity-50 aria-disabled:hover:bg-[#e53848] ${focus}`}>{creating ? "Getting a code…" : code ? "Get a new code" : "Get pairing code"}</button>}
-        <p aria-live="polite" className="mt-2 min-h-4 text-xs text-zinc-500">
-          {error ? <span className="text-red-300">{error}</span> : active ? `Expires in ${Math.floor(left / 60)}:${String(left % 60).padStart(2, "0")}. Your device shows up below once it pairs.` : code ? "That code expired." : ""}
+          : <Button variant="primary" onClick={() => { if (!creating) onCreate(); }} aria-disabled={creating}>{creating ? "Getting a code…" : code ? "Get a new code" : "Get pairing code"}</Button>}
+        <p aria-live="polite" className="mt-2 min-h-4 text-xs text-ink-faint">
+          {error ? <span className="text-danger">{error}</span> : active ? <>Expires in <span className="stat text-base text-ink">{Math.floor(left / 60)}:{String(left % 60).padStart(2, "0")}</span>. Your device shows up below once it pairs.</> : code ? "That code expired." : ""}
         </p>
-      </li>
+      </div></li>
     </ol>
-    <details className="mt-5 text-sm">
-      <summary className={`cursor-pointer text-zinc-300 ${focus}`}>Run two devices on one computer</summary>
-      <p className="mb-2 mt-3 max-w-2xl leading-relaxed text-zinc-400">To play a debate against yourself, sign in to a second account in a private window and get a code there. Keep your first <span className="font-mono">bilc run</span> going. In a second terminal, give that device its own config folder, then pair it.</p>
+    <details className="mt-6 text-sm">
+      <summary className="w-fit cursor-pointer rounded-control font-semibold text-ink-muted transition-colors duration-(--duration-fast) hover:text-ink focus-ring">Run two devices on one computer</summary>
+      <p className="mb-2 mt-3 max-w-2xl leading-relaxed text-ink-muted">To play a debate against yourself, sign in to a second account in a private window and get a code there. Keep your first <span className="font-mono">bilc run</span> going. In a second terminal, give that device its own config folder, then pair it.</p>
       <BilcCommands setup="export BILC_CONFIG_DIR=/tmp/bilc-b" args={["pair <code> --name device-b", `model set --model ${MODEL}`, "run"]} />
-      <p className="mt-2 max-w-2xl leading-relaxed text-zinc-400">Then choose Bring your own model in both windows and join.</p>
+      <p className="mt-2 max-w-2xl leading-relaxed text-ink-muted">Then choose Bring your own model in both windows and join.</p>
     </details>
   </section>;
 }
@@ -97,12 +104,13 @@ function PairPanel({ code, error, creating, onCreate }: { code: PairingCode | nu
 function DeviceRow({ device, onRevoke }: { device: BilcDevice; onRevoke: (id: string) => Promise<void> }) {
   const [confirming, setConfirming] = useState(false);
   const [revoking, setRevoking] = useState(false);
-  return <li className="flex items-center justify-between gap-4 border-b border-white/[0.07] py-4 last:border-0">
+  const status = STATUS[device.status];
+  return <li className="flex items-center justify-between gap-4 border-b border-line py-4 last:border-0">
     <div className="flex min-w-0 items-center gap-3">
-      <span aria-hidden="true" className={`h-2 w-2 shrink-0 rounded-full ${device.online ? "bg-emerald-400 shadow-[0_0_12px_rgba(52,211,153,0.8)]" : "bg-red-400 shadow-[0_0_12px_rgba(248,113,113,0.8)]"}`} />
+      <span className={`stat w-24 shrink-0 rounded-control border py-1 text-center text-sm uppercase ${status.tone}`}>{status.label}</span>
       <div className="min-w-0">
-        <p className="truncate text-sm font-semibold">{device.name} <span className="font-normal text-zinc-500">· {device.status === "busy" ? "in a debate" : device.status === "idle" ? "online" : "offline"}</span></p>
-        <p className="truncate text-xs text-zinc-500">
+        <p className="truncate text-sm font-semibold">{device.name}</p>
+        <p className="truncate text-xs text-ink-faint">
           {device.model_name ?? "no model reported yet"}{device.size_class && ` (${SIZE_CLASS_LABELS[device.size_class]})`} · {device.platform} · BILC {device.client_version}
           {device.last_seen_at && ` · last seen ${new Date(device.last_seen_at).toLocaleString()}`}
         </p>
@@ -110,11 +118,10 @@ function DeviceRow({ device, onRevoke }: { device: BilcDevice; onRevoke: (id: st
     </div>
     {confirming
       ? <div className="flex shrink-0 gap-2">
-          <button disabled={revoking} onClick={() => setConfirming(false)} className={`h-9 rounded-xl border border-white/15 px-4 text-xs font-semibold hover:bg-white/5 disabled:opacity-40 ${focus}`}>Keep</button>
-          <button disabled={revoking} onClick={async () => { setRevoking(true); await onRevoke(device.id); setRevoking(false); setConfirming(false); }}
-            className={`h-9 rounded-xl bg-[#e53848] px-4 text-xs font-bold text-white enabled:hover:bg-[#c92d3c] disabled:opacity-50 ${focus}`}>{revoking ? "Revoking…" : "Revoke device"}</button>
+          <Button size="sm" disabled={revoking} onClick={() => setConfirming(false)}>Keep</Button>
+          <Button size="sm" variant="primary" disabled={revoking} onClick={async () => { setRevoking(true); await onRevoke(device.id); setRevoking(false); setConfirming(false); }}>{revoking ? "Revoking…" : "Revoke device"}</Button>
         </div>
-      : <button onClick={() => setConfirming(true)} className={`h-9 shrink-0 rounded-xl border border-[#e53848]/60 px-4 text-xs font-bold text-[#ff7882] hover:bg-[#e53848]/10 ${focus}`}>Revoke…</button>}
+      : <Button size="sm" variant="danger" onClick={() => setConfirming(true)}>Revoke…</Button>}
   </li>;
 }
 
@@ -181,22 +188,22 @@ export default function BilcDevices() {
     }
   }
 
-  return <div className="grid gap-5">
+  return <div className="grid gap-stack">
     <PairPanel code={code} error={codeError} creating={creating} onCreate={createCode} />
-    <section aria-labelledby="devices-title" className={`${panel} p-7`}>
+    <section aria-labelledby="devices-title" className="panel p-panel">
       <div className="flex items-center justify-between">
         <h2 id="devices-title" className="text-sm font-bold">Your devices</h2>
-        <button onClick={() => void load()} className={`text-xs text-zinc-400 transition-colors hover:text-white ${focus}`}>Refresh</button>
+        <Button size="sm" variant="ghost" onClick={() => void load()}>Refresh</Button>
       </div>
-      <p aria-live="polite" className="mt-1 min-h-4 text-xs text-red-300">{revokeError}</p>
+      <p aria-live="polite" className="mt-1 min-h-4 text-xs text-danger">{revokeError}</p>
       {devices === null
-        ? <p className="text-sm text-zinc-500">{listError || "Loading…"}</p>
+        ? (listError ? <ErrorState message={listError} onRetry={() => void load()} /> : <Skeleton label="Loading…" variant="rows" count={2} />)
         : devices.length === 0
-          ? <p className="text-sm text-zinc-500">{listError || "No devices yet. Pair one above."}</p>
+          ? (listError ? <ErrorState message={listError} onRetry={() => void load()} /> : <EmptyState title="No devices yet.">Pair one above, and it shows up here.</EmptyState>)
           : <>
-              {listError && <p className="text-xs text-red-300">{listError}</p>}
+              {listError && <ErrorState compact message={listError} onRetry={() => void load()} />}
               <ul>{devices.map((device) => <DeviceRow key={device.id} device={device} onRevoke={revoke} />)}</ul>
-              <p className="mt-3 text-xs text-zinc-500">Revoking disconnects the device and stops it from connecting again. Only you can see this list.</p>
+              <p className="mt-3 text-xs text-ink-faint">Revoking disconnects the device and stops it from connecting again. Only you can see this list.</p>
             </>}
     </section>
   </div>;

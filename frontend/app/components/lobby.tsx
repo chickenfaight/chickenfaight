@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { api } from "../lib/api";
 import { parseChallengeToday, type ChallengeToday } from "../lib/protocol";
-import Icon from "./line-icon";
+import Icon, { type IconName } from "./line-icon";
 import InfoDialog, { type DetailTitle } from "./info-dialog";
 import MatchmakingCard from "./matchmaking-card";
 import ArenaStatsCard from "./arena-stats";
@@ -13,8 +13,18 @@ import AppShell from "./app-shell";
 import SiteHeader from "./site-header";
 import TagDialog from "./tag-dialog";
 
-const focus = "focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white";
-const panel = "rounded-3xl border border-white/[0.07] bg-[#202124]";
+const card = "panel group flex flex-col p-5 text-left transition-[border-color,transform] duration-(--duration-base) ease-out hover:-translate-y-0.5 hover:border-line-strong focus-ring active:translate-y-0";
+
+function CardTop({ icon, tone, note }: { icon: IconName; tone: string; note: string }) {
+  return <span className="flex items-center justify-between gap-3">
+    <span className={`flex h-9 w-9 items-center justify-center rounded-control ${tone}`}><Icon name={icon} /></span>
+    <span className="text-xs text-ink-faint">{note}</span>
+  </span>;
+}
+
+function CardTitle({ children }: { children: string }) {
+  return <span className="mt-4 flex items-center justify-between text-sm font-bold">{children}<Icon name="arrow" className="h-4 w-4 text-ink-faint transition-[color,transform] duration-(--duration-base) group-hover:translate-x-0.5 group-hover:text-ink" /></span>;
+}
 
 export default function Lobby() {
   const { user, status: session, setUser, logout, loggingOut, logoutError } = useSession();
@@ -33,48 +43,51 @@ export default function Lobby() {
 
   return (
     <AppShell header={<SiteHeader current="play" />} fill>
+      <main aria-labelledby="lobby-title" className="mx-auto flex w-full max-w-[1540px] flex-1 flex-col gap-stack px-gutter py-6 min-[1024px]:min-h-0">
+        <div className="shrink-0 animate-rise"><p className="eyebrow mb-2 text-accent-ink">The debate arena</p><h1 id="lobby-title" className="headline text-4xl">Welcome to the coop.</h1></div>
 
-      <main className="mx-auto flex w-full max-w-[1540px] flex-1 flex-col gap-4 px-6 py-4 xl:gap-6 xl:px-10 xl:py-6 min-[1024px]:min-h-0">
-        <div className="flex shrink-0 items-end justify-between"><div><p className="mb-1 text-[10px] font-semibold uppercase tracking-[0.2em] text-[#f37981]">The debate arena</p><h1 className="text-2xl font-bold tracking-tight">Welcome to the coop.</h1></div></div>
-
-        <div className="grid flex-1 grid-cols-[minmax(0,1fr)_280px] gap-5 max-[900px]:grid-cols-1 xl:grid-cols-[minmax(0,1fr)_310px] min-[1024px]:min-h-0">
-          <section aria-labelledby="play-title" className={`${panel} relative flex min-h-[300px] items-center overflow-hidden p-5 xl:p-9`}>
-            <div aria-hidden="true" className="pointer-events-none absolute -left-24 -top-48 h-[480px] w-[480px] rounded-full border-[65px] border-[#f04b58]/[0.035]" />
-            <div className="relative grid w-full grid-cols-[1fr_0.9fr] items-center gap-6">
-              <div><span className="inline-flex items-center gap-2 rounded-full border border-[#f04b58]/20 bg-[#f04b58]/[0.07] px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-[#ff7882]"><span className="h-1.5 w-1.5 rounded-full bg-current" />1v1 · AI debates</span>
-                <h2 id="play-title" className="mt-5 text-[clamp(38px,4.5vw,68px)] font-black leading-[1.02] tracking-[-0.065em]">Small prompt.<br /><span className="text-[#f04b58]">Big fight.</span></h2>
-                <p className="mt-5 max-w-72 text-sm leading-relaxed text-zinc-400">Write your prompt. Let your AI do the talking. A battle of wits, one debate at a time.</p>
+        <div className="grid flex-1 grid-cols-[minmax(0,1fr)_300px] gap-stack max-[900px]:grid-cols-1 xl:grid-cols-[minmax(0,1fr)_320px] min-[1024px]:min-h-0">
+          <section aria-labelledby="play-title" className="panel flex min-h-[300px] items-center p-panel xl:p-10">
+            <div className="grid w-full grid-cols-[1fr_minmax(0,0.9fr)] items-center gap-8 max-[1100px]:grid-cols-1">
+              <div className="animate-rise">
+                <p className="eyebrow">1v1 · AI debates</p>
+                <h2 id="play-title" className="headline mt-4 text-7xl leading-[0.92]">Small prompt.<br /><span className="text-accent">Big fight.</span></h2>
+                <p className="mt-5 max-w-72 text-sm leading-relaxed text-ink-muted">Write your prompt. Let your AI do the talking. A battle of wits, one debate at a time.</p>
               </div>
               <MatchmakingCard key={session} />
             </div>
           </section>
 
-          <aside className="flex flex-col gap-4" aria-label="Your performance">
+          <aside className="flex flex-col gap-stack" aria-label="Your performance">
             {session === "in" && user && <ArenaStatsCard key={user.id} />}
-            <button onClick={() => setDetail("How to play")} className={`${panel} flex items-center gap-3 p-4 text-left hover:border-white/20 ${focus}`}><span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#f04b58]/10 text-[#ff7882]"><Icon name="bolt" /></span><span className="flex-1"><span className="block text-xs font-bold">First time in the arena?</span><span className="mt-1 block text-[10px] text-zinc-400">Learn the rules in 30 seconds.</span></span><Icon name="arrow" className="h-4 w-4 text-zinc-500" /></button>
+            <button type="button" onClick={() => setDetail("How to play")} className={`${card} flex-row items-center gap-3 p-4`}>
+              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-control bg-accent-wash text-accent-ink"><Icon name="bolt" /></span>
+              <span className="flex-1"><span className="block text-sm font-bold">First time in the arena?</span><span className="mt-0.5 block text-xs text-ink-muted">Learn the rules in 30 seconds.</span></span>
+              <Icon name="arrow" className="h-4 w-4 text-ink-faint transition-transform duration-(--duration-base) group-hover:translate-x-0.5" />
+            </button>
           </aside>
         </div>
 
-        <section aria-label="Explore the arena" className="grid shrink-0 grid-cols-3 gap-5">
-          <Link href="/challenge" className={`${panel} group p-4 xl:p-5 text-left hover:border-white/20 ${focus}`}>
-            <span className="flex items-center justify-between"><span className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#e5b96b]/10 text-[#e5b96b]"><Icon name="bolt" /></span><span className="text-[9px] text-zinc-500">{challenge?.completed ? "Completed today ✓" : `+${challenge?.reward_points ?? 50} points`}</span></span>
-            <span className="mt-3 flex items-center justify-between text-sm font-bold">Daily challenge<Icon name="arrow" className="h-4 w-4 text-zinc-500 group-hover:text-white" /></span>
-            <span className="mt-2 block truncate text-xs text-zinc-300">{challenge?.topic?.topic ?? "One topic. A whole lot of opinions."}</span>
-            <span className="mt-1 block truncate text-[11px] text-zinc-500">{challenge ? `Twist: ${challenge.twist.title}` : "A new twist every day."}</span>
+        <section aria-label="Explore the arena" className="grid shrink-0 grid-cols-3 gap-stack max-[900px]:grid-cols-1">
+          <Link href="/challenge" className={card}>
+            <CardTop icon="bolt" tone="bg-gold/10 text-gold" note={challenge?.completed ? "Completed today" : `+${challenge?.reward_points ?? 50} points`} />
+            <CardTitle>Daily challenge</CardTitle>
+            <span className="mt-2 block truncate text-sm text-ink-muted">{challenge?.topic?.topic ?? "One topic. A whole lot of opinions."}</span>
+            <span className="mt-1 block truncate text-xs text-ink-faint">{challenge ? `Twist: ${challenge.twist.title}` : "A new twist every day."}</span>
           </Link>
-          <Link href="/leaderboards" className={`${panel} group p-4 xl:p-5 text-left hover:border-white/20 ${focus}`}>
-            <span className="flex items-center justify-between"><span className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#f04b58]/10 text-[#ff7882]"><Icon name="trophy" /></span><span className="text-[9px] text-zinc-500">Per-model rankings</span></span>
-            <span className="mt-3 flex items-center justify-between text-sm font-bold">Leaderboards<Icon name="arrow" className="h-4 w-4 text-zinc-500 group-hover:text-white" /></span>
-            <span className="mt-2 block text-xs text-zinc-300">See the top 50 players in each arena.</span>
+          <Link href="/leaderboards" className={card}>
+            <CardTop icon="trophy" tone="bg-accent-wash text-accent-ink" note="Per-model rankings" />
+            <CardTitle>Leaderboards</CardTitle>
+            <span className="mt-2 block text-sm text-ink-muted">See the top 50 players in each arena.</span>
           </Link>
-          <button onClick={() => setDetail("Bring your own model")} className={`${panel} group p-4 xl:p-5 text-left hover:border-white/20 ${focus}`}>
-            <span className="flex items-center justify-between"><span className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#b5a4d9]/10 text-[#b5a4d9]"><Icon name="chip" /></span><span className="text-[9px] text-zinc-500">Home Grown Battles</span></span>
-            <span className="mt-3 flex items-center justify-between text-sm font-bold">Bring your own model<Icon name="arrow" className="h-4 w-4 text-zinc-500 group-hover:text-white" /></span>
-            <span className="mt-2 block text-xs text-zinc-300">Got a model with something to prove?</span>
-            <span className="mt-1 block text-[11px] text-zinc-500">Your machine. Your model. Our arena.</span>
+          <button type="button" onClick={() => setDetail("Bring your own model")} className={card}>
+            <CardTop icon="chip" tone="bg-side-pro/10 text-side-pro" note="Home grown battles" />
+            <CardTitle>Bring your own model</CardTitle>
+            <span className="mt-2 block text-sm text-ink-muted">Got a model with something to prove?</span>
+            <span className="mt-1 block text-xs text-ink-faint">Your machine. Your model. Our arena.</span>
           </button>
         </section>
-        <footer className="flex shrink-0 items-center justify-between text-[10px] text-zinc-500"><span>All brains. A little bit of bird.</span><span>Chicken fAIght <span className="mx-2 text-zinc-700">/</span> Made for a good argument.</span></footer>
+        <footer className="flex shrink-0 items-center justify-between text-xs text-ink-faint"><span>All brains. A little bit of bird.</span><span>Chicken fAIght <span className="mx-2 text-line-strong">/</span> Made for a good argument.</span></footer>
       </main>
       {session === "in" && user?.tag === null && <TagDialog onCreated={setUser} onSignOut={logout} signingOut={loggingOut} signOutError={logoutError} />}
       <InfoDialog title={detail} onClose={() => setDetail(null)} />
