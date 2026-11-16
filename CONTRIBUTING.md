@@ -64,7 +64,7 @@ pnpm install
 pnpm dev
 ```
 
-Check the connection at http://localhost:3000/health.
+Open http://localhost:3000/login to check the frontend.
 
 ## Branches and PRs
 

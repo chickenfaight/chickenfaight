@@ -19,7 +19,7 @@ export default defineConfig({
     },
     {
       command: "pnpm dev --hostname 127.0.0.1 --port 3100",
-      url: "http://127.0.0.1:3100/health", reuseExistingServer: false,
+      url: "http://127.0.0.1:3100/login", reuseExistingServer: false,
       env: { NEXT_PUBLIC_BACKEND_URL: "http://127.0.0.1:8765" },
       timeout: 120000,
     },

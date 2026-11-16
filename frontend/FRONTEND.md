@@ -6,7 +6,7 @@ This Next.js version differs from most training data. Read the relevant guide in
 
 ## Visual language
 
-`app/components/lobby.tsx` is the homepage reference: a playful charcoal lobby with chicken-comb red actions, horizontal navigation, and a top-right profile dropdown (hover, click, and keyboard). Login shares the lobby palette, typography, and wordmark, with a short game introduction and Google sign-in card. `app/health/page.tsx` is a dev tool.
+`app/components/lobby.tsx` is the homepage reference: a playful charcoal lobby with chicken-comb red actions, horizontal navigation, and a top-right profile dropdown (hover, click, and keyboard). Login shares the lobby palette, typography, and wordmark, with a short game introduction and Google sign-in card.
 
 The lobby, login, search, and profile screens use a #17181b canvas, #202124 panels, warm white type, subtle borders, and #e53848 primary actions with #f04b58 accents. Small amber/lavender card icons and a chicken wordmark add personality. The match arena uses a #15181b canvas, #1c1f22 verdict panels, the same warm white type and red actions, and sky/amber side labels. Other screens retain the black/zinc palette below.
 
@@ -61,7 +61,6 @@ Do not: add light mode; use colored or gradient fills (no purple/indigo/blue "AI
 | `/challenge` | Today's daily challenge (`daily-challenge.tsx`): topic, both positions, twist, reward, time until the UTC reset, and either "Completed today" or `MatchmakingCard daily`, which queues with `daily: true` | implemented |
 | `/tips` | Debate tips (`tips-chat.tsx`): a streamed chat with a coach running on the chosen arena model, with the predefined tips as starter buttons. The conversation lives only in page state and is sent whole with each message. Client caps mirror the server's (2,000 characters per message, 8,000 total, 20 messages), with a New chat button. Model output is shown as plain text. The model defaults to the lobby's last choice (`lib/selected-arena.ts`, stored in `localStorage` with guarded access) | implemented |
 | `/signup` | Tag, username, password, and confirmation (`signup-form.tsx`). Rules are checked as you type (tag format, username 1–32, password 8–128, matching confirmation) and again by the server; `TAG_*`/`USERNAME_*` errors appear under their field. Success signs in and goes to `/`. Tag availability is only known on submit, because the availability check requires a session. Redirects to `/` when already signed in | implemented |
-| `/health` | Backend check (dev) | implemented |
 | `/` | Desktop lobby: queue registration/status polling, session/profile menu, sample stats and activity cards | implemented (matchmaking integration; sample stats) |
 | `/play` | Game selection | PLANNED |
 | `/match/[match_id]` | Debate arena | implemented |
@@ -113,7 +112,7 @@ Do not: add light mode; use colored or gradient fills (no purple/indigo/blue "AI
 
 - Server data that a single page needs: fetch in a Server Component or local `useState`. No context.
 - Context is for state shared across a subtree that changes over time. Contexts:
-  - `SessionContext` (app-wide, implemented in `session-provider.tsx`): current user or null, session status, `setUser()`, `refresh()` (re-checks `/auth/me`; the login form awaits it before navigating so the lobby sees the new session), `logout()`. Provider in the root layout. Replaces per-component `/auth/me` calls (`login-status.tsx` on `/health` still makes its own).
+  - `SessionContext` (app-wide, implemented in `session-provider.tsx`): current user or null, session status, `setUser()`, `refresh()` (re-checks `/auth/me`; the login form awaits it before navigating so the lobby sees the new session), `logout()`. Provider in the root layout. Replaces per-component `/auth/me` calls.
   - `FriendRequestsContext` (app-wide, implemented in `friend-requests-provider.tsx`, inside `SessionProvider`): `count` of incoming friend requests and `refresh()`. Counts while signed in, every 30 s while the tab is visible and on returning to the tab; `friend-requests.tsx`, `add-friend.tsx`, and `block-button.tsx` call `refresh()` after a change. A failed count keeps the last one.
   - `MatchContext` (implemented, inside `/match/[match_id]` only): owns one match WebSocket, heartbeat echo and cleanup, a reducer over current PROTOCOL messages, `submitPrompt()`, and `resign()`. No component other than its provider touches the socket.
 - One context per concern, in `app/components/providers/<name>-provider.tsx`, exporting the provider and a `use<Name>()` hook that throws outside its provider.

@@ -118,7 +118,8 @@ pnpm build
 
 Browser tests run Chromium, Firefox, and WebKit (Safari engine coverage) under `pnpm dev` (Strict Mode). Playwright
 starts its own frontend on 127.0.0.1:3100 and `backend/tests/e2e_server.py` on
-127.0.0.1:8765. They refuse to reuse existing servers. The test app replaces the
+127.0.0.1:8765. Readiness checks use frontend `/login` and backend `/health`.
+They refuse to reuse existing servers. The test app replaces the
 production lifespan, validates `TEST_POSTGRES_URL`, runs migrations and seeds only
 that test database, and wires every HTTP/socket/engine DB session to it. Inference
 is deterministic; the rest of the app is real. Many users share loopback, so only
