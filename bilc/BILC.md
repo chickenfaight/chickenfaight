@@ -54,7 +54,7 @@ type Model interface {
 
 ## Integration contract
 
-Match-handler tests use a fake implementing `model.Model`; neither Ollama nor completed auth is needed. Connection tests use a fake WebSocket server and test credentials. To try the whole path locally, pair against your local backend and `ollama pull` a small model; do not bypass server authentication.
+Match-handler tests use a fake implementing `model.Model`; neither Ollama nor completed auth is needed. Connection tests use a fake WebSocket server and test credentials. The browser suite also runs `tests/contract`, a test-only executable using the real Go components against the Python backend and fake local inference; it never reads user config or keychain. To try the whole path locally, pair against your local backend and `ollama pull` a small model; do not bypass server authentication.
 
 ### Shared model contract
 

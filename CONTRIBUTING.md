@@ -139,4 +139,5 @@ Tags must use `backend/vMAJOR.MINOR.PATCH`. Ordinary branch pushes and `bilc/v*`
 publish backend images. Keep the version in `pyproject.toml` and `uv.lock` consistent
 with the Git tag: version `0.1.0` uses `backend/v0.1.0` and publishes image tag `0.1.0`.
 The workflow derives the image version from the Git tag; it does not check version
-agreement or CI results, or deploy the image.
+agreement or deploy the image. Publication waits for the reusable CI workflow to pass
+on the same tagged source, including browser tests and a production-image import check.

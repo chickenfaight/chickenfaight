@@ -5,6 +5,7 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+  workflow_call:
 
 permissions:
   contents: read
@@ -36,6 +37,9 @@ jobs:
 
       - name: Lint
         run: pnpm lint
+
+      - name: Frontend unit tests
+        run: pnpm test
 
       - name: Build
         run: pnpm build
@@ -88,7 +92,71 @@ jobs:
         run: uv sync --locked
 
       - name: Run backend tests
-        run: uv run --no-sync pytest -v -rs
+        run: uv run --no-sync pytest -v -rs --cov=app --cov-branch --cov-report=term-missing --cov-report=xml
+
+      - name: Upload backend coverage
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-coverage
+          path: backend/coverage.xml
+
+      - name: Check production image imports and non-root user
+        run: |
+          docker build -t chickenfaight-backend:test .
+          test "$(docker run --rm --entrypoint id chickenfaight-backend:test -u)" != 0
+          docker run --rm --env POSTGRES_URL --env GOOGLE_CLIENT_ID --env GOOGLE_CLIENT_SECRET --env SESSION_SECRET --env BILC_JWT_SECRET --env INFERENCE_BASE_URL --env INFERENCE_API_KEY --entrypoint python chickenfaight-backend:test -c 'from app.main import app; assert app.docs_url is None'
+
+  browser-tests:
+    name: Browser tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_USER: ci
+          POSTGRES_PASSWORD: ci
+          POSTGRES_DB: chickenfaight_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U ci -d chickenfaight_test"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      POSTGRES_URL: postgresql://ci:ci@localhost:5432/chickenfaight_unused
+      TEST_POSTGRES_URL: postgresql://ci:ci@localhost:5432/chickenfaight_test
+      GOOGLE_CLIENT_ID: ci-placeholder
+      GOOGLE_CLIENT_SECRET: ci-placeholder
+      SESSION_SECRET: ci-only-session-secret
+      BILC_JWT_SECRET: ci-only-bilc-jwt-secret
+      INFERENCE_BASE_URL: https://example.invalid/v1
+      INFERENCE_API_KEY: ci-placeholder
+      APP_ENV: test
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: bilc/go.mod
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+      - uses: astral-sh/setup-uv@v6.0.1
+        with:
+          python-version: "3.14"
+      - run: uv sync --locked
+        working-directory: backend
+      - run: npm install --global "$(node -p 'require("./package.json").packageManager')"
+        working-directory: frontend
+      - run: pnpm install --frozen-lockfile
+        working-directory: frontend
+      - run: pnpm exec playwright install --with-deps chromium firefox webkit
+        working-directory: frontend
+      - run: pnpm test:e2e
+        working-directory: frontend
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: browser-failure-traces
+          path: frontend/test-results/
 
   bilc-checks:
     name: BILC checks
