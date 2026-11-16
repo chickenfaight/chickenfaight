@@ -20,6 +20,7 @@ from app.models import Topic
 from app.repositories.topic import TopicRepository
 from app.services.challenge import Twist, check_prompt, topic_for, twist_for
 from app.services.rewards import MatchReport, record_match
+from app.services import result_outbox
 from app.schemas.schemas import TopicRead, PromptSubmission
 from app.services.arena import ArenaService
 
@@ -167,7 +168,11 @@ class GameEngine:
             raise
         finally:
             if self.result is not None:
-                await self.report_game()
+                try:
+                    await self.report_game()
+                except Exception:
+                    # A journal failure prevents acknowledgement, but cannot retain workers/devices.
+                    logger.exception("Match %s: couldn't journal the final result", self.match_id)
             self.finished.set() # triggers connection cleanup
 
             # Devices cancel anything still in flight and become idle again.
@@ -350,12 +355,11 @@ class GameEngine:
                     model_names=dict(self.model_names), truncated=frozenset(self.truncated),
                     rating_ladder_slug="byom-arena" if self.devices else f"ladder-{self.model_id}",
                 )
-            try:
+            async def write(report):
                 async with SessionFactory() as session:
-                    await record_match(session, self.report)
-                self.reported = True
-            except Exception:
-                logger.exception("Match %s: couldn't record the result", self.match_id)
+                    await record_match(session, report)
+
+            self.reported = await result_outbox.pending_results.record(self.report, write)
 
     def resign(self, player: UUID) -> None:
         """Forfeit `player`'s side, from `RESIGN` or account deletion. Ignored once a result is
@@ -382,7 +386,7 @@ class GameEngine:
             await self.send_result()
 
     async def send_result(self) -> None:
-        # Save first: a player who sees the verdict and opens their match history must find it there.
+        # Journal first; database outages may delay history until the recovery worker succeeds.
         await self.report_game()
         message = {"type": "MATCH_RESULT", "payload": self.result}
         for socket in list(self.connections.values()):

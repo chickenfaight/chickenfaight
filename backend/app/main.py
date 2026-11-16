@@ -23,7 +23,9 @@ from app.api.admin import router as admin_router
 from app.config import settings
 from app.services.auth_session import SESSION_LIFETIME
 from app.db.migrate import migrate
-from app.db.session import engine
+from app.db.session import engine, SessionFactory
+from app.services import result_outbox
+from app.services.rewards import record_match
 from app.services.bilc_connections import BilcConnections
 from app.services.bilc_releases import BilcReleases
 from app.services.matchmaking import Matchmaker
@@ -37,12 +39,19 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         allow_reset=settings.app_env == "development",
     )
 
+    await result_outbox.pending_results._io(result_outbox.pending_results._prepare)
+
     bilc_connections = BilcConnections()
     app.state.bilc_connections = bilc_connections
     app.state.bilc_releases = BilcReleases()
     matchmaker = Matchmaker(bilc=bilc_connections)
     app.state.matchmaker = matchmaker
 
+    async def write_result(report):
+        async with SessionFactory() as session:
+            await record_match(session, report)
+
+    recovery = asyncio.create_task(result_outbox.pending_results.run(write_result))
     task = asyncio.create_task(matchmaker.run())
 
     try:
@@ -56,6 +65,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             try:
                 await matchmaker.close()
             finally:
+                recovery.cancel()
+                await asyncio.gather(recovery, return_exceptions=True)
                 await engine.dispose()
 
 

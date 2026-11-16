@@ -4,6 +4,7 @@ Used by Playwright and the Go/Python contract test. External inference is script
 HTTP, cookies, sockets, matchmaking, engine, and persistence are real.
 """
 import asyncio
+import tempfile
 from contextlib import asynccontextmanager
 from uuid import UUID
 
@@ -60,6 +61,9 @@ class ScriptedModel:
 async def test_lifespan(app):
     await asyncio.to_thread(reset, TEST_URL)
     await asyncio.to_thread(migrate, TEST_URL, allow_reset=False)
+    from app.services import result_outbox
+    journal = tempfile.TemporaryDirectory(prefix="chickenfaight-browser-results-")
+    result_outbox.pending_results = result_outbox.ResultOutbox(journal.name)
     engine = create_async_engine(TEST_URL)
     factory = async_sessionmaker(engine, expire_on_commit=False)
     for module in (db, dependencies, bilc_auth, bilc_connections, game_engine):
@@ -96,6 +100,7 @@ async def test_lifespan(app):
         await asyncio.gather(task, return_exceptions=True)
         await app.state.matchmaker.close()
         await engine.dispose()
+        journal.cleanup()
 
 
 main.app.router.lifespan_context = test_lifespan

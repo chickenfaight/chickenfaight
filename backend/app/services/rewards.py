@@ -8,7 +8,7 @@ from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import ChallengeCompletion, Ladder, Match, MatchParticipant, Turn, User
+from app.models import ChallengeCompletion, Ladder, Match, MatchParticipant, Model, Topic, Turn, User
 from app.models.ladder_rating import DEFAULT_ELO
 from app.models.match import Phase
 from app.services.challenge import CHALLENGE_POINTS
@@ -61,6 +61,8 @@ def _finishers(report: MatchReport) -> list[UUID]:
 def _advance_streak(user: User, now: datetime) -> int:
     """Update the streak for a match finished at `now`; returns any streak bonus points."""
     last = user.last_played_at
+    if last is not None and now <= last:
+        return 0  # Late recovery must not move a newer streak backwards.
     user.last_played_at = now
     if last is None or now - last > STREAK_GRACE:
         user.streak = 1
@@ -80,8 +82,11 @@ async def record_match(session: AsyncSession, report: MatchReport) -> None:
             select(User).where(User.id.in_(report.sides)).order_by(User.id).with_for_update()
             .execution_options(populate_existing=True)
         )}
+        # Catalog rows can be deleted while a result waits on disk.
+        model_id = report.model_id if report.model_id and await session.get(Model, report.model_id) else None
+        topic_id = report.topic_id if report.topic_id and await session.get(Topic, report.topic_id) else None
         inserted = await session.scalar(insert(Match).values(
-            id=report.match_id, model_id=report.model_id, topic_id=report.topic_id,
+            id=report.match_id, model_id=model_id, topic_id=topic_id,
             status=result["status"], winner_side=result.get("winner"), end_reason=result["end_reason"],
             verdict_reasoning=_storable(result["reason"]) if result.get("reason") else None,
             challenge_day=report.challenge_day, ended_at=report.ended_at,
@@ -127,7 +132,7 @@ async def record_match(session: AsyncSession, report: MatchReport) -> None:
         if result["status"] == "completed" and report.rating_ladder_slug and len(users) == 2:
             ladder = await session.scalar(select(Ladder).where(Ladder.slug == report.rating_ladder_slug))
             if ladder is None:
-                raise RuntimeError("Missing rating ladder for match result")
+                return  # A removed ladder cannot receive ratings; keep history and rewards.
             service = RatingService(session)
             starting = {}
             for user_id in report.sides:

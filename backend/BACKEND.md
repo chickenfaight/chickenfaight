@@ -59,13 +59,34 @@ The current engine keeps one receiver and one heartbeat task per browser connect
 | `format_game(prompt)` | Build the fixed-template `messages` for a turn; player prompt goes only inside delimiters, with delimiter strings stripped from it |
 | `call_model(messages)` | Stream a turn from a `ModelClient`, forwarding `TURN_DELTA`s; also used for the judge |
 | `unlink_user(socket)` | Send `MATCH_RESULT` and close the socket |
-| `report_game()` | Records the decided result, arguments, points, streaks, and Elo via `record_match()` (`app/services/rewards.py`) in its own session; marks success only after commit, just before `MATCH_RESULT` is sent (with `run()`'s `finally` retrying a failed attempt), and logs instead of raising on failure (implemented) |
+| `report_game()` | Journals the decided result to disk before sending `MATCH_RESULT`, then commits history, rewards, and Elo via `record_match()`; marks success only after commit. Database failures retain the journal for retry; disk failures prevent acknowledgement (implemented) |
 
 The engine never calls a provider directly. `app/inference/` exposes one `ModelClient` interface (`stream(messages, max_tokens) -> AsyncIterator[str]`) with `OpenAIModelClient` (cloud, `AsyncOpenAI` with `base_url`) and `BilcModelClient` (implemented: sends `TURN_REQUEST` to a device, yields `MATCH_RESPONSE` deltas). `BilcModelClient` depends only on the `DeviceLink` protocol (`turn()`), so tests can use a fake. Tests use a fake implementation. The cloud adapter requires a terminal `stop` or `length` finish reason; partial EOF, missing finish reasons, or other completion reasons fail the turn. `[DONE]` alone is insufficient through the SDK. Engine-imposed character truncation remains intentional.
 
 OpenRouter is the selected cloud inference provider: it offers a single platform for accessing various models, including free models, through OpenAI-compatible endpoints. Configure `INFERENCE_BASE_URL=https://openrouter.ai/api/v1` and an OpenRouter `INFERENCE_API_KEY`; BILC continues to use the user's local OpenAI-compatible endpoint. The endpoint and judge come from env (`INFERENCE_BASE_URL`, `INFERENCE_API_KEY`, `INFERENCE_JUDGE_MODEL`); argument models come from the lobby-selected database row. There is no global player-model override. Development can use another OpenAI-compatible endpoint, but the selected database row must name a model that endpoint serves; provider-specific routing remains pending. `.env.example` has both endpoint setups. OpenRouter's free tier allows 50 requests a day across all free models, and one match uses 3 to 6. On GenAI Studio, use `mistral:latest`: most of its models queue concurrent requests, so simultaneous matches slow down and can hit the 30 s first-token timeout. Its per-key rate limit (HTTP 400, 'Rate limit exceeded') caps total throughput; failed requests get the normal retry.
 
 Live state (matchmaking queues, running engines, connected BILC devices in `BilcConnections`) is in-memory in one server process. Running multiple processes would need a shared store; out of scope. Graceful shutdown cancels and awaits all running engines before disposing the database; unfinished matches are voided without replacing an already decided result.
+
+## Durable result recovery
+
+`app/services/result_outbox.py` writes decided `MatchReport`s with atomic rename,
+file/directory fsync, and private directory/file permissions (0700/0600). Only
+result metadata and generated arguments are journaled, never player prompts.
+Entries remain until the idempotent database transaction commits; a crash between
+commit and removal is safely replayed. Startup launches a worker that retries
+every 5 seconds, with a 10-second timeout per database write. Backlogs drain in
+finish-time order before fresh writes; missing catalog rows do not strand history.
+During an outage, players can receive a verdict before history becomes available.
+
+Set `MATCH_RESULT_DIRECTORY` to a persistent, writable volume owned by the server
+user (default `~/.local/share/chickenfaight/results`, under `/home/appuser` in the
+container). Keep this volume across container replacement; use one server process
+per journal directory. An ephemeral container filesystem cannot provide recovery
+after container deletion. Back up this directory alongside the database; do not
+clear it on startup. Recovery requires the database to become available again.
+Hard termination before journaling finishes, lost/corrupt storage, and unfinished
+matches are outside this guarantee; this is decided-result recovery, not live
+match resumption.
 
 ## Tags and usernames
 
@@ -83,7 +104,7 @@ The signed-in player can change or clear their private email via `PATCH /v1/user
 
 ## Match history
 
-`record_match()` saves each player's `model_name` (the cloud model's display name, or the name their BILC device reported, read when the match starts so a device that later drops still has one) and one `turns` row per non-blank argument, with NUL bytes removed since Postgres can't store them and model output can contain them. `report_game()` adds `elo_before` and `elo_after` in the same transaction as the rating change. A player who deleted their account mid-match is saved with a null `user_id`, so the opponent keeps their result. `MatchHistoryService` (`app/services/match_history.py`) serves the routes and owns who may read what: a history only to its owner and a match only to its participants, 404 otherwise (PROTOCOL.md). Player prompts are never stored, because the arena promises players they stay private.
+`record_match()` saves each player's `model_name` (the cloud model's display name, or the name their BILC device reported, read when the match starts so a device that later drops still has one) and one `turns` row per non-blank argument, with NUL bytes removed since Postgres can't store them and model output can contain them. `record_match()` adds `elo_before` and `elo_after` in the same transaction as the rating change. A player who deleted their account mid-match is saved with a null `user_id`, so the opponent keeps their result. `MatchHistoryService` (`app/services/match_history.py`) serves the routes and owns who may read what: a history only to its owner and a match only to its participants, 404 otherwise (PROTOCOL.md). Player prompts are never stored, because the arena promises players they stay private.
 
 ## Debate tips
 

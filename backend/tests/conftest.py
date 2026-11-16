@@ -155,3 +155,9 @@ def log_in(client: AsyncClient) -> Callable[[User], None]:
         app.dependency_overrides[get_current_user] = lambda: user
 
     return log_in_as
+
+
+@pytest.fixture(autouse=True)
+def isolated_result_outbox(tmp_path, monkeypatch):
+    from app.services import result_outbox
+    monkeypatch.setattr(result_outbox, "pending_results", result_outbox.ResultOutbox(tmp_path / "results"))
