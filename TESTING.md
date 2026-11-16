@@ -181,9 +181,8 @@ binary and leave no installation temporary files. These run in the normal race s
 `test_incomplete_sse_must_not_be_accepted_as_a_completed_turn` is a strict pytest
 expected failure: the cloud SDK adapter currently treats EOF after partial text
 without a completion marker as success. A future fix will produce XPASS and fail
-CI until the marker is removed. Firefox settings reload also emitted a hydration
-warning for the delete-account button's restored `disabled` attribute; account
-editing still passes, but the warning needs a separate UI fix.
+CI until the marker is removed. Settings reload coverage also asserts that the
+delete-account button stays usable without hydration warnings, including Firefox.
 
 CI builds the backend production image and checks non-root execution and imports
 with production docs disabled; image publication waits for all CI checks on the

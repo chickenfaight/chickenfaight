@@ -50,14 +50,25 @@ test("expired session redirects protected pages to login", async ({ page, contex
 });
 
 test("account edits persist through reload", async ({ page, context }) => {
+  const hydrationErrors: string[] = [];
+  page.on("console", message => {
+    if (message.type() === "error" && /hydrated|hydration/i.test(message.text())) hydrationErrors.push(message.text());
+  });
   await account(context);
   await page.goto("/settings");
+  const deleteAccount = page.getByRole("button", { name: "Delete account…", exact: true });
+  await expect(deleteAccount).toBeEnabled();
   await page.getByRole("button", { name: /edit username/i }).click();
   await page.getByRole("textbox", { name: "Username", exact: true }).fill("Updated player");
   await page.getByRole("button", { name: "Save", exact: true }).click();
   await page.reload();
   expect((await (await context.request.get(`${backend}/auth/me`)).json()).username).toBe("Updated player");
   await expect(page.getByText("Updated player", { exact: true }).first()).toBeVisible();
+  await expect(deleteAccount).toBeEnabled();
+  await deleteAccount.click();
+  await expect(page.getByRole("dialog", { name: "Are you sure?" })).toBeVisible();
+  await page.getByRole("button", { name: "Keep my account", exact: true }).click();
+  expect(hydrationErrors).toEqual([]);
 });
 
 test("failed queue request retries status before attempting another registration", async ({ page, context }) => {

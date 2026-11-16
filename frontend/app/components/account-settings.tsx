@@ -65,7 +65,8 @@ export default function AccountSettings() {
     <section aria-labelledby="danger-title" className={`${panel} border-[#e53848]/30 p-7`}>
       <h2 id="danger-title" className="text-sm font-bold text-[#ff7882]">Delete account</h2>
       <p className="mt-2 max-w-xl text-sm leading-relaxed text-zinc-400">Permanently remove your account and its data. Signing in with Google again later creates a brand-new account.</p>
-      <button disabled={status !== "in"} onClick={() => { setError(""); setConfirming(true); }} className={`mt-5 h-11 rounded-xl border border-[#e53848]/60 px-5 text-sm font-bold text-[#ff7882] enabled:hover:bg-[#e53848]/10 disabled:opacity-40 ${focus}`}>Delete account…</button>
+      {/* Firefox restores native disabled state on reload before React hydrates. */}
+      <button aria-disabled={status !== "in"} onClick={() => { if (status !== "in") return; setError(""); setConfirming(true); }} className={`mt-5 h-11 rounded-xl border border-[#e53848]/60 px-5 text-sm font-bold text-[#ff7882] not-aria-disabled:hover:bg-[#e53848]/10 aria-disabled:opacity-40 ${focus}`}>Delete account…</button>
     </section>
     <DeleteDialog open={confirming} deleting={deleting} error={error} onConfirm={deleteAccount} onClose={() => setConfirming(false)} />
   </div>;
