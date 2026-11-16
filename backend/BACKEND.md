@@ -78,15 +78,8 @@ every 5 seconds, with a 10-second timeout per database write. Backlogs drain in
 finish-time order before fresh writes; missing catalog rows do not strand history.
 During an outage, players can receive a verdict before history becomes available.
 
-Set `MATCH_RESULT_DIRECTORY` to a persistent, writable volume owned by the server
-user (default `~/.local/share/chickenfaight/results`, under `/home/appuser` in the
-container). Keep this volume across container replacement; use one server process
-per journal directory. An ephemeral container filesystem cannot provide recovery
-after container deletion. Back up this directory alongside the database; do not
-clear it on startup. Recovery requires the database to become available again.
-Hard termination before journaling finishes, lost/corrupt storage, and unfinished
-matches are outside this guarantee; this is decided-result recovery, not live
-match resumption.
+Production volume setup, backup/restore boundaries, and restart verification are
+in [DEPLOYMENT.md](../DEPLOYMENT.md#result-journal-backups-and-recovery).
 
 ## Tags and usernames
 

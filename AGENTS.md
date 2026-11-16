@@ -16,6 +16,7 @@ Before changing anything in a row below, read the linked doc. If your change con
 | `bilc/` | [bilc/BILC.md](bilc/BILC.md) |
 | Any HTTP route, WebSocket message, or inference call | [PROTOCOL.md](PROTOCOL.md) |
 | Tests | [TESTING.md](TESTING.md) |
+| Deployment, hosting, or releases | [DEPLOYMENT.md](DEPLOYMENT.md) |
 
 Items tagged **PLANNED** in any doc are specified but not yet built. Build them as specified. When you implement one, delete its PLANNED tag in the same change (PROTOCOL.md instead marks shipped items "(implemented)").
 
@@ -26,6 +27,7 @@ AGENTS.md          this file (CLAUDE.md imports it)
 CONTRIBUTING.md    setup, branches, PRs
 PROTOCOL.md        every contract between components
 TESTING.md         test strategy per component
+DEPLOYMENT.md      production configuration, releases, operations
 backend/           FastAPI server: REST API, matchmaking, game engine, DB access (Python, uv)
 frontend/          Next.js web app (TypeScript, pnpm)
 bilc/              BYOM Interface Layer Client (Go CLI; partially built)

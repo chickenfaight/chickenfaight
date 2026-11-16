@@ -182,36 +182,10 @@ covered by `internal/ollama` tests, and no installed service is touched.
 and a truncated archive with a matching checksum; failed updates preserve the old
 binary and leave no installation temporary files. These run in the normal race suite.
 
-## Deployment checks still requiring the target environment
+## Deployment verification
 
-`test_inference_http.py` rejects partial EOF, missing terminal finish reasons, and
-non-text completion reasons; it accepts `stop`/`length`, including terminal text
-and a finish chunk without `[DONE]`. The real adapter through the engine verifies
-partial output voids the match without retrying or judging. Settings reload
-coverage checks delete-account usability without hydration warnings in Firefox.
-
-CI builds the backend production image and checks non-root execution and imports
-with production docs disabled; image publication waits for all CI checks on the
-same tagged source. The application's production lifespan is never run in pytest.
-The browser harness separately proves test migrations, provisioning, real match
-persistence, and component shutdown.
-
-The following remain **unverified against a deployed environment**, and must be
-checked once hosting, domains, and proxy configuration exist:
-
-- HTTPS/WSS certificates, real cookie delivery across the chosen domains, reverse
-  proxy WebSocket upgrades/timeouts, trusted forwarded IPs and OAuth redirect URL.
-- Real Google consent/callback and the selected live inference provider/models.
-- Container startup/restart against a disposable DB using deployment configuration;
-  SIGTERM while matches/results are in flight, the host's termination grace period,
-  and restart behavior with the single-worker topology. Unit cancellation tests do
-  not prove signal propagation through the final hosting stack.
-- Real OS keychain, installed Ollama process ownership/signals on macOS/Linux/Windows,
-  platform release archives, and physical two-machine network behavior.
-
-These are deployment/platform-dependent, not inherently impossible to automate;
-add a staging smoke job once those concrete resources are available. Full browser
-reconnect snapshots, later debate phases, and signed self-updates remain planned
-features and are not represented as passing coverage. Decided-result recovery
-requires a persistent `MATCH_RESULT_DIRECTORY` volume; validate that volume
-survives the actual deployment's process/container replacement.
+Automated checks do not prove the production network, live OAuth/provider,
+persistent volume, shutdown behavior, or physical BILC platform integration.
+[DEPLOYMENT.md](DEPLOYMENT.md#launch-verification-in-the-target-environment)
+owns that checklist and the staging requirements. Full browser reconnect snapshots,
+later debate phases, and signed self-updates remain planned.

@@ -112,32 +112,7 @@ The commands above use the current source. If using `./bilc` instead, rebuild it
 
 Credentials go in the system keychain, or `credentials.json` (mode 0600) in the config directory when there is none. Run `go test -race ./...` from `bilc/` before a PR; [TESTING.md](TESTING.md) has the full checks.
 
-To release, tag a commit on `main` that passed CI and push the tag: `git tag bilc/v0.1.0 && git push origin bilc/v0.1.0`. The `BILC release` workflow builds the binaries and publishes a GitHub Release, which `bilc/install.sh` installs from. Set the repository variable `BILC_SERVER_URL` once the server is deployed, so release builds default to it.
+## Deployment and releases
 
-## Backend image releases
-
-From `backend/`, increment the version with uv instead of editing version files manually:
-
-```bash
-uv version --bump patch --no-sync
-```
-
-Use `--bump minor` or `--bump major` for larger releases, or `uv version 0.1.0 --no-sync`
-to set an exact version. These commands update both `pyproject.toml` and `uv.lock`;
-`--no-sync` skips installing dependencies locally. Commit both files and push the
-commit. After CI passes, tag that commit with the same version and push the tag
-(for example, if uv set the version to `0.1.0`):
-
-```bash
-git tag backend/v0.1.0
-git push origin backend/v0.1.0
-```
-
-The `Build` workflow builds `backend/Dockerfile` and pushes a
-Linux amd64 image to `ghcr.io/chickenfaight/backend:0.1.0`.
-Tags must use `backend/vMAJOR.MINOR.PATCH`. Ordinary branch pushes and `bilc/v*` tags do not
-publish backend images. Keep the version in `pyproject.toml` and `uv.lock` consistent
-with the Git tag: version `0.1.0` uses `backend/v0.1.0` and publishes image tag `0.1.0`.
-The workflow derives the image version from the Git tag; it does not check version
-agreement or deploy the image. Publication waits for the reusable CI workflow to pass
-on the same tagged source, including browser tests and a production-image import check.
+Production topology, configuration, release commands, rollout/recovery, and launch
+checks are maintained in [DEPLOYMENT.md](DEPLOYMENT.md).

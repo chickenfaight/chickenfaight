@@ -120,6 +120,9 @@ Do not: add light mode; use colored or gradient fills (no purple/indigo/blue "AI
 - Keep context values stable (`useMemo`/`useReducer`); put fast-changing streaming text in the reducer, not in many `useState`s.
 - No external state libraries.
 
+Production URLs, cookies, build configuration, and hosting requirements are in
+[DEPLOYMENT.md](../DEPLOYMENT.md).
+
 ## Checks
 
 Automated checks use Node's built-in unit runner and Playwright (Chromium/Firefox/WebKit); see TESTING.md for the isolated backend harness and destructive test DB requirements. Before finishing: `pnpm test`, `pnpm lint` and `pnpm build` pass, and the change was used in a browser (see [TESTING.md](../TESTING.md)).
