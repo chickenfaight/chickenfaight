@@ -131,28 +131,62 @@ Review the source-controlled admin allowlist in `backend/app/auth/admins.py`.
 
 ## Releases
 
-### Backend image
+### App (frontend + backend)
 
-From `backend/`, bump versions using uv:
+Frontend and backend share one stable `X.Y.Z` version and one `app/vX.Y.Z` tag,
+even when only one component changed. BILC versions are independent. CI checks
+that `frontend/package.json`, `backend/pyproject.toml`, and the backend entry in
+`backend/uv.lock` agree; release CI also requires an exact match with the tag.
+Separate `frontend/v*` and `backend/v*` tags do not trigger an app release.
 
-```bash
-uv version --bump patch --no-sync
-```
+1. On a release-preparation branch, set both packages to the intended version
+   (example from the repository root; for the first release these are already
+   `0.1.0`):
 
-Commit both `pyproject.toml` and `uv.lock`. After review and CI, tag that commit
-with its matching version and push the tag (example from repository root):
+   ```bash
+   (cd backend && uv version 0.1.0 --no-sync)
+   (cd frontend && npm version 0.1.0 --no-git-tag-version --allow-same-version)
+   python3 .github/scripts/check-app-version.py --tag app/v0.1.0
+   ```
 
-```bash
-git tag backend/v0.1.0
-git push origin backend/v0.1.0
-```
+   Commit `frontend/package.json`, `backend/pyproject.toml`, and `backend/uv.lock`
+   together. Use a new version for each later release. Merge the PR after all
+   required checks, including **Browser tests**, pass.
+2. Tag the reviewed commit on `main`, then push that tag:
 
-The Build workflow runs reusable CI before publishing
-`ghcr.io/chickenfaight/backend:0.1.0` for **linux/amd64**. Other architectures need
-a separate build. Ordinary branch pushes and BILC tags do not publish backend
-images. The workflow derives the image version from the tag; it does not check
-agreement with the package version or deploy the image. Configure registry pull
-access and record the immutable image digest used for each rollout.
+   ```bash
+   git switch main
+   git pull --ff-only origin main
+   python3 .github/scripts/check-app-version.py --tag app/v0.1.0
+   git tag -a app/v0.1.0 -m "App 0.1.0"
+   git push origin app/v0.1.0
+   ```
+
+3. The **App release** workflow (`.github/workflows/build.yml`) reruns all CI
+   suites, including Chromium, Firefox, and WebKit. Only after they pass does it
+   publish `ghcr.io/chickenfaight/backend:0.1.0` for **linux/amd64** and create the
+   shared GitHub Release with source archives and the backend image digest.
+   It leaves GitHub's global Latest release unchanged so BILC distribution stays
+   independent. Other architectures need a separate image build.
+4. Build the frontend from that same tag using Node 24 and the pinned pnpm:
+
+   ```bash
+   git switch --detach app/v0.1.0
+   cd frontend
+   pnpm install --frozen-lockfile
+   NEXT_PUBLIC_BACKEND_URL=https://your-app.example pnpm build
+   pnpm start
+   ```
+
+   Replace the URL with the actual deployment origin. Configure registry pull
+   access and deploy the backend by its recorded digest. Deploy both components
+   from the same app release using the rollout procedure below; the workflow
+   does not deploy either component or publish a frontend image.
+
+Do not move or reuse a published tag. A failed CI run publishes nothing. If image
+publication succeeds but GitHub Release creation fails, inspect the published
+digest before retrying; images and GitHub Releases are separate operations.
+Keep the previous frontend build, backend digest, and configuration for recovery.
 
 ### BILC distribution
 

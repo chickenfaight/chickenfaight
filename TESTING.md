@@ -5,6 +5,16 @@ Run the backend with `uv run pytest` from `backend/`, frontend unit tests with
 `go test -race ./...` from `bilc/`. CI is configured to run all suites. Tests use deterministic
 models and local fake HTTP servers; no provider credentials or Ollama are needed.
 
+CI runs on every pull request, push to `main`, and manual dispatch. The active
+`protect-main` repository ruleset requires **Frontend checks**, **Backend tests**,
+**Browser tests**, and **BILC checks**, with the branch up to date, before `main`
+can be updated. Keep these check names stable. Browser failures block merging;
+the job has no path filters or allowed-failure setting. The app release workflow
+calls the same CI before publishing, so browser failures also block a release.
+`Frontend checks` additionally validates the shared frontend/backend version and
+backend lockfile with `.github/scripts/check-app-version.py`; on app release tags
+it checks the tag too. See [DEPLOYMENT.md](DEPLOYMENT.md#releases).
+
 ## Backend (pytest)
 
 Tooling: `pytest`, `pytest-asyncio`, `pytest-cov`, `respx` (dev dependencies; config in `pyproject.toml`, `asyncio_mode = "auto"`, session-scoped event loop). Run with `uv run pytest` from `backend/`.

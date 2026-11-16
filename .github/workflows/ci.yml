@@ -24,6 +24,12 @@ jobs:
       - name: Download repository
         uses: actions/checkout@v7
 
+      - name: Check frontend, backend, and release versions
+        working-directory: .
+        env:
+          RELEASE_TAG: ${{ startsWith(github.ref, 'refs/tags/app/') && github.ref_name || '' }}
+        run: python3 .github/scripts/check-app-version.py --tag "$RELEASE_TAG"
+
       - name: Install Node.js
         uses: actions/setup-node@v6
         with:
@@ -107,6 +113,7 @@ jobs:
           docker run --rm --env POSTGRES_URL --env GOOGLE_CLIENT_ID --env GOOGLE_CLIENT_SECRET --env SESSION_SECRET --env BILC_JWT_SECRET --env INFERENCE_BASE_URL --env INFERENCE_API_KEY --entrypoint python chickenfaight-backend:test -c 'from app.main import app; assert app.docs_url is None'
 
   browser-tests:
+    # Required by protect-main; keep this check name stable and failures blocking.
     name: Browser tests
     runs-on: ubuntu-24.04
     timeout-minutes: 15

@@ -70,6 +70,10 @@ Check the connection at http://localhost:3000/health.
 
 - Branch per user story: `us-<number>` (e.g. `us-16`), from `main`.
 - Open a PR into `main` that names the user story and its tasks. There is no required reviewer; ask a teammate when a change is risky.
+- CI runs on every PR and push to `main`. The `protect-main` GitHub ruleset requires
+  **Frontend checks**, **Backend tests**, **Browser tests**, and **BILC checks**
+  before updating `main`, with the branch up to date. Browser tests cover Chromium,
+  Firefox, and WebKit and must pass; do not mark them optional or skip them by path.
 - Before opening a PR, confirm:
   - The change follows AGENTS.md guardrails and the doc for each area touched.
   - Any doc made wrong by the change is updated in the same PR: contracts in PROTOCOL.md, schema in BACKEND.md, structure/style in FRONTEND.md or BILC.md.
@@ -116,3 +120,5 @@ Credentials go in the system keychain, or `credentials.json` (mode 0600) in the 
 
 Production topology, configuration, release commands, rollout/recovery, and launch
 checks are maintained in [DEPLOYMENT.md](DEPLOYMENT.md).
+Frontend and backend versions move together under `app/vX.Y.Z`; update both package
+versions and `backend/uv.lock` in one PR. `bilc/vX.Y.Z` releases remain independent.

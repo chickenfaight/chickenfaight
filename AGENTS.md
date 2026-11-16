@@ -70,6 +70,7 @@ bilc/              BYOM Interface Layer Client (Go CLI; partially built)
 | Live output | Provider → server via SSE; server → browser/BILC via WebSocket | Players watch the debate stream |
 | BILC language | Go, static binaries | Goroutines/timeouts, cross-platform |
 | BILC auth | One-time pairing code → device with a rotating refresh token (hash stored; reuse revokes) → 15-min HS256 access JWT for the socket | Revocable per device; a leaked token is caught when either copy is reused |
+| App releases | Frontend and backend share a version and `app/v*` tag; CI gates the backend image and shared GitHub Release; build the frontend from the same tag | Keeps deployed components paired; see DEPLOYMENT.md |
 | BILC releases | `bilc/v*` tag → GoReleaser builds + SHA-256 `checksums.txt` → GitHub Release; `install.sh` verifies and installs | No infrastructure of our own; signing PLANNED |
 
 ## Glossary
