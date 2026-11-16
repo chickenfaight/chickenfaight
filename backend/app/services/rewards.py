@@ -8,9 +8,11 @@ from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import ChallengeCompletion, Match, MatchParticipant, Turn, User
+from app.models import ChallengeCompletion, Ladder, Match, MatchParticipant, Turn, User
+from app.models.ladder_rating import DEFAULT_ELO
 from app.models.match import Phase
 from app.services.challenge import CHALLENGE_POINTS
+from app.services.rating import RatingService
 
 FINISH_POINTS = 10
 WIN_POINTS = 10
@@ -30,6 +32,7 @@ class MatchReport:
     ended_at: datetime
     model_names: dict[UUID, str | None] = field(default_factory=dict)  # user_id -> the model they used
     truncated: frozenset[str] = frozenset()  # sides whose argument hit the length limit
+    rating_ladder_slug: str | None = None
 
 
 def _storable(text: str) -> str:
@@ -72,15 +75,22 @@ async def record_match(session: AsyncSession, report: MatchReport) -> None:
     """Store the result and award points, streaks, and the daily challenge, in one transaction."""
     result = report.result
     async with session.begin():
-        session.add(Match(
+        # A fixed lock order serializes overlapping results and account deletion.
+        users = {user.id: user for user in await session.scalars(
+            select(User).where(User.id.in_(report.sides)).order_by(User.id).with_for_update()
+            .execution_options(populate_existing=True)
+        )}
+        inserted = await session.scalar(insert(Match).values(
             id=report.match_id, model_id=report.model_id, topic_id=report.topic_id,
             status=result["status"], winner_side=result.get("winner"), end_reason=result["end_reason"],
             verdict_reasoning=_storable(result["reason"]) if result.get("reason") else None,
             challenge_day=report.challenge_day, ended_at=report.ended_at,
-        ))
+        ).on_conflict_do_nothing(index_elements=[Match.id]).returning(Match.id))
+        if inserted is None:
+            return  # Retrying a committed report must not award anything twice.
         # A player who deleted their account mid-match is saved as the deleted player they now are,
         # so the opponent keeps their result.
-        existing = set(await session.scalars(select(User.id).where(User.id.in_(report.sides))))
+        existing = set(users)
         for user_id, side in report.sides.items():
             session.add(MatchParticipant(
                 match_id=report.match_id, side=side, user_id=user_id if user_id in existing else None,
@@ -97,7 +107,7 @@ async def record_match(session: AsyncSession, report: MatchReport) -> None:
 
         for user_id in _finishers(report):
             # Lock the row: two of this player's matches could finish at the same moment.
-            user = await session.get(User, user_id, with_for_update=True)
+            user = users.get(user_id)
             if user is None:  # deleted mid-match
                 continue
             user.points += FINISH_POINTS + _advance_streak(user, report.ended_at)
@@ -113,6 +123,24 @@ async def record_match(session: AsyncSession, report: MatchReport) -> None:
                 )
                 if awarded is not None:
                     user.points += CHALLENGE_POINTS
+
+        if result["status"] == "completed" and report.rating_ladder_slug and len(users) == 2:
+            ladder = await session.scalar(select(Ladder).where(Ladder.slug == report.rating_ladder_slug))
+            if ladder is None:
+                raise RuntimeError("Missing rating ladder for match result")
+            service = RatingService(session)
+            starting = {}
+            for user_id in report.sides:
+                rating = await service.get_rating(user_id, ladder.id)
+                starting[user_id] = rating.elo if rating is not None else DEFAULT_ELO
+            first, second = report.sides
+            for user_id, opponent in ((first, second), (second, first)):
+                outcome = "draw" if result.get("winner") is None else (
+                    "win" if report.sides[user_id] == result["winner"] else "loss"
+                )
+                rating = await service.calculate_and_update_elo(user_id, ladder.id, starting[opponent], outcome)
+                participant = await session.get(MatchParticipant, (report.match_id, report.sides[user_id]))
+                participant.elo_before, participant.elo_after = starting[user_id], rating.elo
 
 
 async def completed_challenge(session: AsyncSession, user_id: UUID, day: date) -> bool:

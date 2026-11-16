@@ -8,7 +8,6 @@ from datetime import date, datetime, timedelta, timezone
 from json import JSONDecodeError
 from typing import Literal
 from uuid import UUID
-from sqlalchemy import func, or_, select, update
 
 from fastapi import WebSocket, WebSocketDisconnect
 from openai import OpenAIError
@@ -17,9 +16,7 @@ from pydantic import ValidationError
 from app.config import settings
 from app.db.session import SessionFactory
 from app.inference.model_client import *
-from app.models import Ladder, MatchParticipant, Topic
-from app.models.ladder_rating import DEFAULT_ELO
-from app.services.rating import RatingService
+from app.models import Topic
 from app.repositories.topic import TopicRepository
 from app.services.challenge import Twist, check_prompt, topic_for, twist_for
 from app.services.rewards import MatchReport, record_match
@@ -92,6 +89,8 @@ class GameEngine:
         self.challenge_day = challenge_day
         self.twist: Twist | None = twist_for(challenge_day) if challenge_day else None
         self.reported = False
+        self.report_lock = asyncio.Lock()
+        self.report: MatchReport | None = None
         self.model_display_name: str | None = None
         # The model each player used, kept for match history. Read at the start because a BYOM
         # device may have disconnected by the end.
@@ -339,57 +338,24 @@ class GameEngine:
         })
 
     async def report_game(self) -> None:
-        """Persist the decided result, points, and streaks; runs at most once per match. A failure
-        is logged, never raised: it must not cost players their result."""
-        if self.reported or self.result is None:
-            return
-        self.reported = True
-        try:
-            report = MatchReport(
-                # The BYOM arena has no `models` row: each player brought their own model.
-                match_id=self.match_id, model_id=None if self.devices else self.model_id,
-                topic_id=getattr(self.topic, "id", None),
-                challenge_day=self.challenge_day, sides=dict(self.sides),
-                result=self.result, ended_at=datetime.now(timezone.utc),
-                model_names=dict(self.model_names), truncated=frozenset(self.truncated),
-            )
-            async with SessionFactory() as session:
-                await record_match(session, report)
-                
-                if self.result["status"] == "completed":
-                    winner_side = self.result.get("winner")
-                    
-                    slug = "byom-arena" if self.devices else f"ladder-{self.model_id}"
-                    async with session.begin():
-                        ladder = await session.scalar(select(Ladder).where(Ladder.slug == slug))
-                        if ladder is None:
-                            logger.warning("Match %s: missing rating ladder %s", self.match_id, slug)
-                            return
-
-                        rating_service = RatingService(session)
-                        first, second = self.players
-                        starting_elo = {}
-                        for user_id in self.players:
-                            rating = await rating_service.get_rating(user_id, ladder.id)
-                            starting_elo[user_id] = rating.elo if rating is not None else DEFAULT_ELO
-
-                        for user_id, opponent_id in ((first, second), (second, first)):
-                            if winner_side is None:
-                                result_type = "draw"
-                            elif winner_side == self.sides[user_id]:
-                                result_type = "win"
-                            else:
-                                result_type = "loss"
-                            rating = await rating_service.calculate_and_update_elo(
-                                user_id, ladder.id, starting_elo[opponent_id], result_type,
-                            )
-                            await session.execute(
-                                update(MatchParticipant)
-                                .where(MatchParticipant.match_id == self.match_id, MatchParticipant.user_id == user_id)
-                                .values(elo_before=starting_elo[user_id], elo_after=rating.elo)
-                            )
-        except Exception:
-            logger.exception("Match %s: couldn't record the result", self.match_id)
+        """Commit the entire result once; a failed attempt may be retried by run's backstop."""
+        async with self.report_lock:
+            if self.reported or self.result is None:
+                return
+            if self.report is None:
+                self.report = MatchReport(
+                    match_id=self.match_id, model_id=None if self.devices else self.model_id,
+                    topic_id=getattr(self.topic, "id", None), challenge_day=self.challenge_day,
+                    sides=dict(self.sides), result=self.result, ended_at=datetime.now(timezone.utc),
+                    model_names=dict(self.model_names), truncated=frozenset(self.truncated),
+                    rating_ladder_slug="byom-arena" if self.devices else f"ladder-{self.model_id}",
+                )
+            try:
+                async with SessionFactory() as session:
+                    await record_match(session, self.report)
+                self.reported = True
+            except Exception:
+                logger.exception("Match %s: couldn't record the result", self.match_id)
 
     def resign(self, player: UUID) -> None:
         """Forfeit `player`'s side, from `RESIGN` or account deletion. Ignored once a result is
