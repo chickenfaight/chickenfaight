@@ -544,8 +544,10 @@ class GameEngine:
         while True:
             try:
                 message = await socket.receive_json()
+                if self.connections.get(player, socket) is not socket:
+                    return
                 activity.last_received = time.monotonic()
-            except JSONDecodeError:
+            except (JSONDecodeError, KeyError, UnicodeDecodeError):
                 activity.last_received = time.monotonic()
                 await socket.send_json({
                     "type": "ERROR",
@@ -656,7 +658,11 @@ class GameEngine:
                 next_heartbeat = time.monotonic() + self.HEARTBEAT_INTERVAL
 
     async def handle_connection(self, user_id: UUID, websocket: WebSocket) -> None:
+        previous = self.connections.get(user_id)
         self.connections[user_id] = websocket
+        if previous is not None and previous is not websocket:
+            with suppress(WebSocketDisconnect, OSError, RuntimeError):
+                await previous.close(code=4409, reason="Replaced by another connection")
         activity = ConnectionActivity()
         if all(player in self.connections for player in self.players):
             self.both_connected.set()
