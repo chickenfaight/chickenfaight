@@ -16,6 +16,7 @@ Before changing anything in a row below, read the linked doc. If your change con
 | `bilc/` | [bilc/BILC.md](bilc/BILC.md) |
 | Any HTTP route, WebSocket message, or inference call | [PROTOCOL.md](PROTOCOL.md) |
 | Tests | [TESTING.md](TESTING.md) |
+| Deployment, hosting, or releases | [DEPLOYMENT.md](DEPLOYMENT.md) |
 
 Items tagged **PLANNED** in any doc are specified but not yet built. Build them as specified. When you implement one, delete its PLANNED tag in the same change (PROTOCOL.md instead marks shipped items "(implemented)").
 
@@ -26,6 +27,7 @@ AGENTS.md          this file (CLAUDE.md imports it)
 CONTRIBUTING.md    setup, branches, PRs
 PROTOCOL.md        every contract between components
 TESTING.md         test strategy per component
+DEPLOYMENT.md      production configuration, releases, operations
 backend/           FastAPI server: REST API, matchmaking, game engine, DB access (Python, uv)
 frontend/          Next.js web app (TypeScript, pnpm)
 bilc/              BYOM Interface Layer Client (Go CLI; partially built)
@@ -68,6 +70,7 @@ bilc/              BYOM Interface Layer Client (Go CLI; partially built)
 | Live output | Provider → server via SSE; server → browser/BILC via WebSocket | Players watch the debate stream |
 | BILC language | Go, static binaries | Goroutines/timeouts, cross-platform |
 | BILC auth | One-time pairing code → device with a rotating refresh token (hash stored; reuse revokes) → 15-min HS256 access JWT for the socket | Revocable per device; a leaked token is caught when either copy is reused |
+| App releases | Frontend and backend share a version and `app/v*` tag; CI gates the backend image and shared GitHub Release; build the frontend from the same tag | Keeps deployed components paired; see DEPLOYMENT.md |
 | BILC releases | `bilc/v*` tag → GoReleaser builds + SHA-256 `checksums.txt` → GitHub Release; `install.sh` verifies and installs | No infrastructure of our own; signing PLANNED |
 
 ## Glossary

@@ -8,7 +8,6 @@ from datetime import date, datetime, timedelta, timezone
 from json import JSONDecodeError
 from typing import Literal
 from uuid import UUID
-from sqlalchemy import func, or_, select, update
 
 from fastapi import WebSocket, WebSocketDisconnect
 from openai import OpenAIError
@@ -17,12 +16,11 @@ from pydantic import ValidationError
 from app.config import settings
 from app.db.session import SessionFactory
 from app.inference.model_client import *
-from app.models import Ladder, MatchParticipant, Topic
-from app.models.ladder_rating import DEFAULT_ELO
-from app.services.rating import RatingService
+from app.models import Topic
 from app.repositories.topic import TopicRepository
 from app.services.challenge import Twist, check_prompt, topic_for, twist_for
 from app.services.rewards import MatchReport, record_match
+from app.services import result_outbox
 from app.schemas.schemas import TopicRead, PromptSubmission
 from app.services.arena import ArenaService
 
@@ -59,6 +57,7 @@ class ConnectionActivity:
 class GameEngine:
     HEARTBEAT_INTERVAL = 15
     HEARTBEAT_TIMEOUT = 45
+    JOIN_WINDOW_SECONDS = 30
     PROMPT_WINDOW_SECONDS = 120
     MAX_TOKENS = 200
     # What the model is told: it can't count tokens, and running over MAX_TOKENS cuts it off mid-sentence.
@@ -91,6 +90,8 @@ class GameEngine:
         self.challenge_day = challenge_day
         self.twist: Twist | None = twist_for(challenge_day) if challenge_day else None
         self.reported = False
+        self.report_lock = asyncio.Lock()
+        self.report: MatchReport | None = None
         self.model_display_name: str | None = None
         # The model each player used, kept for match history. Read at the start because a BYOM
         # device may have disconnected by the end.
@@ -159,10 +160,19 @@ class GameEngine:
             finally:
                 for task in (play, resigned):
                     task.cancel()
+                await asyncio.gather(play, resigned, return_exceptions=True)
 
+        except asyncio.CancelledError:
+            self.decide({"winner": None, "status": "voided", "end_reason": "model_failure",
+                         "reason": "The server is shutting down, so this match does not count."})
+            raise
         finally:
             if self.result is not None:
-                await self.report_game()
+                try:
+                    await self.report_game()
+                except Exception:
+                    # A journal failure prevents acknowledgement, but cannot retain workers/devices.
+                    logger.exception("Match %s: couldn't journal the final result", self.match_id)
             self.finished.set() # triggers connection cleanup
 
             # Devices cancel anything still in flight and become idle again.
@@ -178,7 +188,18 @@ class GameEngine:
 
     async def play(self) -> None:
         """Everything after the topic is loaded: prompts, generation, and judging."""
-        await self.both_connected.wait() # wait until both players' WebSocket is accepted
+        try:
+            async with asyncio.timeout(self.JOIN_WINDOW_SECONDS):
+                await self.both_connected.wait()
+        except TimeoutError:
+            joined = list(self.connections)
+            winner = self.sides[joined[0]] if len(joined) == 1 else None
+            await self.broadcast_result({
+                "winner": winner, "status": "forfeited" if winner else "voided",
+                "end_reason": "no_show",
+                "reason": "The opponent did not join in time." if winner else "Neither player joined in time.",
+            })
+            return
 
         self.prompt_deadline = datetime.now(timezone.utc) + timedelta(seconds=self.PROMPT_WINDOW_SECONDS)
         await self.broadcast_initial_game_state()
@@ -322,57 +343,23 @@ class GameEngine:
         })
 
     async def report_game(self) -> None:
-        """Persist the decided result, points, and streaks; runs at most once per match. A failure
-        is logged, never raised: it must not cost players their result."""
-        if self.reported or self.result is None:
-            return
-        self.reported = True
-        try:
-            report = MatchReport(
-                # The BYOM arena has no `models` row: each player brought their own model.
-                match_id=self.match_id, model_id=None if self.devices else self.model_id,
-                topic_id=getattr(self.topic, "id", None),
-                challenge_day=self.challenge_day, sides=dict(self.sides),
-                result=self.result, ended_at=datetime.now(timezone.utc),
-                model_names=dict(self.model_names), truncated=frozenset(self.truncated),
-            )
-            async with SessionFactory() as session:
-                await record_match(session, report)
-                
-                if self.result["status"] == "completed":
-                    winner_side = self.result.get("winner")
-                    
-                    slug = "byom-arena" if self.devices else f"ladder-{self.model_id}"
-                    async with session.begin():
-                        ladder = await session.scalar(select(Ladder).where(Ladder.slug == slug))
-                        if ladder is None:
-                            logger.warning("Match %s: missing rating ladder %s", self.match_id, slug)
-                            return
+        """Commit the entire result once; a failed attempt may be retried by run's backstop."""
+        async with self.report_lock:
+            if self.reported or self.result is None:
+                return
+            if self.report is None:
+                self.report = MatchReport(
+                    match_id=self.match_id, model_id=None if self.devices else self.model_id,
+                    topic_id=getattr(self.topic, "id", None), challenge_day=self.challenge_day,
+                    sides=dict(self.sides), result=self.result, ended_at=datetime.now(timezone.utc),
+                    model_names=dict(self.model_names), truncated=frozenset(self.truncated),
+                    rating_ladder_slug="byom-arena" if self.devices else f"ladder-{self.model_id}",
+                )
+            async def write(report):
+                async with SessionFactory() as session:
+                    await record_match(session, report)
 
-                        rating_service = RatingService(session)
-                        first, second = self.players
-                        starting_elo = {}
-                        for user_id in self.players:
-                            rating = await rating_service.get_rating(user_id, ladder.id)
-                            starting_elo[user_id] = rating.elo if rating is not None else DEFAULT_ELO
-
-                        for user_id, opponent_id in ((first, second), (second, first)):
-                            if winner_side is None:
-                                result_type = "draw"
-                            elif winner_side == self.sides[user_id]:
-                                result_type = "win"
-                            else:
-                                result_type = "loss"
-                            rating = await rating_service.calculate_and_update_elo(
-                                user_id, ladder.id, starting_elo[opponent_id], result_type,
-                            )
-                            await session.execute(
-                                update(MatchParticipant)
-                                .where(MatchParticipant.match_id == self.match_id, MatchParticipant.user_id == user_id)
-                                .values(elo_before=starting_elo[user_id], elo_after=rating.elo)
-                            )
-        except Exception:
-            logger.exception("Match %s: couldn't record the result", self.match_id)
+            self.reported = await result_outbox.pending_results.record(self.report, write)
 
     def resign(self, player: UUID) -> None:
         """Forfeit `player`'s side, from `RESIGN` or account deletion. Ignored once a result is
@@ -399,7 +386,7 @@ class GameEngine:
             await self.send_result()
 
     async def send_result(self) -> None:
-        # Save first: a player who sees the verdict and opens their match history must find it there.
+        # Journal first; database outages may delay history until the recovery worker succeeds.
         await self.report_game()
         message = {"type": "MATCH_RESULT", "payload": self.result}
         for socket in list(self.connections.values()):
@@ -527,8 +514,10 @@ class GameEngine:
         while True:
             try:
                 message = await socket.receive_json()
+                if self.connections.get(player, socket) is not socket:
+                    return
                 activity.last_received = time.monotonic()
-            except JSONDecodeError:
+            except (JSONDecodeError, KeyError, UnicodeDecodeError):
                 activity.last_received = time.monotonic()
                 await socket.send_json({
                     "type": "ERROR",
@@ -639,7 +628,11 @@ class GameEngine:
                 next_heartbeat = time.monotonic() + self.HEARTBEAT_INTERVAL
 
     async def handle_connection(self, user_id: UUID, websocket: WebSocket) -> None:
+        previous = self.connections.get(user_id)
         self.connections[user_id] = websocket
+        if previous is not None and previous is not websocket:
+            with suppress(WebSocketDisconnect, OSError, RuntimeError):
+                await previous.close(code=4409, reason="Replaced by another connection")
         activity = ConnectionActivity()
         if all(player in self.connections for player in self.players):
             self.both_connected.set()
@@ -660,5 +653,7 @@ class GameEngine:
             await asyncio.gather(*tasks, return_exceptions=True)
             if self.connections.get(user_id) is websocket:
                 del self.connections[user_id]
+                if self.prompt_deadline is None:
+                    self.both_connected.clear()
             with suppress(WebSocketDisconnect, OSError, RuntimeError):
                 await websocket.close()

@@ -70,6 +70,10 @@ Check the connection at http://localhost:3000/health.
 
 - Branch per user story: `us-<number>` (e.g. `us-16`), from `main`.
 - Open a PR into `main` that names the user story and its tasks. There is no required reviewer; ask a teammate when a change is risky.
+- CI runs on every PR and push to `main`. The `protect-main` GitHub ruleset requires
+  **Frontend checks**, **Backend tests**, **Browser tests**, and **BILC checks**
+  before updating `main`, with the branch up to date. Browser tests cover Chromium,
+  Firefox, and WebKit and must pass; do not mark them optional or skip them by path.
 - Before opening a PR, confirm:
   - The change follows AGENTS.md guardrails and the doc for each area touched.
   - Any doc made wrong by the change is updated in the same PR: contracts in PROTOCOL.md, schema in BACKEND.md, structure/style in FRONTEND.md or BILC.md.
@@ -112,31 +116,9 @@ The commands above use the current source. If using `./bilc` instead, rebuild it
 
 Credentials go in the system keychain, or `credentials.json` (mode 0600) in the config directory when there is none. Run `go test -race ./...` from `bilc/` before a PR; [TESTING.md](TESTING.md) has the full checks.
 
-To release, tag a commit on `main` that passed CI and push the tag: `git tag bilc/v0.1.0 && git push origin bilc/v0.1.0`. The `BILC release` workflow builds the binaries and publishes a GitHub Release, which `bilc/install.sh` installs from. Set the repository variable `BILC_SERVER_URL` once the server is deployed, so release builds default to it.
+## Deployment and releases
 
-## Backend image releases
-
-From `backend/`, increment the version with uv instead of editing version files manually:
-
-```bash
-uv version --bump patch --no-sync
-```
-
-Use `--bump minor` or `--bump major` for larger releases, or `uv version 0.1.0 --no-sync`
-to set an exact version. These commands update both `pyproject.toml` and `uv.lock`;
-`--no-sync` skips installing dependencies locally. Commit both files and push the
-commit. After CI passes, tag that commit with the same version and push the tag
-(for example, if uv set the version to `0.1.0`):
-
-```bash
-git tag backend/v0.1.0
-git push origin backend/v0.1.0
-```
-
-The `Build` workflow builds `backend/Dockerfile` and pushes a
-Linux amd64 image to `ghcr.io/chickenfaight/backend:0.1.0`.
-Tags must use `backend/vMAJOR.MINOR.PATCH`. Ordinary branch pushes and `bilc/v*` tags do not
-publish backend images. Keep the version in `pyproject.toml` and `uv.lock` consistent
-with the Git tag: version `0.1.0` uses `backend/v0.1.0` and publishes image tag `0.1.0`.
-The workflow derives the image version from the Git tag; it does not check version
-agreement or CI results, or deploy the image.
+Production topology, configuration, release commands, rollout/recovery, and launch
+checks are maintained in [DEPLOYMENT.md](DEPLOYMENT.md).
+Frontend and backend versions move together under `app/vX.Y.Z`; update both package
+versions and `backend/uv.lock` in one PR. `bilc/vX.Y.Z` releases remain independent.

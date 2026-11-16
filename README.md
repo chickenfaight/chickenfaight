@@ -4,3 +4,5 @@ A competitive debate game where players steer LLMs with a single prompt and an A
 
 - Start here: [AGENTS.md](AGENTS.md) (architecture, design decisions, doc map)
 - Setup and PRs: [CONTRIBUTING.md](CONTRIBUTING.md)
+- Production deployment and releases: [DEPLOYMENT.md](DEPLOYMENT.md)
+- Automated checks: [TESTING.md](TESTING.md)

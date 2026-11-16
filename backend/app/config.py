@@ -48,6 +48,8 @@ class Settings:
     # Judge model ID as the provider names it; argument models come from the database.
     inference_judge_model: str
 
+    match_result_directory: str = "~/.local/share/chickenfaight/results"
+
     @property
     def inference_is_openrouter(self) -> bool:
         """Whether to send OpenRouter-only request options (other providers may reject them)."""
@@ -58,6 +60,7 @@ class Settings:
         test_database_url = os.getenv("TEST_POSTGRES_URL")
 
         return cls(
+            match_result_directory=os.getenv("MATCH_RESULT_DIRECTORY", "~/.local/share/chickenfaight/results"),
             database_url=with_psycopg_driver(required_environment_variable("POSTGRES_URL")),
             test_database_url=with_psycopg_driver(test_database_url) if test_database_url else None,
             google_client_id=required_environment_variable("GOOGLE_CLIENT_ID"),

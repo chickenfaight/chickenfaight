@@ -1,46 +1,54 @@
 # Testing
 
-What each component must test and how. Current backend regression tests use
-`unittest`: run `.venv/bin/python -m unittest discover -s tests -v` from `backend/`.
-They include topic-file parsing checks; database-backed importer/repository coverage
-is still pending. The pytest tooling and database fixtures below are PLANNED.
+Run the backend with `uv run pytest` from `backend/`, frontend unit tests with
+`pnpm test` and browser tests with `pnpm test:e2e` from `frontend/`, and BILC with
+`go test -race ./...` from `bilc/`. CI is configured to run all suites. Tests use deterministic
+models and local fake HTTP servers; no provider credentials or Ollama are needed.
+
+CI runs on every pull request, push to `main`, and manual dispatch. The active
+`protect-main` repository ruleset requires **Frontend checks**, **Backend tests**,
+**Browser tests**, and **BILC checks**, with the branch up to date, before `main`
+can be updated. Keep these check names stable. Browser failures block merging;
+the job has no path filters or allowed-failure setting. The app release workflow
+calls the same CI before publishing, so browser failures also block a release.
+`Frontend checks` additionally validates the shared frontend/backend version and
+backend lockfile with `.github/scripts/check-app-version.py`; on app release tags
+it checks the tag too. See [DEPLOYMENT.md](DEPLOYMENT.md#releases).
 
 ## Backend (pytest)
 
-Tooling: `pytest`, `pytest-asyncio`, `respx` (dev dependencies; config in `pyproject.toml`, `asyncio_mode = "auto"`, session-scoped event loop). Run with `uv run pytest` from `backend/`.
+Tooling: `pytest`, `pytest-asyncio`, `pytest-cov`, `respx` (dev dependencies; config in `pyproject.toml`, `asyncio_mode = "auto"`, session-scoped event loop). Run with `uv run pytest` from `backend/`.
 
 ```
 backend/tests/
-  conftest.py       fixtures: db_session, make_user, client, log_in (fake models PLANNED)
-  unit/             pure logic — no DB, no network
+  conftest.py       fixtures: db_session, make_user, client, log_in
+  unit/             pure logic/adapters — no DB or external network
   integration/      HTTP/WS endpoints against a real test database
 ```
 
 Files are `test_<module>.py`, mirroring `app/`, with unique basenames across folders. Older `unittest`-style files in `tests/` still run under pytest.
 
-**Database.** Use real Postgres, not mocks or SQLite: a separate `chickenfaight_test` database set by `TEST_POSTGRES_URL` (integration tests skip without it). Once per session the database is wiped and built by running the Alembic migrations (`app.db.migrate`), never `create_all`, so every run tests the migrations. Each test runs inside an outer transaction that is rolled back, with the session bound using `join_transaction_mode="create_savepoint"` so services' own `session.begin()`/`commit()` still work. `make_user` commits its rows so a service's rollback can't undo them.
+**Database.** Use real Postgres, not mocks or SQLite: a separate `chickenfaight_test` database set by `TEST_POSTGRES_URL`. Its name must end in `_test` and it must differ from `POSTGRES_URL`; unsafe targets fail before any reset. Integration tests skip without a URL locally and fail in CI. Once per session the database is wiped and built by running the Alembic migrations (`app.db.migrate`), never `create_all`, so every run tests the migrations. Each test runs inside an outer transaction that is rolled back, with the session bound using `join_transaction_mode="create_savepoint"` so services' own `session.begin()`/`commit()` still work. `make_user` commits its rows so a service's rollback can't undo them.
 
-**HTTP.** Use `httpx.AsyncClient` with `ASGITransport(app=app)` (the `client` fixture overrides `get_session` with the test session). `log_in(user)` overrides `get_current_user`; the cookie itself is tested in `test_auth_session.py`.
+**HTTP.** Use `httpx.AsyncClient` with `ASGITransport(app=app)` (the `client` fixture overrides `get_session` with the test session). `log_in(user)` overrides `get_current_user`; the cookie itself is tested in `test_auth_sessions.py`.
 
-**Mocking models.** Engine and service tests never touch the network. They use `FakeModelClient`, a test implementation of the `ModelClient` interface in `app/inference/`, built from a script:
+**Mocking models.** Engine tests use scripted clients (`RecordingClient`,
+`ScriptedClient`) and fake device sockets, patching the engine's client lookup.
+`test_judge_client.py` checks the real judge adapter's request and refusal handling.
+`test_inference_http.py` runs the real SDK against a loopback HTTP/SSE server for
+fragmentation, content-only streaming, HTTP failures, and cancellation.
 
-```python
-FakeModelClient([
-    ["Opening ", "argument."],            # turn 1 streams these deltas
-    ModelTimeout(),                        # turn 2 times out
-    ['{"winner": "pro", "reasoning": "…"}'],  # judge
-])
-```
-
-Pass it to the engine through its constructor. Only `OpenAIModelClient`'s own tests touch the SDK, by replacing `client.chat.completions` with a fake (`respx` can't intercept the SDK's HTTP client). `BilcModelClient` tests use an in-memory fake device socket.
+**Coverage.** `uv run pytest --cov=app --cov-branch --cov-report=term-missing
+--cov-report=xml` produces branch coverage and `coverage.xml` (uploaded in CI).
+Review uncovered behavior rather than requiring an arbitrary global percentage.
 
 ### Required coverage
 
 Every backend feature ships with tests for both behavior and security:
 
 - **Every endpoint:** happy path; unauthenticated → 401; another user's resource → 404/403; invalid input → 422.
-- **Every WS socket:** rejects unauthenticated (4401), non-participant or revoked (4403), wrong `protocol_version` (4426); a second connection replaces the first (4409); unknown `type` → `UNKNOWN_TYPE`.
-- **Engine** (with `FakeModelClient`): turn order and phases; one prompt per player; deadlines → forfeit; both miss → void; every row of the failure table in PROTOCOL.md; judge output parsing (valid, invalid, invalid-then-retry); `report_game` runs once.
+- **WebSockets:** reject unauthenticated (4401), non-participant or revoked (4403); a second connection replaces the first (4409); unknown `type` → `UNKNOWN_TYPE`. BILC rejects wrong `protocol_version` (4426); the browser JOIN/version handshake remains planned.
+- **Engine** (with scripted model clients): opening turns; one prompt per player; deadlines → forfeit; both miss → void; implemented rows of the failure table in PROTOCOL.md; judge output parsing (valid, invalid, invalid-then-retry); successful recording runs once. Later phases remain planned.
 - **Prompt safety:** `format_game` strips delimiter strings from player prompts; player prompts never appear in judge messages or in other users' responses; over-length output is truncated at 2000 characters without failing the turn, including from a BYOM device that ignores `max_tokens` (`test_engine_arena.py`, `test_engine_byom.py`).
 - **Ladders** (`test_ladder_seed.py`): provisioning adds a ladder per active model plus one BYOM ladder, repeats safely, skips inactive models, adds a ladder when a model's ID changed, and makes queueing work; a missing ladder is a 404 with a logged warning.
 - **Elo and matchmaking:** Elo math against hand-computed values; per-ladder isolation; queue pairing window; forfeit vs. void rating effects. Quick Queue cancellation allows rejoining without duplicate entries and removes the correct entry even after transfer to a model queue.
@@ -52,7 +60,7 @@ Every backend feature ships with tests for both behavior and security:
 - **Profiles and search:** responses carry only `UserPublic`/`UserProfile` fields (never email); unknown tag → 404 `NOT_FOUND`; ranking order across tags and usernames, with an exact tag first; typo tolerance on both; LIKE wildcards in the query match literally; pagination and `next_offset`; blank query → no items.
 - **Password auth** (`test_password_auth.py`): signup signs in; only a salted hash is stored; taken tags (ignoring case) and invalid tags are rejected; malformed bodies, including a client-sent `password_hash`, get 422; wrong password, unknown tag, and Google-only account get the identical 401; signup is rate-limited per IP; login per IP and per tag.
 - **Route auth** (`test_route_auth.py`): every HTTP route in the OpenAPI schema returns 401 without a session unless it's on the public allowlist, so a new route can't ship public by accident; API docs follow `APP_ENV`; CORS allows only the frontend; the match socket rejects no session (4401), a foreign or missing Origin (4403), and players not in the match (4403). Socket tests use `TestClient(app)` without `with`, because startup would migrate the real database.
-- **Match history** (`test_match_history.py`, `test_match_ratings.py`, engine tests): saved models, arguments, and Elo; win, loss, and void for each outcome; newest-first paging; owner-only lists and participant-only details return 404 otherwise; prompts are never returned; deleted players, topics, and models; a player deleted mid-match; the result is saved before players are told; the migration backfills cloud model names.
+- **Match history** (`test_match_history.py`, `test_match_ratings.py`, engine tests): saved models, arguments, and Elo; win, loss, and void for each outcome; newest-first paging; owner-only lists and participant-only details return 404 otherwise; prompts are never returned; deleted players, topics, and models; a player deleted mid-match; the result is durably journaled before players are told; the migration backfills cloud model names.
 - **Daily challenges and rewards** (`test_challenge.py`, `test_rewards.py`, `test_challenge_api.py`, engine tests): twists rotate by day and check limits and whole words; points for judged, forfeited, and voided matches; streaks count new days only, reset after 48 h, read as 0 after lapsing, and pay a 7th-day bonus; the challenge pays once per day and only on its own day; deleted players leave their opponent's history; rank ties; `/v1/challenge/today`; completed players can't requeue; the daily queue is separate; the engine enforces and announces the twist, uses the day's topic, and records once. An autouse fixture stubs `report_game` so engine tests never write through the real `SessionFactory`; opt out with `@pytest.mark.records_matches`.
 - **Tips chat** (`test_tips.py`, with a fake model client): streams from the chosen model; the system prompt comes first and contains every tip; player text can't add a system turn; malformed, non-alternating, and oversized conversations are rejected before any model call; inactive models get 404; failure before replying is 502, failure mid-reply ends with a note; rate limit.
 - **Profile pictures** (`test_avatars.py`, `test_avatars_api.py`): accepted formats become 256×256 WebP; EXIF including GPS is stripped; rotation is applied; transparency kept; non-images, disguised SVG/script, GIF, truncated files, oversized uploads, and huge pixel counts are rejected without storing anything; uploads get a new versioned URL; removal; Google sign-in keeps an uploaded picture; auth required.
@@ -67,11 +75,77 @@ Every backend feature ships with tests for both behavior and security:
 - **BILC releases** (`test_bilc_releases.py`, GitHub faked with `respx` or a fake fetch): the public route's shape, no release yet, its rate limit; reading the version, assets, and checksums; nothing published; another component's tag; the 10-minute cache; failures keeping the last answer without an immediate retry.
 - **BILC socket** (`test_bilc_socket.py`, `TestClient` with the identity overridden and a fake HELLO recorder): `HELLO` first, `HELLO_ACK`, bad frames and invalid or oversized `HELLO` get `BAD_MESSAGE` without closing, 4426 for another protocol version, `UNKNOWN_TYPE`, `DISCONNECT`, replacement (4409), heartbeats, and 4408 on silence or no `HELLO`.
 
+### Launch regression coverage
+
+- `test_launch_regressions.py`: Quick Queue never enters daily queues regardless of
+  insertion order; same-day matches after streak bonuses on days 7/14; exact 48-hour
+  boundary; neither/one player joins and departure before the opponent arrives;
+  socket replacement prevents old-reader actions; malformed JSON/binary frames,
+  prompt boundaries and resubmission; cancelling real engines during join,
+  generation, or judging awaits workers; matchmaker shutdown; stale engine cleanup
+  preserves a newer assignment; failed recording retries and concurrent reporting.
+- `test_result_atomicity.py`: failures during either rating update roll back history,
+  turns, rewards, challenge completions, and both ratings; retry and replay are safe;
+  NUL output is sanitized; a deleted participant does not prevent opponent history.
+- `test_result_outbox.py`, `test_result_recovery.py`, and
+  `test_engine_journal_cleanup.py`: abrupt subprocess exit/reopen, ordered backlog
+  and background retry after DB outages, bounded writes, commit-before-unlink
+  replay without duplicate rewards/Elo, deleted catalog rows, private/allowlisted
+  journal data, corrupt entries, and disk-write failure preventing acknowledgement
+  while still cleaning up cloud/BILC resources. All use temporary journal paths.
+- `test_concurrent_writes.py`: independent committed DB connections compete for a
+  pairing code, refresh token, case-insensitive signup, block/accept, and overlapping
+  match reports. Rewards/ratings are not lost and daily bonuses remain once per day.
+- `test_database_safety.py`: destructive test utilities reject unsafe database URLs.
+  `test_production_config.py`: a fresh process verifies secure/HTTP-only/SameSite
+  cookies, expiry, production docs disabled, and allowed/rejected CORS preflights,
+  without invoking production lifespan or touching a database.
+
 ## Frontend
 
-No test framework has been chosen. Don't add one without team agreement. Until then, every frontend change must:
-- pass `pnpm lint` and `pnpm build`, and be used under `pnpm dev`, not only built: dev Strict Mode runs effects twice;
-- be used in a browser, covering the golden path plus the loading, empty, and error states from FRONTEND.md.
+Unit tests use Node's built-in runner (`pnpm test`, Node 24+) for protocol validation.
+Playwright is the only new frontend test dependency: it exercises real browser
+cookies, SSR, React Strict Mode effects, and WebSockets that lint/build cannot.
+
+```bash
+cd frontend
+pnpm exec playwright install chromium firefox webkit  # once; CI also installs OS deps
+pnpm test
+pnpm test:e2e
+pnpm lint
+pnpm build
+```
+
+Browser tests run Chromium, Firefox, and WebKit (Safari engine coverage) under `pnpm dev` (Strict Mode). Playwright
+starts its own frontend on 127.0.0.1:3100 and `backend/tests/e2e_server.py` on
+127.0.0.1:8765. They refuse to reuse existing servers. The test app replaces the
+production lifespan, validates `TEST_POSTGRES_URL`, runs migrations and seeds only
+that test database, and wires every HTTP/socket/engine DB session to it. Inference
+is deterministic; the rest of the app is real. Many users share loopback, so only
+this test app increases rate-limit bursts; rate-limit behavior has separate tests.
+**Browser tests wipe the test database: never run them alongside backend pytest.**
+Backend dependencies (`uv sync`) and Go (for the Go/Python contract test) are required.
+
+- `journey.spec.ts`: signup/login/logout, authenticated reload (raw signed cookie
+  forwarding), POST password forms, real two-player cloud match, private prompts,
+  literal model output, immediate saved history/stats/leaderboards, cancellation
+  and rejoin, model-failure void, daily completion/re-entry rejection, admin denial.
+- `match-state.spec.ts`: controlled WebSocket messages verify one connection in
+  Strict Mode, prompt rejection/retry, heartbeat echo, streamed text, waiting and
+  judging transitions, result retention after closure, malformed-message recovery,
+  heartbeat silence/unmount cleanup, and resign-before-navigation.
+- `recovery.spec.ts`: queue conflicts, delisted model recovery, history error/retry/
+  empty state, session expiry, network-loss recovery without duplicate registration, and account edits surviving reload.
+- `account-social.spec.ts`: avatar format validation/upload/reload/removal and
+  two-player friend request/accept/block/unblock flows against the real API.
+- `byom-contract.spec.ts`: builds a test-only Go executable from `bilc/tests/contract`
+  and runs real Go auth/connection/model/match components against the Python backend,
+  two browsers, and a local fake SSE model. Asserts streamed arguments and both
+  devices returning idle. Credentials live only in memory; no user config/keychain
+  or installed Ollama is accessed.
+
+Traces are retained on failure in `frontend/test-results/` and uploaded by CI.
+UI changes still need visual browser verification beyond these assertions.
 
 ## BILC (Go, spec)
 
@@ -97,7 +171,7 @@ credentials are required.
 
 - **Implemented config/auth/connection** (`internal/config`, `internal/auth`, `internal/conn`, `cmd/bilc/commands_test.go`): config defaults, round trip, and `0600`/`0700` modes; `BILC_CONFIG_DIR` beating the OS convention, rejecting a relative path, and keeping devices apart; loopback detection; token rotation stores the new refresh token, caches the access token, refreshes near expiry, and deletes credentials on `TOKEN_INVALID`; the keychain-less file fallback warns once; `pair`/`unpair`/`status`/`model set` against a fake REST server with an in-memory store. Against a fake WebSocket server: `HELLO` first with the bearer token, heartbeat echo byte-for-byte, `DISCONNECT` and close 1000 on Ctrl-C, `UNKNOWN_TYPE` replies, garbage ignored, reconnect after a drop, 4408 after silence, refresh after an HTTP 403 handshake or 4403, and stopping on `ErrNotPaired`, 4426, and 4409.
 - **Update check** (`internal/update/update_test.go`, `cmd/bilc/commands_test.go`): up to date, update available, numeric version order, below the minimum, no release yet, unreadable versions, `dev` builds making no request, failed requests; `bilc run` printing the notice, refusing an unsupported version, and carrying on when the check fails.
-- **Installer** (manual, and in the release workflow): serve a GoReleaser snapshot (`goreleaser release --snapshot --clean`) with `python3 -m http.server --directory dist`, then run `BILC_DOWNLOAD_URL=http://127.0.0.1:<port> BILC_INSTALL_DIR=<tmp> sh install.sh`: a fresh install, a re-run (already installed), an update from an older binary, and a tampered `checksums.txt` (nothing installed). Use `dash` to catch non-POSIX shell.
+- **Installer** (`bilc/tests/installer_test.go`, also fresh-install smoke in the release workflow): serve a GoReleaser snapshot (`goreleaser release --snapshot --clean`) with `python3 -m http.server --directory dist`, then run `BILC_DOWNLOAD_URL=http://127.0.0.1:<port> BILC_INSTALL_DIR=<tmp> sh install.sh`: a fresh install, a re-run (already installed), an update from an older binary, and a tampered `checksums.txt` (nothing installed). Use `dash` to catch non-POSIX shell.
 
 - **Implemented model client and match handler** (`internal/model/openai_test.go`, `internal/match/handler_test.go`): against an `httptest` SSE server, deltas then one `Done` with the finish reason, the model and messages sent unchanged, reasoning fields dropped, a finish reason without `[DONE]`, malformed and error events and early ends (`ErrBadResponse`), error status at setup, unreachable (`ErrUnavailable`), cancellation while the model hangs and while nobody reads (no leaked goroutine), and Ollama `/api/show` and `/api/generate`. With a fake `model.Model`: streamed `MATCH_RESPONSE`s ending in `done`, each failure's `ERROR` code with its `turn_id`, `MATCH_END`/`FORFEIT`/disconnect cancelling a turn with no late output, one match and one turn at a time, and malformed messages.
 
@@ -106,3 +180,22 @@ Match-handler tests inject a fake `model.Model` (scripted chunks, completion, er
 - **Fake local model:** an `httptest.Server` serving scripted OpenAI-compatible SSE streams (normal, slow, error status, malformed chunk, hang).
 - **Fake server:** an `httptest.Server` WebSocket endpoint that runs scripted PROTOCOL exchanges and records what BILC sends.
 - **Must cover:** `HELLO` first and version fields; heartbeat echo; reconnect with backoff; JWT refresh before expiry and on 4401; credential wipe on `TOKEN_INVALID` (all implemented); `TURN_REQUEST` → streamed `MATCH_RESPONSE` ending in `done: true`; each model failure → the right `ERROR` code; `MATCH_END`/`FORFEIT` cancels an in-flight turn; `BILC_BUSY` on a second `MATCH_ASSIGN`; update verification rejects a bad checksum or signature.
+
+### Additional automated BILC checks
+
+`cmd/bilc/run_command_test.go` runs the real command in a subprocess with fake
+model and REST/WebSocket servers: full turn streaming, rotation, SIGINT shutdown,
+and revoked credentials clearing the local identity. The CLI lifecycle dependency
+is injected only inside the test subprocess; the production lifecycle is separately
+covered by `internal/ollama` tests, and no installed service is touched.
+`tests/installer_test.go` checks fresh/repeat installs, upgrade, missing/bad checksum,
+and a truncated archive with a matching checksum; failed updates preserve the old
+binary and leave no installation temporary files. These run in the normal race suite.
+
+## Deployment verification
+
+Automated checks do not prove the production network, live OAuth/provider,
+persistent volume, shutdown behavior, or physical BILC platform integration.
+[DEPLOYMENT.md](DEPLOYMENT.md#launch-verification-in-the-target-environment)
+owns that checklist and the staging requirements. Full browser reconnect snapshots,
+later debate phases, and signed self-updates remain planned.

@@ -12,7 +12,8 @@ class FakeStream:
     """Stands in for the SDK's async chunk stream."""
 
     def __init__(self, *deltas):
-        self.chunks = [SimpleNamespace(choices=[SimpleNamespace(delta=SimpleNamespace(content=delta))]) for delta in deltas]
+        self.chunks = [SimpleNamespace(choices=[SimpleNamespace(delta=SimpleNamespace(content=delta), finish_reason=None)]) for delta in deltas]
+        self.chunks.append(SimpleNamespace(choices=[SimpleNamespace(delta=SimpleNamespace(content=None), finish_reason="stop")]))
 
     async def __aenter__(self):
         return self

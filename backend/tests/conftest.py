@@ -1,4 +1,5 @@
 import asyncio
+import os
 from collections.abc import AsyncIterator, Awaitable, Callable
 from uuid import uuid4
 
@@ -18,6 +19,7 @@ from app.models import InferenceAdapter, Ladder, Model, Provider, Rating, User
 from app.services.bilc_connections import BilcConnections
 from app.services.bilc_releases import BilcReleases
 from app.services.matchmaking import Matchmaker
+from database_safety import require_test_database
 
 
 @pytest.fixture(autouse=True)
@@ -45,8 +47,10 @@ def no_match_recording(request):
 @pytest.fixture(scope="session")
 def test_database_url() -> str:
     if settings.test_database_url is None:
+        if os.getenv("CI"):
+            pytest.fail("CI requires TEST_POSTGRES_URL; database tests must not skip")
         pytest.skip("TEST_POSTGRES_URL is not set")
-    return settings.test_database_url
+    return require_test_database(settings.test_database_url, settings.database_url)
 
 
 @pytest.fixture(scope="session")
@@ -151,3 +155,9 @@ def log_in(client: AsyncClient) -> Callable[[User], None]:
         app.dependency_overrides[get_current_user] = lambda: user
 
     return log_in_as
+
+
+@pytest.fixture(autouse=True)
+def isolated_result_outbox(tmp_path, monkeypatch):
+    from app.services import result_outbox
+    monkeypatch.setattr(result_outbox, "pending_results", result_outbox.ResultOutbox(tmp_path / "results"))

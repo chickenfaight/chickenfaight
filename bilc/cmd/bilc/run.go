@@ -29,6 +29,11 @@ const (
 	updateCheckTimeout = 5 * time.Second
 )
 
+type ollamaService interface {
+	Wait(context.Context) error
+	Close() error
+}
+
 func (c *cli) runCommand(args []string) error {
 	flags := flag.NewFlagSet("run", flag.ContinueOnError)
 	verbose := flags.Bool("verbose", false, "Show detailed progress")
@@ -83,7 +88,11 @@ Example:
 	}
 
 	started := time.Now()
-	service, err := ollama.Ensure(ctx)
+	ensure := c.ensureOllama
+	if ensure == nil {
+		ensure = func(ctx context.Context) (ollamaService, error) { return ollama.Ensure(ctx) }
+	}
+	service, err := ensure(ctx)
 	if err != nil {
 		if errors.Is(err, context.Canceled) {
 			return nil
