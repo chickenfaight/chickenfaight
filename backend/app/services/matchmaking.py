@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from datetime import date
 
 from app.engine.game_engine import GameEngine
+from app.engine.game_types import *
 from app.services.arena import BYOM_ARENA_ID
 from app.services.bilc_connections import BilcConnections
 from app.services.bilc_rules import SizeClass, class_distance
@@ -105,7 +106,7 @@ class Matchmaker:
                 self.assignments[players[0][0]] = match_id
                 self.assignments[players[1][0]] = match_id
 
-                self.start(GameEngine(match_id, (players[0][0],players[1][0]), model_id, challenge_day))
+                self.start(GameEngine(match_id, (players[0][0],players[1][0]), model_id, DebateGame(), challenge_day))
         self.match_byom_players()
 
     def match_byom_players(self) -> None:
@@ -123,7 +124,7 @@ class Matchmaker:
                 del self.queued_users[entry.user_id]
                 self.assignments[entry.user_id] = match_id
             devices = {first.user_id: first.device_id, second.user_id: second.device_id}
-            self.start(GameEngine(match_id, (first.user_id, second.user_id), BYOM_ARENA_ID,
+            self.start(GameEngine(match_id, (first.user_id, second.user_id), BYOM_ARENA_ID, DebateGame(),
                                   devices=devices, bilc=self.bilc))
 
     def start(self, game: GameEngine) -> None:
