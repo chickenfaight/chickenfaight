@@ -53,7 +53,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             with suppress(asyncio.CancelledError):
                 await task
         finally:
-            await engine.dispose()
+            try:
+                await matchmaker.close()
+            finally:
+                await engine.dispose()
 
 
 # Interactive API docs and the OpenAPI schema map every route, so serve them only in development.

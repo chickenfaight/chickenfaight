@@ -141,13 +141,25 @@ class Matchmaker:
             logger.exception("Match %s crashed", game.match_id)
         finally:
             for user_id in game.players:
-                self.assignments.pop(user_id, None)
+                if self.assignments.get(user_id) == game.match_id:
+                    self.assignments.pop(user_id, None)
             # The engine frees its devices when it ends; this covers a crash before that.
             for device_id in game.devices.values():
                 self.bilc.release(device_id, game.match_id)
 
             self.engines.pop(game.match_id, None)
             self.tasks.pop(game.match_id, None)
+
+    async def close(self) -> None:
+        """Await match cancellation before disposing the database."""
+        tasks = list(self.tasks.values())
+        for task in tasks:
+            task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+        self.queues.clear()
+        self.randomqueue.clear()
+        self.byom_queue.clear()
+        self.queued_users.clear()
 
     def active_match(self, user_id: UUID) -> UUID | None:
         """The user's match, unless its result is decided (it's only cleaning up)."""

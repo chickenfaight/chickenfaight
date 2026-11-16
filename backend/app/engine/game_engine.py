@@ -59,6 +59,7 @@ class ConnectionActivity:
 class GameEngine:
     HEARTBEAT_INTERVAL = 15
     HEARTBEAT_TIMEOUT = 45
+    JOIN_WINDOW_SECONDS = 30
     PROMPT_WINDOW_SECONDS = 120
     MAX_TOKENS = 200
     # What the model is told: it can't count tokens, and running over MAX_TOKENS cuts it off mid-sentence.
@@ -159,7 +160,12 @@ class GameEngine:
             finally:
                 for task in (play, resigned):
                     task.cancel()
+                await asyncio.gather(play, resigned, return_exceptions=True)
 
+        except asyncio.CancelledError:
+            self.decide({"winner": None, "status": "voided", "end_reason": "model_failure",
+                         "reason": "The server is shutting down, so this match does not count."})
+            raise
         finally:
             if self.result is not None:
                 await self.report_game()
@@ -178,7 +184,18 @@ class GameEngine:
 
     async def play(self) -> None:
         """Everything after the topic is loaded: prompts, generation, and judging."""
-        await self.both_connected.wait() # wait until both players' WebSocket is accepted
+        try:
+            async with asyncio.timeout(self.JOIN_WINDOW_SECONDS):
+                await self.both_connected.wait()
+        except TimeoutError:
+            joined = list(self.connections)
+            winner = self.sides[joined[0]] if len(joined) == 1 else None
+            await self.broadcast_result({
+                "winner": winner, "status": "forfeited" if winner else "voided",
+                "end_reason": "no_show",
+                "reason": "The opponent did not join in time." if winner else "Neither player joined in time.",
+            })
+            return
 
         self.prompt_deadline = datetime.now(timezone.utc) + timedelta(seconds=self.PROMPT_WINDOW_SECONDS)
         await self.broadcast_initial_game_state()
@@ -660,5 +677,7 @@ class GameEngine:
             await asyncio.gather(*tasks, return_exceptions=True)
             if self.connections.get(user_id) is websocket:
                 del self.connections[user_id]
+                if self.prompt_deadline is None:
+                    self.both_connected.clear()
             with suppress(WebSocketDisconnect, OSError, RuntimeError):
                 await websocket.close()
