@@ -53,9 +53,17 @@ class OpenAIModelClient(ModelClient):
         async with completion:
             async for chunk in completion:
                 if chunk.choices:
-                    delta = chunk.choices[0].delta.content
+                    choice = chunk.choices[0]
+                    delta = choice.delta.content
                     if delta:
                         yield delta
+                    if choice.finish_reason is not None:
+                        if choice.finish_reason not in {"stop", "length"}:
+                            raise ValueError("Cloud inference ended without a completed text turn")
+                        return
+        # The SDK consumes [DONE] internally and also ends iteration on a dropped
+        # response. Only the terminal choice confirms that generation finished.
+        raise ValueError("Cloud inference stream is incomplete: missing finish_reason")
 
     async def judge(self, topic: Topic, pro: str, con: str) -> Verdict:
         completion = await self.client.chat.completions.parse(

@@ -284,7 +284,7 @@ supply `id`, `name`, `pricing` (USD per token/request/unit), `context_length`, a
 zero-priced entries listed in `backend/app/db/arena_models.txt`, the models tested to work, are imported, excluding the `openrouter/free` router and models whose `reasoning.mandatory` is true, which reject `reasoning: { enabled: false }` and would spend a turn's tokens on hidden reasoning. Every imported model references the single
 `openrouter` provider row, regardless of the model's author. Active models that have left the free catalogue are deactivated, so they leave `GET /v1/arenas` and queueing for them returns 404 `NOT_FOUND`; they return if they become free again (implemented).
 
-Both the server (cloud models) and BILC (local model) speak the OpenAI Chat Completions API: `POST {base_url}/chat/completions` with `stream: true`, consuming SSE `choices[0].delta.content` chunks. Nothing else about a provider may be assumed.
+Both the server (cloud models) and BILC (local model) speak the OpenAI Chat Completions API: `POST {base_url}/chat/completions` with `stream: true`, consuming SSE `choices[0].delta.content` chunks. Cloud turns require a terminal choice with `finish_reason: "stop"` or `"length"`; EOF (including `[DONE]` without that choice) is incomplete, and other finish reasons fail the turn. The SDK consumes `[DONE]`, so it alone cannot establish completion. Partial failures void the match without retrying already streamed text. The engine may still intentionally truncate at its character limit. Nothing else about a provider may be assumed.
 
 BILC initially supports local Ollama only. Service startup/readiness uses
 `GET http://127.0.0.1:11434/api/version` (implemented), requiring HTTP 200 and

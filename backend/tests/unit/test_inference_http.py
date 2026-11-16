@@ -4,12 +4,15 @@ import json
 import threading
 from dataclasses import replace
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from unittest.mock import patch
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, patch
+from uuid import uuid4
 
 import pytest
 from openai import APIStatusError
 
 from app.config import settings
+from app.engine.game_engine import GameEngine
 from app.inference.model_client import OpenAIModelClient
 
 
@@ -49,12 +52,12 @@ def inference_server():
     thread.join()
 
 
-def chunk(content):
-    return b"data: " + json.dumps({"id": "test", "choices": [{"index": 0, "delta": content}]}).encode() + b"\n\n"
+def chunk(content, finish_reason=None):
+    return b"data: " + json.dumps({"id": "test", "choices": [{"index": 0, "delta": content, "finish_reason": finish_reason}]}).encode() + b"\n\n"
 
 
 async def test_sdk_reads_fragmented_sse_and_drops_reasoning(inference_server):
-    inference_server["body"] = chunk({"content": "Opening "}) + chunk({"reasoning": "private"}) + chunk({"content": "argument."}) + b"data: [DONE]\n\n"
+    inference_server["body"] = chunk({"content": "Opening "}) + chunk({"reasoning": "private"}) + chunk({"content": "argument."}, "stop") + b"data: [DONE]\n\n"
     with patch("app.inference.model_client.settings", replace(settings, inference_base_url=inference_server["url"])):
         client = OpenAIModelClient("http-test")
     try:
@@ -92,13 +95,65 @@ async def test_cancellation_of_http_read_is_bounded(inference_server):
         await client.client.close()
 
 
-@pytest.mark.xfail(strict=True, reason="Existing adapter accepts EOF after partial text without a finish marker; flagged for follow-up, no further debugging in this change")
-async def test_incomplete_sse_must_not_be_accepted_as_a_completed_turn(inference_server):
-    inference_server["body"] = chunk({"content": "partial argument"})
+@pytest.mark.parametrize("ending", [b"", b"data: [DONE]\n\n"])
+async def test_incomplete_sse_must_not_be_accepted_as_a_completed_turn(inference_server, ending):
+    inference_server["body"] = chunk({"content": "partial argument"}) + ending
     with patch("app.inference.model_client.settings", replace(settings, inference_base_url=inference_server["url"])):
         client = OpenAIModelClient("http-test")
     try:
         with pytest.raises(ValueError, match="incomplete"):
             _ = [delta async for delta in client.stream([{"role": "user", "content": "rules"}])]
+    finally:
+        await client.client.close()
+
+
+@pytest.mark.parametrize("finish_reason", ["stop", "length"])
+@pytest.mark.parametrize("ending", [b"", b"data: [DONE]\n\n"])
+async def test_terminal_choice_completes_turn_and_keeps_its_text(inference_server, finish_reason, ending):
+    inference_server["body"] = chunk({"content": "Opening "}) + chunk({"content": "argument."}, finish_reason) + ending
+    with patch("app.inference.model_client.settings", replace(settings, inference_base_url=inference_server["url"])):
+        client = OpenAIModelClient("http-test")
+    try:
+        assert [d async for d in client.stream([{"role": "user", "content": "rules"}])] == ["Opening ", "argument."]
+    finally:
+        await client.client.close()
+
+
+@pytest.mark.parametrize("finish_reason", ["content_filter", "tool_calls", "function_call", "unknown"])
+async def test_non_text_completion_is_a_failed_turn(inference_server, finish_reason):
+    inference_server["body"] = chunk({"content": "partial argument"}) + chunk({}, finish_reason)
+    with patch("app.inference.model_client.settings", replace(settings, inference_base_url=inference_server["url"])):
+        client = OpenAIModelClient("http-test")
+    try:
+        with pytest.raises(ValueError, match="completed text turn"):
+            _ = [d async for d in client.stream([{"role": "user", "content": "rules"}])]
+    finally:
+        await client.client.close()
+
+
+async def test_incomplete_http_stream_voids_match_without_retry_or_judging(inference_server):
+    inference_server["body"] = chunk({"content": "partial argument"})
+    with patch("app.inference.model_client.settings", replace(settings, inference_base_url=inference_server["url"])):
+        client = OpenAIModelClient("http-test")
+    with patch("app.engine.game_engine.OpenAIModelClient"):
+        game = GameEngine(uuid4(), (uuid4(), uuid4()), uuid4())
+    game.cloud_client = client
+    game.api_model_id = "http-test"
+    game.topic = SimpleNamespace(topic="T", pro_position="P", con_position="C")
+    game.both_connected.set()
+    game.broadcast_initial_game_state = AsyncMock()
+    game.broadcast_result = AsyncMock()
+    game.judge_clients = SimpleNamespace(judge=AsyncMock())
+    for player in game.players:
+        game.prompts[player] = "private"
+        game.prompt_received[player].set()
+    try:
+        await game.play()
+        result = game.broadcast_result.await_args.args[0]
+        assert (result["status"], result["end_reason"], result["winner"]) == ("voided", "model_failure", None)
+        game.judge_clients.judge.assert_not_awaited()
+        # Each side has distinct wrapped messages. A retry would duplicate one.
+        messages = [json.dumps(request["messages"]) for request in inference_server["requests"]]
+        assert messages and len(messages) == len(set(messages))
     finally:
         await client.client.close()

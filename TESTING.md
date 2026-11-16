@@ -177,12 +177,11 @@ binary and leave no installation temporary files. These run in the normal race s
 
 ## Deployment checks still requiring the target environment
 
-**Flagged existing issues, left unfixed in this test-focused change:**
-`test_incomplete_sse_must_not_be_accepted_as_a_completed_turn` is a strict pytest
-expected failure: the cloud SDK adapter currently treats EOF after partial text
-without a completion marker as success. A future fix will produce XPASS and fail
-CI until the marker is removed. Settings reload coverage also asserts that the
-delete-account button stays usable without hydration warnings, including Firefox.
+`test_inference_http.py` rejects partial EOF, missing terminal finish reasons, and
+non-text completion reasons; it accepts `stop`/`length`, including terminal text
+and a finish chunk without `[DONE]`. The real adapter through the engine verifies
+partial output voids the match without retrying or judging. Settings reload
+coverage checks delete-account usability without hydration warnings in Firefox.
 
 CI builds the backend production image and checks non-root execution and imports
 with production docs disabled; image publication waits for all CI checks on the
