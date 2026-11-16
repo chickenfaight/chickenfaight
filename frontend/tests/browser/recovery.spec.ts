@@ -60,7 +60,10 @@ test("account edits persist through reload", async ({ page, context }) => {
   await expect(deleteAccount).toBeEnabled();
   await page.getByRole("button", { name: /edit username/i }).click();
   await page.getByRole("textbox", { name: "Username", exact: true }).fill("Updated player");
+  const refreshed = page.waitForResponse(response => new URL(response.url()).pathname === "/settings" && response.request().method() === "GET");
   await page.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(page.getByRole("dialog", { name: "Change username", exact: true })).not.toBeVisible();
+  await (await refreshed).finished();
   await page.reload();
   expect((await (await context.request.get(`${backend}/auth/me`)).json()).username).toBe("Updated player");
   await expect(page.getByText("Updated player", { exact: true }).first()).toBeVisible();

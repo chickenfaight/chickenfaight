@@ -48,6 +48,9 @@ test("friend request, acceptance and blocking update both players", async ({ bro
     await expect(page.getByRole("button", { name: "Remove friend", exact: true })).toBeVisible();
     await page.getByRole("button", { name: "Block", exact: true }).click();
     await expect(page.getByRole("button", { name: "Unblock", exact: true })).toBeVisible();
+    // The block label updates locally before the refreshed profile removes the
+    // friendship controls. Wait for that layout change before the next click.
+    await expect(page.getByRole("button", { name: "Remove friend", exact: true })).not.toBeVisible();
     const blocked = await (await otherContext.request.get(`${backend}/v1/users/by-tag/${first.tag}`)).json();
     expect(blocked.read_blocked).toBe(true);
     expect((await (await context.request.get(`${backend}/v1/friends`)).json()).items).toHaveLength(0);

@@ -79,9 +79,11 @@ test("failed cloud model voids a match and awards no points", async ({ browser, 
     await join(page, failedModelId);
     await join(other, failedModelId);
     await Promise.all([expect(page.locator("textarea")).toBeVisible(), expect(other.locator("textarea")).toBeVisible()]);
-    await Promise.all([page.locator("textarea").fill("Use evidence"), other.locator("textarea").fill("Use evidence")]);
-    // Either failure ends the match, so both drafts must be ready before clicking.
-    await Promise.all([page.getByRole("button", { name: "Submit prompt", exact: true }).click(), other.getByRole("button", { name: "Submit prompt", exact: true }).click()]);
+    // Each side generates independently. One failed turn ends the match, so a
+    // second click can race the result removing the opponent's prompt form.
+    await page.locator("textarea").fill("Use evidence");
+    await page.getByRole("button", { name: "Submit prompt", exact: true }).click();
+    await expect(other.getByText(/debate model failed to respond/i)).toBeVisible();
     await expect(page.getByText(/debate model failed to respond/i)).toBeVisible();
     const stats = await (await context.request.get(`${backend}/v1/users/me/arena-stats`)).json();
     expect(stats.points).toBe(0);
