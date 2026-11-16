@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -22,21 +21,17 @@ import (
 	"github.com/coder/websocket/wsjson"
 )
 
-// Remap only Ollama's fixed readiness URL inside this subprocess. No user's local
-// service, system keychain, or production credentials are read or modified.
-type readinessTransport struct {
-	target *url.URL
-	base   http.RoundTripper
-}
+// Lifecycle behavior is covered by internal/ollama tests. This subprocess test
+// injects a service so it cannot inspect or launch the user's installed Ollama.
+type testOllamaService struct{ closed *bool }
 
-func (t readinessTransport) RoundTrip(r *http.Request) (*http.Response, error) {
-	if r.URL.Host == "127.0.0.1:11434" {
-		r = r.Clone(r.Context())
-		u := *r.URL
-		u.Host, u.Scheme = t.target.Host, t.target.Scheme
-		r.URL = &u
-	}
-	return t.base.RoundTrip(r)
+func (testOllamaService) Wait(ctx context.Context) error {
+	<-ctx.Done()
+	return nil
+}
+func (s testOllamaService) Close() error {
+	*s.closed = true
+	return nil
 }
 
 func TestRunCommandHelper(t *testing.T) {
@@ -45,19 +40,23 @@ func TestRunCommandHelper(t *testing.T) {
 		return
 	}
 	server := os.Getenv("BILC_RUN_TEST_SERVER")
-	target, err := url.Parse(server)
-	if err != nil {
-		t.Fatal(err)
-	}
-	http.DefaultTransport = readinessTransport{target, http.DefaultTransport}
 	dir := t.TempDir()
 	cfg := config.Config{ServerURL: server, BilcID: "device", Model: config.Model{BaseURL: server + "/v1", Name: "test-model"}}
 	if err := config.Save(filepath.Join(dir, "config.json"), cfg); err != nil {
 		t.Fatal(err)
 	}
 	store := memStore{"device": "initial-refresh"}
-	c := &cli{stdout: os.Stdout, stderr: os.Stderr, configDir: dir, store: store}
-	err = c.run([]string{"run"})
+	ensured, closed := false, false
+	c := &cli{stdout: os.Stdout, stderr: os.Stderr, configDir: dir, store: store,
+		ensureOllama: func(context.Context) (ollamaService, error) {
+			ensured = true
+			return testOllamaService{closed: &closed}, nil
+		},
+	}
+	err := c.run([]string{"run"})
+	if !ensured || !closed {
+		t.Fatal("Ollama lifecycle was not started and closed")
+	}
 	if mode == "revoked" {
 		if !errors.Is(err, auth.ErrNotPaired) {
 			t.Fatalf("err=%v", err)
@@ -78,7 +77,6 @@ func TestRunCommandWiresModelSocketRotationAndGracefulShutdown(t *testing.T) {
 			var transcript strings.Builder
 			finished := make(chan struct{}, 1)
 			mux := http.NewServeMux()
-			mux.HandleFunc("/api/version", func(w http.ResponseWriter, r *http.Request) { fmt.Fprint(w, `{"version":"test"}`) })
 			mux.HandleFunc("/api/show", func(w http.ResponseWriter, r *http.Request) {
 				fmt.Fprint(w, `{"details":{"parameter_size":"3B"},"model_info":{}}`)
 			})

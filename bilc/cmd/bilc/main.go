@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"flag"
 	"fmt"
@@ -25,6 +26,8 @@ type cli struct {
 	configDir string
 	// Nil means the system keychain, with a file fallback.
 	store auth.Store
+	// Nil uses the real Ollama lifecycle; tests inject an isolated service.
+	ensureOllama func(context.Context) (ollamaService, error)
 }
 
 func main() {

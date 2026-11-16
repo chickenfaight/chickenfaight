@@ -174,9 +174,10 @@ Match-handler tests inject a fake `model.Model` (scripted chunks, completion, er
 ### Additional automated BILC checks
 
 `cmd/bilc/run_command_test.go` runs the real command in a subprocess with fake
-Ollama readiness/model and REST/WebSocket servers: full turn streaming, rotation,
-SIGINT shutdown, and revoked credentials clearing the local identity. Readiness is
-redirected only inside the test subprocess; no installed service is touched.
+model and REST/WebSocket servers: full turn streaming, rotation, SIGINT shutdown,
+and revoked credentials clearing the local identity. The CLI lifecycle dependency
+is injected only inside the test subprocess; the production lifecycle is separately
+covered by `internal/ollama` tests, and no installed service is touched.
 `tests/installer_test.go` checks fresh/repeat installs, upgrade, missing/bad checksum,
 and a truncated archive with a matching checksum; failed updates preserve the old
 binary and leave no installation temporary files. These run in the normal race suite.
