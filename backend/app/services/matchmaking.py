@@ -72,7 +72,7 @@ class Matchmaker:
     async def match_available_players(self):
         # TODO more sophisticated matching algorithm with elo and shi coming soon
         for (model_id, challenge_day), queue in self.queues.items():
-            if self.randomqueue and len(queue) % 2 == 1:
+            if challenge_day is None and self.randomqueue and len(queue) % 2 == 1:
                 user_id, joined_at = self.randomqueue.popleft()
                 queue.append((user_id, joined_at, 1000))
                 self.queued_users[user_id] = (model_id, challenge_day)
