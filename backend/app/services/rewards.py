@@ -58,13 +58,13 @@ def _finishers(report: MatchReport) -> list[UUID]:
 def _advance_streak(user: User, now: datetime) -> int:
     """Update the streak for a match finished at `now`; returns any streak bonus points."""
     last = user.last_played_at
+    user.last_played_at = now
     if last is None or now - last > STREAK_GRACE:
         user.streak = 1
     elif last.date() < now.date():
         user.streak += 1
         if user.streak % STREAK_BONUS_EVERY == 0:
             return STREAK_BONUS_POINTS
-    user.last_played_at = now
     return 0
 
 
