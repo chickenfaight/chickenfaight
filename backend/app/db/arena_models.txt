@@ -2,10 +2,16 @@
 # List a model only after playing real turns on it: two at once, as in a match, that finish a sentence,
 # stay on their side, and don't refuse. Listed models must also still be free (the importer checks).
 # One OpenRouter model ID per line; blank lines and `#` comments are ignored.
-# Last tested 2026-11-04, two rounds of two simultaneous turns each.
+# Last checked 2026-11-17: zero catalog pricing; two rounds of two simultaneous turns each.
+# Listed models completed all four streams without 429s. This is no rate-limit guarantee.
+# Reviewed all 17 zero-token-price catalog entries, not just the previous allowlist.
+# Nemotron 3 Ultra removed: three 30-second first-token timeouts and one HTTP 503 in four calls.
+# Ling 3.2 Flash and both Gemma 4 variants excluded: upstream shared-pool 429s in paired turns.
+# ERNIE 5.5 Flash, Inkling 2 Small, LFM 3 1.7B, and Flint v1.0 require reasoning (engine-incompatible).
+# Both Lyria 3 entries generate music, not usable text turns; openrouter/free is a random router.
 cohere/north-mini-code:free
 dots-studio/dots-3-note-preview:free
 nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free
-nvidia/nemotron-3-ultra-550b-a55b:free
 nvidia/nemotron-3.5-lightning:free
 nvidia/nemotron-3.5-super-vl:free
+particle-ai/particle-1:free

@@ -184,7 +184,11 @@ async def main() -> None:
     from app.db.session import SessionFactory, engine
 
     try:
-        models = only_arena_models(await fetch_free_models(), read_arena_models())
+        allowed = read_arena_models()
+        free_models = await fetch_free_models()
+        models = only_arena_models(free_models, allowed)
+        unavailable = allowed - {model.id for model in models}
+        unvetted = {model.id for model in free_models} - allowed
         async with SessionFactory() as session:
             count = await import_models(session, models)
         async with SessionFactory() as session:
@@ -193,8 +197,16 @@ async def main() -> None:
             # A model can't be queued for without its ladder.
             ladders = await provision_ladders(session)
         print(f"Imported or updated {count} free model(s) under the OpenRouter provider; added {ladders} ladder(s).")
+        if unavailable:
+            print(f"Listed arena model(s) absent, no longer free, or requiring reasoning: {', '.join(sorted(unavailable))}.")
+        if unvetted:
+            print(f"Other free model(s) not in arena_models.txt (test game compatibility before adding): {', '.join(sorted(unvetted))}.")
         if delisted:
             print(f"Deactivated {len(delisted)} model(s) not in arena_models.txt, no longer free, or unplayable: {', '.join(sorted(delisted))}.")
+        print("Free pricing does not guarantee availability: OpenRouter free variants are limited to "
+              "20 requests/minute and 50 requests/day across free models "
+              "(1,000/day after purchasing $10 in credits); "
+              "upstream providers may also rate-limit concurrent turns. Seeding does not test inference.")
     finally:
         await engine.dispose()
 

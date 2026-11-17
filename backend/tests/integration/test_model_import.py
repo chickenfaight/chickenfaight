@@ -1,9 +1,46 @@
+from contextlib import asynccontextmanager
 from decimal import Decimal
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 from sqlalchemy import select
 
 from app.db.seed_models import OpenRouterModel, delist_missing_models, import_models, parse_free_models
 from app.models import InferenceAdapter, Model, Provider
+
+
+async def test_seed_command_recreates_committed_arena_list_and_ladders(db_session, monkeypatch, capsys):
+    from app.db import seed_models, session as database
+    from app.db.seed_ladders import cloud_ladder_slug
+    from app.models import Ladder
+
+    allowed = seed_models.read_arena_models()
+    models = parse_free_models({"data": [
+        {"id": api_id, "name": api_id, "pricing": {"prompt": "0", "completion": "0"}}
+        for api_id in sorted(allowed | {"lab/unvetted:free"})
+    ]})
+
+    @asynccontextmanager
+    async def session_factory():
+        yield db_session
+
+    monkeypatch.setattr(database, "SessionFactory", session_factory)
+    monkeypatch.setattr(database, "engine", SimpleNamespace(dispose=AsyncMock()))
+    monkeypatch.setattr(seed_models, "fetch_free_models", AsyncMock(return_value=models))
+
+    await seed_models.main()
+    async with db_session.begin():
+        saved = list(await db_session.scalars(select(Model)))
+        assert {model.api_model_id for model in saved} == allowed
+        original_ids = {model.id for model in saved}
+        slugs = set(await db_session.scalars(select(Ladder.slug)))
+        assert {cloud_ladder_slug(model.id) for model in saved} <= slugs
+        assert all(model.is_active and model.input_cost == model.output_cost == 0 for model in saved)
+
+    await seed_models.main()
+    async with db_session.begin():
+        assert set(await db_session.scalars(select(Model.id))) == original_ids
+    assert "lab/unvetted:free" in capsys.readouterr().out
 
 
 def catalogue():

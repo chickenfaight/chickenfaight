@@ -54,6 +54,9 @@ This also creates each model's ladder, which it can't be played without. If ever
 Only the models tested to work, listed in `app/db/arena_models.txt`, are imported. To add one, test it with real turns first (the file says how) and add its ID. Re-running updates existing models without duplicates, deactivates models that are unlisted, no longer free, or that always reason (they return if that changes), and leaves models you deactivated by hand off. Run it again if a model starts failing with "the debate model failed". All imported models belong
 to a single provider row with slug `openrouter`; model authors are not providers.
 See [backend/BACKEND.md](backend/BACKEND.md) for filtering and update behavior.
+Free does not mean unlimited: OpenRouter caps free variants at 20 requests/minute
+and 50/day (1,000/day after purchasing $10 in credits), and upstream providers may
+also rate-limit concurrent turns. Paired-turn tests establish current availability only.
 
 **Frontend** (http://localhost:3000)
 
