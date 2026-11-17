@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { cleanupAccounts, account, backend, modelId } from "./helpers";
+import { cleanupAccounts, account, backend, modelId, selectModel } from "./helpers";
 
 test.afterEach(cleanupAccounts);
 
@@ -13,18 +13,18 @@ test("queue 409 recovers status and cancelling works", async ({ page, context })
     return route.fulfill({ status: 409, json: { code: "ALREADY_QUEUED", detail: "Already queued" } });
   });
   await page.goto("/");
-  await page.getByLabel("AI model", { exact: true }).selectOption(modelId);
-  await page.getByRole("button", { name: "Join game", exact: true }).click();
+  await selectModel(page, modelId);
+  await page.getByRole("button", { name: "Find match", exact: true }).click();
   await page.getByRole("button", { name: "Cancel queue", exact: true }).click();
-  await expect(page.getByRole("button", { name: "Join game", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Find match", exact: true })).toBeVisible();
 });
 
 test("unavailable arena refreshes selection without claiming a queue entry", async ({ page, context }) => {
   await account(context);
   await page.route("**/v1/match/queue", route => route.fulfill({ status: 404, json: { code: "NOT_FOUND", detail: "Unavailable" } }));
   await page.goto("/");
-  await page.getByLabel("AI model", { exact: true }).selectOption(modelId);
-  await page.getByRole("button", { name: "Join game", exact: true }).click();
+  await selectModel(page, modelId);
+  await page.getByRole("button", { name: "Find match", exact: true }).click();
   await expect(page.locator("p[role=alert]")).toContainText("arena is no longer available");
   await expect(page.getByRole("button", { name: "Cancel queue", exact: true })).toHaveCount(0);
 });
@@ -83,8 +83,8 @@ test("failed queue request retries status before attempting another registration
     return route.abort("failed");
   });
   await page.goto("/");
-  await page.getByLabel("AI model", { exact: true }).selectOption(modelId);
-  await page.getByRole("button", { name: "Join game", exact: true }).click();
+  await selectModel(page, modelId);
+  await page.getByRole("button", { name: "Find match", exact: true }).click();
   await page.getByRole("button", { name: "Retry queue status", exact: true }).click();
   await expect(page.getByRole("button", { name: "Cancel queue", exact: true })).toBeVisible();
   expect(posts).toBe(1);

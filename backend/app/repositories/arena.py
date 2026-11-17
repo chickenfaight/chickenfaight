@@ -3,17 +3,17 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import Model
+from app.models import Model, Provider
 
 
 class ArenaRepository:
     def __init__(self, session: AsyncSession):
         self.session = session
 
-    async def get_active_arenas(self) -> list[Model]:
-        statement = select(Model).where(Model.is_active.is_(True))
+    async def get_active_arenas(self) -> list[tuple[Model, str]]:
+        statement = select(Model, Provider.slug).join(Provider, Model.provider_id == Provider.id).where(Model.is_active.is_(True))
         res = await self.session.execute(statement)
-        return list(res.scalars().all())
+        return [(model, provider_slug) for model, provider_slug in res.all()]
 
     async def get_active_arena(self, model_id: UUID) -> Model | None:
         statement = select(Model).where(Model.id == model_id, Model.is_active.is_(True))

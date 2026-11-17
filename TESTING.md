@@ -103,6 +103,8 @@ Every backend feature ships with tests for both behavior and security:
 
 ## Frontend
 
+Unit tests cover provider-neutral logo mapping, local asset availability and backward-compatible arena identity parsing (`model-brand.test.ts`). Browser homepage tests also verify local logo loading for routed and direct model entries.
+
 Unit tests use Node's built-in runner (`pnpm test`, Node 24+) for protocol validation, including the optional arena `participants` (older messages without them still parse).
 Playwright is the only new frontend test dependency: it exercises real browser
 cookies, SSR, React Strict Mode effects, and WebSockets that lint/build cannot.
@@ -137,6 +139,7 @@ Backend dependencies (`uv sync`) and Go (for the Go/Python contract test) are re
   Strict Mode, prompt rejection/retry, heartbeat echo, streamed text, waiting and
   judging transitions, result retention after closure, malformed-message recovery,
   heartbeat silence/unmount cleanup, and resign-before-navigation.
+- `homepage.spec.ts`: focused lobby hierarchy, complete challenge text and retry, single navigation entries, model-picker keyboard/dismissal/persistence, Quick Queue payload, daily model restrictions and account-menu Settings.
 - `recovery.spec.ts`: queue conflicts, delisted model recovery, history error/retry/
   empty state, session expiry, network-loss recovery without duplicate registration, and account edits surviving reload.
 - `account-social.spec.ts`: avatar format validation/upload/reload/removal and

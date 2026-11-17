@@ -102,7 +102,7 @@ UserProfile      UserPublic + { ratings: [Rating], read_blocked: bool, is_friend
 ArenaStats       { points: int, debates_played: int, wins: int, win_rate: float|null, recent_form: ["W"|"L"] } (implemented; all models and regular/daily matches combined; completed and forfeited matches count, voids do not; win_rate is a percentage, null with no counted matches; recent_form is the latest five counted results, newest first, ordered by ended_at then match ID descending)
 Rating           { ladder: str, elo: int, games_played: int, wins: int, losses: int }
 Ladder           { slug: str, display_name: str, kind: "cloud"|"byom" }
-ArenaRead        { id: uuid, display_name: str, kind: "provided"|"byom" } (implemented; for "provided", id is the model's UUID; the one "byom" arena, listed last, has the fixed id in "BYOM arena" below)
+ArenaRead        { id: uuid, display_name: str, kind: "provided"|"byom", provider_slug: str|null, model_slug: str|null } (implemented; for "provided", id is the model's UUID, provider_slug is the database provider slug and model_slug is its exact API model ID, independent of display names; these optional identity fields default to null when omitted. They are presentation metadata, never routing instructions. The one "byom" arena, listed last, has both identity fields null and the fixed id in "BYOM arena" below)
 Side             "pro" | "con"
 Phase            "opening" | "rebuttal" | "closing"
 MatchStatus      "waiting_for_players" | "awaiting_prompts" | "in_progress" | "judging"

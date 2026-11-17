@@ -16,7 +16,6 @@ const SECTIONS: { href: string; label: string; icon: IconName; matches: (path: s
   { href: "/tips", label: "Debate tips", icon: "chat", matches: (path: string) => path.startsWith("/tips") },
   { href: "/bilc", label: "BILC", icon: "chip", matches: (path: string) => path.startsWith("/bilc") },
   { href: PROFILE_ALIAS, label: "Profile", icon: "user", matches: (path: string) => path.startsWith("/profile") || path.startsWith("/matches") },
-  { href: "/settings", label: "Settings", icon: "gear", matches: (path: string) => path.startsWith("/settings") },
 ];
 
 // Only for tags the backend lists as admins; the page itself is gated by the backend.

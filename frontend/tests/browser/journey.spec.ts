@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { cleanupAccounts, account, accountTag, backend, failedModelId, join, password, submit } from "./helpers";
+import { cleanupAccounts, account, accountTag, backend, failedModelId, join, password, submit, selectModel } from "./helpers";
 
 test.afterEach(cleanupAccounts);
 
@@ -65,7 +65,7 @@ test("two browsers complete a real match and immediately see saved results", asy
     await page.goto("/matches");
     await expect(page.getByText("Should transit be free?", { exact: true })).toBeVisible();
     await page.goto("/leaderboards");
-    await expect(page.getByText(me.tag, { exact: true })).toBeVisible();
+    await expect(page.getByRole("main").getByText(me.tag, { exact: true })).toBeVisible();
   } finally {
     await otherContext.close();
   }
@@ -75,9 +75,9 @@ test("queue cancellation and rejoin recover without duplicate registration", asy
   await account(context);
   await join(page);
   await page.getByRole("button", { name: "Cancel queue", exact: true }).click();
-  await expect(page.getByRole("button", { name: "Join game", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Find match", exact: true })).toBeVisible();
   expect((await (await context.request.get(`${backend}/v1/match/status`)).json()).status).toBe("none");
-  await page.getByRole("button", { name: "Join game", exact: true }).click();
+  await page.getByRole("button", { name: "Find match", exact: true }).click();
   await expect(page.getByRole("button", { name: "Cancel queue", exact: true })).toBeVisible();
   await context.request.delete(`${backend}/v1/match/queue`);
 });
@@ -118,8 +118,8 @@ test("daily challenge persists completion and prevents a second entry", async ({
     const other = await otherContext.newPage();
     for (const p of [page, other]) {
       await p.goto("/challenge");
-      await p.getByLabel("AI model", { exact: true }).selectOption("11111111-1111-4111-8111-111111111111");
-      await p.getByRole("button", { name: "Join game", exact: true }).click();
+      await selectModel(p);
+      await p.getByRole("button", { name: "Find match", exact: true }).click();
     }
     // Valid for every rotating twist: short, includes chicken, avoids banned words.
     await Promise.all([submit(page, "Use a chicken analogy."), submit(other, "Use a chicken analogy.")]);
@@ -129,6 +129,6 @@ test("daily challenge persists completion and prevents a second entry", async ({
     expect(repeated.status()).toBe(409);
     expect((await repeated.json()).code).toBe("CHALLENGE_ALREADY_COMPLETED");
     await page.goto("/challenge");
-    await expect(page.getByRole("button", { name: "Join game", exact: true })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Find match", exact: true })).toHaveCount(0);
   } finally { await otherContext.close(); }
 });

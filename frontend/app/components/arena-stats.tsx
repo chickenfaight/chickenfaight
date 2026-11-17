@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import { api } from "../lib/api";
 import { parseArenaStats, type ArenaStats } from "../lib/protocol";
@@ -19,24 +20,21 @@ export default function ArenaStatsCard() {
     return () => controller.abort();
   }, [attempt]);
 
-  return <section aria-labelledby="stats-title" className="panel flex flex-1 flex-col justify-center p-panel">
-    <div className="mb-5 flex items-center justify-between"><h2 id="stats-title" className="text-sm font-bold">Your arena stats</h2><span className="eyebrow">All arenas</span></div>
-    {error ? <ErrorState compact message="Couldn’t load your stats." onRetry={() => { setError(false); setAttempt(value => value + 1); }} />
-      : !stats ? <Skeleton label="Loading your stats…" variant="lines" count={4} />
-      : <>
-        <dl className="grid grid-cols-2 gap-y-5">
-          {([
-            ["Points", stats.points.toLocaleString()],
-            ["Win rate", stats.win_rate === null ? "—" : `${Math.round(stats.win_rate)}%`],
-            ["Debates played", stats.debates_played.toLocaleString()],
-            ["Wins", stats.wins.toLocaleString()],
-          ] as const).map(([label, value]) => <div key={label}><dt className="text-xs text-ink-muted">{label}</dt><dd className="stat mt-1.5 text-4xl">{value}</dd></div>)}
-        </dl>
-        <div className="mt-5 flex items-center justify-between border-t border-line pt-4"><span className="text-xs text-ink-muted">Recent form</span>
-          {stats.recent_form.length ? <div className="flex gap-1.5" aria-label="Recent results, newest first">{stats.recent_form.map((result, i) => <span key={i} aria-label={result === "W" ? "Win" : "Loss"} className={`stat flex h-7 w-7 items-center justify-center rounded-control border text-sm ${result === "W" ? "border-win/35 bg-win/10 text-win" : "border-line bg-white/[0.03] text-ink-faint"}`}>{result}</span>)}</div>
-            : <span className="text-xs text-ink-faint">No results yet</span>}
-        </div>
-        <p className="mt-3 text-xs text-ink-faint">Forfeits count. Voided debates don’t.</p>
-      </>}
+  return <section aria-labelledby="stats-title" className="border-t border-line pt-5">
+    <div className="flex flex-wrap items-center justify-between gap-4">
+      <h2 id="stats-title" className="text-sm font-bold">Your recent results</h2>
+      <Link href="/matches" className="rounded-control text-sm font-semibold text-accent-ink underline underline-offset-4 focus-ring">View debate history</Link>
+    </div>
+    <div className="mt-4" aria-live="polite">
+      {error ? <ErrorState compact message="Couldn’t load your results." onRetry={() => { setError(false); setAttempt(value => value + 1); }} />
+        : !stats ? <Skeleton label="Loading your results…" variant="lines" count={1} />
+        : <div className="flex flex-wrap items-center gap-x-8 gap-y-3">
+          <p className="text-sm text-ink-muted"><span className="stat mr-1.5 text-2xl text-ink">{stats.points.toLocaleString()}</span>points</p>
+          {stats.recent_form.length ? <div className="flex flex-wrap items-center gap-3">
+            <span className="text-xs text-ink-muted">Newest first · all arenas</span>
+            <div className="flex gap-1.5" aria-label="Recent results, newest first">{stats.recent_form.map((result, i) => <span key={i} aria-label={result === "W" ? "Win" : "Loss"} className={`stat flex h-8 w-8 items-center justify-center rounded-control border text-base ${result === "W" ? "border-win/35 bg-win/10 text-win" : "border-line bg-surface text-ink-muted"}`}>{result}</span>)}</div>
+          </div> : <p className="text-sm text-ink-muted">No results yet. Find your first debate above.</p>}
+        </div>}
+    </div>
   </section>;
 }

@@ -3,6 +3,7 @@ import { expect, request, type APIRequestContext, type BrowserContext, type Page
 export const backend = "http://127.0.0.1:8765";
 export const modelId = "11111111-1111-4111-8111-111111111111";
 export const failedModelId = "22222222-2222-4222-8222-222222222222";
+export const byomId = "6f1c9a52-3d8e-4b7a-9e21-b10c0000b10c";
 export const password = "browser-test-password";
 const ownedAccounts: APIRequestContext[] = [];
 
@@ -29,16 +30,34 @@ export async function account(context: BrowserContext) {
   return { ...(await (await context.request.get(`${backend}/auth/me`)).json()), tag };
 }
 
+export async function selectModel(page: Page, model = modelId) {
+  if (model === byomId) {
+    const source = page.getByRole("button", { name: "Bring your own model", exact: true });
+    await expect(source).toHaveAttribute("aria-disabled", "false");
+    await source.click();
+    await expect(source).toHaveAttribute("aria-pressed", "true");
+    await expect(page.getByText("Your device is ready.", { exact: true })).toBeVisible();
+    return;
+  }
+  const provided = page.getByRole("button", { name: "Provided models", exact: true });
+  if (await provided.count()) {
+    await expect(provided).toHaveAttribute("aria-disabled", "false");
+    if (await provided.getAttribute("aria-pressed") !== "true") await provided.click();
+  }
+  const selection = page.getByRole("combobox", { name: "AI model", exact: true });
+  await expect(selection).toHaveAttribute("aria-disabled", "false");
+  await selection.click();
+  await page.getByRole("option").and(page.locator(`[data-value="${model}"]`)).click();
+  await expect(selection).toHaveAttribute("data-value", model);
+}
+
 export async function join(page: Page, model = modelId) {
   await page.goto("/");
-  await expect(page.getByRole("button", { name: "Join game", exact: true })).toBeVisible();
-  const selection = page.getByLabel("AI model", { exact: true });
-  await selection.selectOption(model);
-  await selection.press("Tab");
-  await expect(selection).toHaveValue(model);
-  await expect(page.getByRole("button", { name: "Join game", exact: true })).toHaveAttribute("aria-disabled", "false");
+  await expect(page.getByRole("button", { name: "Find match", exact: true })).toBeVisible();
+  await selectModel(page, model);
+  await expect(page.getByRole("button", { name: "Find match", exact: true })).toHaveAttribute("aria-disabled", "false");
   const registration = page.waitForRequest(request => request.url().endsWith("/v1/match/queue") && request.method() === "POST");
-  await page.getByRole("button", { name: "Join game", exact: true }).click();
+  await page.getByRole("button", { name: "Find match", exact: true }).click();
   expect((await registration).postDataJSON().model_id).toBe(model);
 }
 

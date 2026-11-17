@@ -53,7 +53,7 @@ export function parseTagAvailability(data: unknown): TagAvailability {
   throw new Error("Invalid availability");
 }
 
-export type Arena = { id: string; display_name: string; kind: "provided" | "byom" };
+export type Arena = { id: string; display_name: string; kind: "provided" | "byom"; provider_slug?: string | null; model_slug?: string | null };
 
 export function parseArenas(data: unknown): Arena[] {
   if (!Array.isArray(data)) throw new Error("Invalid arena list");
@@ -62,11 +62,15 @@ export function parseArenas(data: unknown): Arena[] {
     if (!isObject(item) || typeof item.id !== "string"
       || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(item.id)
       || typeof item.display_name !== "string" || !item.display_name.trim()
-      || (item.kind !== "provided" && item.kind !== "byom") || ids.has(item.id)) {
+      || (item.kind !== "provided" && item.kind !== "byom") || ids.has(item.id)
+      || (item.provider_slug !== undefined && !optionalString(item.provider_slug))
+      || (item.model_slug !== undefined && !optionalString(item.model_slug))) {
       throw new Error("Invalid arena");
     }
     ids.add(item.id);
-    return { id: item.id, display_name: item.display_name, kind: item.kind };
+    return { id: item.id, display_name: item.display_name, kind: item.kind,
+      ...(item.provider_slug !== undefined ? { provider_slug: item.provider_slug as string | null } : {}),
+      ...(item.model_slug !== undefined ? { model_slug: item.model_slug as string | null } : {}) };
   });
 }
 
