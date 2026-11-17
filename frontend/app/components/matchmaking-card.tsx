@@ -5,8 +5,9 @@ import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { api, ApiError } from "../lib/api";
 import { parseArenas, parseBilcDevices, parseQueueStatus, SIZE_CLASS_LABELS, type Arena, type BilcDevice } from "../lib/protocol";
-import { preferredArena, saveSelectedArena } from "../lib/selected-arena";
+import { preferredArena, savedArena, saveSelectedArena } from "../lib/selected-arena";
 import Button, { buttonClass } from "./button";
+import ModelPicker from "./model-picker";
 
 type Phase = "checking" | "idle" | "joining" | "cancelling" | "queued" | "matched" | "error" | "signed-out";
 
@@ -43,9 +44,12 @@ export default function MatchmakingCard({ daily = false, onChallengeDone }: { da
       try {
         const list = parseArenas(await api("/v1/arenas", controller.signal));
         if (controller.signal.aborted) return;
-		list.push({ id: "quick", display_name: "Quick Queue", kind: "provided" });
+        if (!daily && list.some(arena => arena.kind === "provided")) list.unshift({ id: "quick", display_name: "Quick Queue", kind: "provided" });
         setArenas(list);
-        setSelectedId(previous => preferredArena(list, previous));
+        setSelectedId(previous => {
+          const remembered = previous || savedArena();
+          return !daily && list.some(arena => arena.id === remembered) ? remembered! : preferredArena(list, previous);
+        });
         setCatalogPhase("ready");
       } catch (err) {
         if (controller.signal.aborted) return;
@@ -54,7 +58,7 @@ export default function MatchmakingCard({ daily = false, onChallengeDone }: { da
     }
     void load();
     return () => controller.abort();
-  }, [catalogAttempt]);
+  }, [catalogAttempt, daily]);
 
   const byomSelected = !daily && arenas.some(arena => arena.id === selectedId && arena.kind === "byom");
   useEffect(() => {
@@ -62,6 +66,7 @@ export default function MatchmakingCard({ daily = false, onChallengeDone }: { da
     const controller = new AbortController();
     api("/v1/bilc/devices", controller.signal).then(data => {
       const list = parseBilcDevices(data);
+      if (controller.signal.aborted) return;
       setDevices(list);
       setDevicesError(false);
       setDeviceId(previous => list.some(device => device.id === previous && device.status === "idle") ? previous : list.find(device => device.status === "idle")?.id ?? "");
@@ -219,7 +224,7 @@ export default function MatchmakingCard({ daily = false, onChallengeDone }: { da
   const waiting = queued || phase === "joining" || phase === "checking" || phase === "cancelling";
   const buttonDisabled = (waiting && !queued) || (!queued && !canJoin);
   const title = {
-    checking: "Checking queue…", idle: daily ? "Ready for today’s challenge?" : "Ready to ruffle feathers?", joining: "Joining queue…",
+    checking: "Checking queue…", idle: daily ? "Ready for today’s challenge?" : "Choose your arena", joining: "Joining queue…",
     cancelling: "Leaving queue…", queued: "Finding an opponent…", matched: "Opponent found!", error: "Queue status unavailable", "signed-out": "Join the debate",
   }[phase];
 
@@ -230,15 +235,17 @@ export default function MatchmakingCard({ daily = false, onChallengeDone }: { da
       {waiting && <span aria-hidden="true" className="h-7 w-7 shrink-0 rounded-full border-[3px] border-accent/20 border-t-accent motion-safe:animate-spin" />}
       <h3 className={`text-base font-bold ${queued ? "text-accent-ink" : "text-ink"}`}>{title}</h3>
     </div>
-    <label htmlFor="queue-model" className="eyebrow mb-2 block">AI model</label>
-    {/* autoComplete="off": on reload, Firefox restores the previous page's enabled/disabled state
-        before React loads, which no longer matches the server HTML and breaks hydration. */}
-    <select id="queue-model" autoComplete="off" value={showQueue ? "" : selectedId} onChange={event => { setSelectedId(event.target.value); saveSelectedArena(event.target.value); }} disabled={selectionLocked} className={select}>
-      {showQueue ? <option value="">{queuedModel?.display_name ?? "Existing queue · model unknown"}</option> : <>
-        {!selectedId && <option value="">{signedOut ? "Sign in to choose an arena" : catalogPhase === "loading" ? "Loading arenas…" : "Choose an arena"}</option>}
-        {listed.map(arena => <option key={arena.id} value={arena.id}>{arena.display_name}</option>)}
-      </>}
-    </select>
+    {!daily && !showQueue && <div role="group" aria-label="Model source" className="mb-5 flex flex-wrap gap-2">
+      <Button size="sm" variant={!byomSelected ? "secondary" : "ghost"} aria-pressed={!byomSelected} aria-disabled={selectionLocked} onClick={() => { if (!selectionLocked && byomSelected) { const id = arenas.find(arena => arena.kind === "provided")?.id ?? ""; setSelectedId(id); saveSelectedArena(id); } }}>Provided models</Button>
+      <Button size="sm" variant={byomSelected ? "secondary" : "ghost"} aria-pressed={byomSelected} aria-disabled={selectionLocked || !arenas.some(arena => arena.kind === "byom")} onClick={() => { if (!selectionLocked) { const id = arenas.find(arena => arena.kind === "byom")?.id; if (id) { setSelectedId(id); saveSelectedArena(id); } } }}>Bring your own model</Button>
+    </div>}
+    {byomSelected && !showQueue ? <p className="mb-3 text-sm text-ink-muted">Play using a model on your computer. Each player connects their own device.</p> : <ModelPicker
+      arenas={listed.filter(arena => arena.kind === "provided")}
+      value={selectedId} locked={selectionLocked}
+      queueLabel={showQueue ? queuedModel?.display_name ?? "Existing queue · model unknown" : undefined}
+      placeholder={signedOut ? "Sign in to choose an arena" : catalogPhase === "loading" ? "Loading arenas…" : "Choose an arena"}
+      onChange={id => { setSelectedId(id); saveSelectedArena(id); }}
+    />}
     <div aria-live="polite" className="mt-2 text-xs text-ink-muted">
       {catalogPhase === "loading" && <p>Loading arenas…</p>}
       {catalogPhase === "error" && <p className="text-danger">Couldn’t load arenas. <button type="button" onClick={refreshArenas} className={smallLink}>Retry arenas</button></p>}
@@ -260,21 +267,21 @@ export default function MatchmakingCard({ daily = false, onChallengeDone }: { da
       </select>
       <div aria-live="polite" className="mt-2 text-xs text-ink-muted">
         {devicesError ? <p className="text-danger">Couldn’t load your devices. <button type="button" onClick={refreshDevices} className={smallLink}>Retry</button></p>
-          : devices?.length === 0 ? <p>Pair a computer running your model on the <Link href="/bilc" className={smallLink}>BILC page</Link>.</p>
+          : devices?.length === 0 ? <p>Pair a computer running your model. <Link href="/bilc" className={smallLink}>Connect a device</Link>.</p>
           : devices && !deviceReady ? <p>None of your devices is online. Run <span className="font-mono">bilc run</span> on one, then <button type="button" onClick={refreshDevices} className={smallLink}>refresh</button>.</p>
           : null}
       </div>
     </>}
     <div className="flex min-h-12 items-center justify-between gap-2 text-xs text-ink-faint">
-      <span>{queued ? "Time searching on this page" : byomSelected ? "Paired with models of a similar size" : "Players are paired within the same arena"}</span>
+      <span>{queued ? "Time searching on this page" : showQueue ? "Your arena will be confirmed when the debate starts." : byomSelected ? "Paired with models of a similar size" : selectedId === "quick" ? "Quick Queue finds an available cloud arena for you." : "Both players debate using the same model."}</span>
       {queued && <span className="stat text-2xl text-accent-ink">{String(Math.floor(elapsed / 60)).padStart(2, "0")}:{String(elapsed % 60).padStart(2, "0")}</span>}
     </div>
     {phase === "matched" ? <p role="status" className="py-3 text-sm font-semibold text-accent-ink">Opponent found. Entering the arena…</p>
       : signedOut && !queueActive ? <Link href="/login" className={buttonClass("primary", "lg", "w-full")}>Sign in to queue</Link>
       : phase === "error" ? <div className="flex gap-2"><Button variant="primary" size="lg" className="flex-1" onClick={() => request("GET")}>Retry queue status</Button>{queueActive && <Button size="lg" onClick={() => request("DELETE")}>Cancel queue</Button>}</div>
       // Firefox restores native disabled state on reload, which can break hydration.
-      : <Button variant={queued ? "secondary" : "primary"} size="lg" className="w-full" aria-disabled={buttonDisabled} onClick={() => { if (!buttonDisabled) request(queued ? "DELETE" : "POST"); }}>{queued ? "Cancel queue" : phase === "cancelling" ? "Cancelling…" : phase === "checking" ? "Checking…" : phase === "joining" ? "Joining…" : "Join game"}</Button>}
+      : <Button variant={queued ? "secondary" : "primary"} size="lg" className="w-full" aria-disabled={buttonDisabled} onClick={() => { if (!buttonDisabled) request(queued ? "DELETE" : "POST"); }}>{queued ? "Cancel queue" : phase === "cancelling" ? "Cancelling…" : phase === "checking" ? "Checking…" : phase === "joining" ? "Joining…" : "Find match"}</Button>}
     {error && <p role="alert" className="mt-3 text-xs leading-relaxed text-danger">{error}</p>}
-    <p className="mt-3 text-center text-xs leading-relaxed text-ink-faint">{phase === "matched" ? "Your debate is ready." : queued ? "You can leave the queue anytime before an opponent is found." : "Choose a model to enter its arena."}</p>
+    <p className="mt-3 text-center text-xs leading-relaxed text-ink-faint">{phase === "matched" ? "Your debate is ready." : queued ? "You can leave the queue anytime before an opponent is found." : byomSelected ? deviceReady ? "Your device is ready." : "Connect an online device to find a match." : "Write one prompt. Your AI debates. The judge decides."}</p>
   </div>;
 }
