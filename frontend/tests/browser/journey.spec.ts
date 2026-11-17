@@ -1,10 +1,10 @@
 import { test, expect } from "@playwright/test";
-import { cleanupAccounts, account, backend, failedModelId, join, password, submit } from "./helpers";
+import { cleanupAccounts, account, accountTag, backend, failedModelId, join, password, submit } from "./helpers";
 
 test.afterEach(cleanupAccounts);
 
 test("signup, authenticated SSR, logout and login keep credentials out of URLs", async ({ page, context }) => {
-  const tag = `signup_${crypto.randomUUID().slice(0, 8)}`;
+  const tag = accountTag("signup");
   await page.goto("/signup");
   await expect(page.locator("form")).toHaveAttribute("method", "post");
   await page.getByLabel("Tag", { exact: true }).fill(tag);
@@ -13,18 +13,30 @@ test("signup, authenticated SSR, logout and login keep credentials out of URLs",
   await page.getByLabel("Confirm password", { exact: true }).fill(password);
   await page.getByRole("button", { name: "Create account", exact: true }).click();
   await expect(page).toHaveURL("/");
+  const profile = page.getByRole("button", { name: tag, exact: true });
+  // A changed URL alone doesn't mean the lobby and its session have rendered.
+  await expect(profile).toBeVisible();
   await page.reload();
   await expect(page).toHaveURL("/");
+  await expect(profile).toBeVisible();
   const cookie = (await context.cookies(backend)).find(c => c.name === "session");
   expect(cookie?.httpOnly).toBe(true);
   expect(cookie?.sameSite).toBe("Lax");
-  await context.request.post(`${backend}/auth/logout`);
-  await page.goto("/login");
+  // Let the app own the redirect. An API logout followed by goto races the
+  // reloaded lobby's session check, which can also navigate to /login.
+  // Keyboard activation avoids the menu's mouse-hover open/close timers.
+  await profile.press("Enter");
+  const loggedOut = page.waitForResponse(response => response.url() === `${backend}/auth/logout` && response.request().method() === "POST");
+  await page.getByRole("button", { name: "Sign out", exact: true }).click();
+  expect((await loggedOut).status()).toBe(204);
+  await expect(page).toHaveURL("/login");
   await expect(page.locator("form")).toHaveAttribute("method", "post");
+  expect((await context.request.get(`${backend}/auth/me`)).status()).toBe(401);
   await page.getByLabel("Tag", { exact: true }).fill(tag);
   await page.getByLabel("Password", { exact: true }).fill(password);
   await page.getByRole("button", { name: "Sign in", exact: true }).click();
   await expect(page).toHaveURL("/");
+  await expect(profile).toBeVisible();
   expect(page.url()).not.toContain(password);
 });
 

@@ -131,6 +131,8 @@ Backend dependencies (`uv sync`) and Go (for the Go/Python contract test) are re
   forwarding), POST password forms, real two-player cloud match, private prompts,
   literal model output, immediate saved history/stats/leaderboards, cancellation
   and rejoin, model-failure void, daily completion/re-entry rejection, admin denial.
+  Auth transitions wait for the signed-in profile control or login form; logout
+  uses the UI and awaits its redirect rather than starting a competing navigation.
 - `match-state.spec.ts`: controlled WebSocket messages verify one connection in
   Strict Mode, prompt rejection/retry, heartbeat echo, streamed text, waiting and
   judging transitions, result retention after closure, malformed-message recovery,

@@ -13,11 +13,15 @@ export async function cleanupAccounts() {
   }
 }
 
-export async function account(context: BrowserContext) {
+export function accountTag(prefix = "browser") {
   // Random hexadecimal can form prohibited words after leetspeak normalization.
   // Decimal UUID digits keep fixtures valid without weakening real signup checks.
   const suffix = BigInt(`0x${crypto.randomUUID().replaceAll("-", "")}`).toString().slice(0, 16);
-  const tag = `browser_${suffix}`;
+  return `${prefix}_${suffix}`;
+}
+
+export async function account(context: BrowserContext) {
+  const tag = accountTag();
   const response = await context.request.post(`${backend}/auth/signup`, { data: { tag, username: tag, password } });
   expect(response.status(), await response.text()).toBe(204);
   // Keep a test-owned cleanup client even if a secondary browser closes on failure.
