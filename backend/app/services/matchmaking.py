@@ -1,12 +1,17 @@
 import asyncio
 import logging
+import random
 import time
 from uuid import UUID, uuid4
 from collections import deque, defaultdict
 from dataclasses import dataclass
 from datetime import date
 
+from sqlalchemy.exc import SQLAlchemyError
+
+from app.db.session import SessionFactory
 from app.engine.game_engine import GameEngine
+from app.repositories.arena import ArenaRepository
 from app.services.arena import BYOM_ARENA_ID
 from app.services.bilc_connections import BilcConnections
 from app.services.bilc_rules import SizeClass, class_distance
@@ -70,7 +75,6 @@ class Matchmaker:
             await asyncio.sleep(1)
 
     async def match_available_players(self):
-        # TODO more sophisticated matching algorithm with elo and shi coming soon
         for (model_id, challenge_day), queue in self.queues.items():
             if challenge_day is None and self.randomqueue and len(queue) % 2 == 1:
                 user_id, joined_at = self.randomqueue.popleft()
@@ -107,6 +111,29 @@ class Matchmaker:
 
                 self.start(GameEngine(match_id, (players[0][0],players[1][0]), model_id, challenge_day))
         self.match_byom_players()
+        await self.match_quick_players()
+
+    async def match_quick_players(self) -> None:
+        """Pair remaining Quick Queue players after all arena queues have had their turn."""
+        if len(self.randomqueue) < 2:
+            return
+        try:
+            async with SessionFactory() as session:
+                model_ids = await ArenaRepository(session).get_queueable_model_ids()
+        except SQLAlchemyError:
+            logger.exception("Could not load models for Quick Queue; players remain queued")
+            return
+        if not model_ids:
+            return
+        # Loading the catalogue yields control: players may have cancelled in the meantime.
+        while len(self.randomqueue) >= 2:
+            model_id = random.choice(model_ids)
+            players = (self.randomqueue.popleft()[0], self.randomqueue.popleft()[0])
+            match_id = uuid4()
+            for user_id in players:
+                del self.queued_users[user_id]
+                self.assignments[user_id] = match_id
+            self.start(GameEngine(match_id, players, model_id))
 
     def match_byom_players(self) -> None:
         # Devices that went offline (or got busy) since queueing wait without being paired.

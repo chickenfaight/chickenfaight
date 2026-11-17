@@ -24,3 +24,25 @@ async def test_queue_rejects_unknown_or_inactive_model(client, log_in, make_user
     assert response.status_code == 404
     assert response.json()['code'] == 'NOT_FOUND'
     assert (await client.get('/v1/match/status')).json() == {'status': 'none'}
+
+
+async def test_quick_queue_catalogue_requires_active_model_and_cloud_ladder(db_session, make_model):
+    from app.models import Ladder
+
+    playable = await make_model()
+    missing_ladder = await make_model()
+    inactive_model = await make_model(is_active=False)
+    inactive_ladder = await make_model()
+    byom_ladder = await make_model()
+    for model, active, kind in [
+        (playable, True, 'cloud'), (inactive_model, True, 'cloud'),
+        (inactive_ladder, False, 'cloud'), (byom_ladder, True, 'byom'),
+    ]:
+        db_session.add(Ladder(
+            slug=f'ladder-{model.id}', display_name=model.display_name,
+            kind=kind, is_active=active,
+        ))
+    await db_session.commit()
+    ids = await ArenaRepository(db_session).get_queueable_model_ids()
+    assert playable.id in ids
+    assert not {missing_ladder.id, inactive_model.id, inactive_ladder.id, byom_ladder.id} & set(ids)
