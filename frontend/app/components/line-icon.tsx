@@ -1,7 +1,8 @@
-export type IconName = "arrow" | "trophy" | "bolt" | "chip" | "chevron" | "cross" | "play" | "user" | "gear" | "chat" | "shield";
+export type IconName = "arrow" | "trophy" | "bolt" | "chip" | "chevron" | "cross" | "play" | "user" | "gear" | "chat" | "shield" | "search";
 
 export default function Icon({ name, className = "h-5 w-5" }: { name: IconName; className?: string }) {
   const paths: Record<IconName, React.ReactNode> = {
+    search: <><circle cx="10.5" cy="10.5" r="6.5" /><path d="m16 16 5 5" /></>,
     arrow: <path d="M5 12h14m-6-6 6 6-6 6" />,
     trophy: <><path d="M8 3h8v6a4 4 0 0 1-8 0V3Zm4 10v6m-4 2h8M8 5H4v3a4 4 0 0 0 4 4m8-7h4v3a4 4 0 0 1-4 4" /></>,
     bolt: <path d="m13 2-9 12h7l-1 8L20 9h-7l1-7Z" />,

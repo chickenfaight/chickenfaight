@@ -1,11 +1,12 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect, useId, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { api, ApiError } from "../lib/api";
 import { displayName, parseUserPage, type UserPublic } from "../lib/protocol";
 import { profileHref, searchHref } from "../lib/routes";
 import Avatar from "./avatar";
+import Icon from "./line-icon";
 const SUGGESTION_LIMIT = 5;
 const DEBOUNCE_MS = 200;
 
@@ -18,6 +19,9 @@ type Suggestions =
 export default function UserSearch({ initialQuery = "" }: { initialQuery?: string }) {
   const router = useRouter();
   const listId = useId();
+  const trigger = useRef<HTMLButtonElement>(null);
+  const input = useRef<HTMLInputElement>(null);
+  const [fieldOpen, setFieldOpen] = useState(false);
   const [query, setQuery] = useState(initialQuery);
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(-1);
@@ -25,6 +29,10 @@ export default function UserSearch({ initialQuery = "" }: { initialQuery?: strin
   const trimmed = query.trim();
 
   const expanded = open && trimmed !== "";
+
+  useEffect(() => {
+    if (fieldOpen) input.current?.focus();
+  }, [fieldOpen]);
 
   // Only fetch while the list is showing, so a prefilled bar (on /search) stays idle until focused.
   useEffect(() => {
@@ -47,6 +55,7 @@ export default function UserSearch({ initialQuery = "" }: { initialQuery?: strin
 
   function go(href: string) {
     setOpen(false);
+    setFieldOpen(false);
     router.push(href);
   }
 
@@ -59,8 +68,11 @@ export default function UserSearch({ initialQuery = "" }: { initialQuery?: strin
       const step = event.key === "ArrowDown" ? 1 : -1;
       setActive((current) => (current + 1 + step + items.length + 1) % (items.length + 1) - 1);
     } else if (event.key === "Escape") {
+      event.preventDefault();
       setOpen(false);
       setActive(-1);
+      setFieldOpen(false);
+      trigger.current?.focus();
     } else if (event.key === "Enter") {
       event.preventDefault();
       if (active >= 0 && active < items.length) go(profileHref(items[active].tag));
@@ -69,9 +81,29 @@ export default function UserSearch({ initialQuery = "" }: { initialQuery?: strin
   }
 
   return (
-    <div className="relative w-72 max-[1100px]:w-52" role="search" onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget)) setOpen(false); }}>
+    <div className={`relative h-11 transition-[width] duration-(--duration-base) ease-out ${fieldOpen ? "w-72 max-[1100px]:w-52" : "w-11"}`} role="search" onBlur={(event) => {
+      if (!event.currentTarget.contains(event.relatedTarget)) {
+        setOpen(false);
+        setFieldOpen(false);
+        setActive(-1);
+      }
+    }}>
+      <button
+        ref={trigger}
+        type="button"
+        aria-label="Search players"
+        aria-expanded={fieldOpen}
+        aria-controls={fieldOpen ? `${listId}-input` : undefined}
+        onClick={() => { setFieldOpen(true); input.current?.focus(); }}
+        className={`absolute left-0 top-0 z-10 flex h-11 w-11 items-center justify-center rounded-control text-ink-muted transition-colors duration-(--duration-fast) hover:text-ink focus-ring ${fieldOpen ? "" : "hover:bg-surface-raised"}`}
+      >
+        <Icon name="search" />
+      </button>
       <label htmlFor={`${listId}-input`} className="sr-only">Search players by username or tag</label>
       <input
+        ref={input}
+        tabIndex={fieldOpen ? 0 : -1}
+        aria-hidden={!fieldOpen}
         id={`${listId}-input`}
         type="search"
         role="combobox"
@@ -87,7 +119,7 @@ export default function UserSearch({ initialQuery = "" }: { initialQuery?: strin
         onChange={(event) => { setQuery(event.target.value); setOpen(true); setActive(-1); setSuggestions({ status: "loading" }); }}
         onFocus={() => setOpen(true)}
         onKeyDown={onKeyDown}
-        className="h-11 w-full rounded-control border border-line-strong bg-inset px-4 text-sm text-ink placeholder:text-ink-faint transition-colors duration-(--duration-fast) hover:border-ink-faint focus-ring"
+        className={`h-11 w-full min-w-0 rounded-control border border-line-strong bg-inset pl-11 pr-4 text-sm text-ink placeholder:text-ink-faint transition-[opacity,color,border-color] duration-(--duration-fast) hover:border-ink-faint focus-ring ${fieldOpen ? "visible opacity-100" : "invisible pointer-events-none opacity-0"}`}
       />
       {expanded && (
         <div className="absolute right-0 top-full z-30 w-full pt-2">
