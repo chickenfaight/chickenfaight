@@ -174,7 +174,7 @@ function Profile({ profile, me, friends, incoming, outgoing, blocked }: ProfileP
       <section aria-labelledby="record-title" className="panel p-panel animate-rise [animation-delay:60ms]">
         <div className="mb-6 flex items-baseline justify-between gap-3">
           <h2 id="record-title" className="text-sm font-bold">Record</h2>
-          {meId === profile.id && <Link href="/matches" className={`text-xs ${linkClass}`}>Match history</Link>}
+          {meId === profile.id && <Link href="/matches" className={`text-xs ${linkClass}`}>Debate history</Link>}
         </div>
         <dl className="grid grid-cols-[repeat(auto-fit,minmax(130px,1fr))] gap-x-4 gap-y-6 border-b border-line pb-6">
           {profile.rank !== null && <Stat big label="Rank" value={`#${profile.rank.toLocaleString()}`} tone={RANK_TONE[profile.rank - 1] ?? ""} />}

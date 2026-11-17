@@ -125,3 +125,12 @@ Production topology, configuration, release commands, rollout/recovery, and laun
 checks are maintained in [DEPLOYMENT.md](DEPLOYMENT.md).
 Frontend and backend versions move together under `app/vX.Y.Z`; update both package
 versions and `backend/uv.lock` in one PR. `bilc/vX.Y.Z` releases remain independent.
+
+## Design review skills
+
+Repository-local skills in `.agents/skills/` provide `web-design-guidelines`,
+`impeccable`, and `chickenfaight-ui-review`. Start with the project review skill
+for a screen audit; use Impeccable for targeted critique or polish. Existing
+`frontend/FRONTEND.md` remains the design source of truth. Do not generate
+new top-level product/design docs. Sources and update notes are in
+`.agents/skills/SOURCES.md`. Skills are available on the next agent turn.

@@ -106,7 +106,7 @@ Every backend feature ships with tests for both behavior and security:
 Unit tests cover provider-neutral logo mapping, local asset availability and backward-compatible arena identity parsing (`model-brand.test.ts`). Browser homepage tests also verify local logo loading for routed and direct model entries.
 
 Unit tests use Node's built-in runner (`pnpm test`, Node 24+) for protocol validation, including the optional arena `participants` (older messages without them still parse).
-Playwright is the only new frontend test dependency: it exercises real browser
+Playwright and `@axe-core/playwright` are frontend test dependencies: it exercises real browser
 cookies, SSR, React Strict Mode effects, and WebSockets that lint/build cannot.
 
 ```bash
@@ -205,3 +205,28 @@ persistent volume, shutdown behavior, or physical BILC platform integration.
 [DEPLOYMENT.md](DEPLOYMENT.md#launch-verification-in-the-target-environment)
 owns that checklist and the staging requirements. Full browser reconnect snapshots,
 later debate phases, and signed self-updates remain planned.
+
+### UI quality checks
+
+`ui-polish.spec.ts` covers keyboard skip navigation and active account navigation,
+coach-load retry, plain-text replies outside live regions, and editable oversized
+follow-up drafts with no over-budget request. Homepage tests distinguish sidebar
+navigation from contextual history links and the account menu.
+
+`accessibility.spec.ts` runs WCAG A/AA axe checks on sign-in, Settings and its username
+dialog, lobby and the open model picker in Chromium and WebKit within the normal browser suite. Firefox
+axe checks are explicitly skipped because its process repeatedly crashes during
+axe frame evaluation; existing Firefox keyboard/menu tests remain enabled. Axe supplements manual keyboard,
+focus, screen-reader and reduced-motion reviews; it does not certify accessibility.
+
+`pnpm test:visual` uses a separate Chromium configuration for lobby, model picker,
+prompt editor and verdict screenshots. It uses fixed challenge/socket fixtures,
+a fixed match clock, reduced motion, a fixed viewport and masked random identity.
+Reviewed Chromium/macOS baselines are committed. Run with the same OS/browser version as the baseline. Create or intentionally
+refresh baselines with `pnpm test:visual --update-snapshots`, inspect every PNG
+and diff, then commit the approved platform baselines. CI runs accessibility
+checks; pixel comparisons remain a separate local check because OS font rendering
+differs. Both commands use the isolated destructive test DB harness above.
+
+`@axe-core/playwright` is a development-only dependency needed for browser-level
+accessibility checks; no application runtime dependency is introduced.

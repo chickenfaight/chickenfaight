@@ -51,12 +51,12 @@ export default function DailyChallenge() {
   if (!challenge) return <Skeleton label="Loading today’s challenge…" variant="block" height="h-96" />;
 
   return <div className="grid gap-stack lg:grid-cols-[minmax(0,1fr)_340px]">
-    <section aria-labelledby="challenge-topic" className="panel p-panel animate-rise xl:p-9">
+    <section aria-labelledby="challenge-topic" className="panel min-w-0 wrap-anywhere p-panel animate-rise">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="eyebrow text-gold">{challenge.day}</p>
         <p className="text-xs text-ink-faint">Resets in <span className="stat text-lg text-ink">{untilReset(challenge.resets_at, now)}</span></p>
       </div>
-      <h2 id="challenge-topic" className="mt-4 text-3xl font-black tracking-tight">{challenge.topic?.topic ?? "No topic available today"}</h2>
+      <h2 id="challenge-topic" className="mt-4 text-balance text-3xl font-black tracking-tight">{challenge.topic?.topic ?? "No topic available today"}</h2>
       {challenge.topic && <div className="mt-6 grid gap-3 sm:grid-cols-2">
         {(["pro", "con"] as const).map((side) => <p key={side} className="well p-4 text-sm leading-relaxed"><span className={`stat mb-1.5 block text-base uppercase tracking-wider ${SIDE_TEXT[side]}`}>{SIDE_LABEL[side]}</span>{challenge.topic![`${side}_position`]}</p>)}
       </div>}
@@ -65,9 +65,9 @@ export default function DailyChallenge() {
         <p className="mt-1.5 text-base font-bold">{challenge.twist.title}</p>
         <p className="mt-1 text-sm text-ink-muted">{challenge.twist.description}</p>
       </div>
-      <p className="mt-6 text-sm leading-relaxed text-ink-muted">Finish a challenge match today to earn <span className="stat text-lg text-ink">{challenge.reward_points} points</span>, once per day. You&apos;ll be matched with another player taking today&apos;s challenge on the same model; you&apos;re randomly assigned a side.</p>
+      <p className="mt-6 text-sm leading-relaxed text-ink-muted">Finish a challenge debate today to earn <span className="stat text-lg text-ink">{challenge.reward_points} points</span>, once per day. You&apos;ll be matched with another player taking today&apos;s challenge on the same model; you&apos;re randomly assigned a side.</p>
     </section>
-    <aside aria-label="Join today’s challenge" className="animate-rise [animation-delay:80ms]">
+    <aside aria-label="Join today’s challenge" className="min-w-0 animate-rise [animation-delay:80ms]">
       {challenge.completed
         ? <div className="panel p-panel text-center"><p className="stat text-5xl text-win">Done</p><p className="mt-3 text-sm font-bold">Completed today</p><p className="mt-1 text-xs text-ink-muted">A new challenge starts in {untilReset(challenge.resets_at, now)}.</p></div>
         : <MatchmakingCard daily onChallengeDone={() => setAttempt((n) => n + 1)} />}

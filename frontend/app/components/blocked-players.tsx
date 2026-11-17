@@ -9,13 +9,14 @@ import { profileHref } from "../lib/routes";
 import Avatar from "./avatar";
 import { buttonClass } from "./button";
 import EmptyState from "./empty-state";
+import ErrorState from "./error-state";
 
 const secondary = buttonClass("secondary", "sm");
 
 function Player({ player }: { player: UserPublic }) {
-  return <Link href={profileHref(player.tag)} className="flex min-w-0 items-center gap-3 rounded-control focus-ring">
+  return <Link href={profileHref(player.tag)} className="group flex min-w-0 flex-1 basis-36 items-center gap-3 rounded-control focus-ring">
     <Avatar name={displayName(player)} url={player.avatar_url} size={40} />
-    <span className="min-w-0"><span className="block truncate text-sm font-bold">{displayName(player)}</span><span className="block truncate text-xs text-ink-faint">{player.tag}</span></span>
+    <span className="min-w-0"><span className="block truncate text-sm font-bold group-hover:underline">{displayName(player)}</span><span className="block truncate text-xs text-ink-faint">@{player.tag}</span></span>
   </Link>;
 }
 
@@ -51,23 +52,23 @@ export default function BlockedPlayers({ blocked, shown }: { blocked: UserPage |
   }
 
   const count = blocked === null ? "" : ` (${blocked.next_offset === null ? blocked.items.length : `${shown}+`})`;
-  const row = "flex items-center justify-between gap-4 rounded-inset border border-line bg-inset/50 p-3";
+  const row = "flex flex-wrap items-center justify-between gap-x-4 gap-y-3 rounded-inset border border-line bg-inset/50 p-3";
 
   return <section aria-labelledby="blocked-title" className="panel p-panel">
     <details>
       <summary className="cursor-pointer rounded-control text-sm font-bold focus-ring"><h2 id="blocked-title" className="inline">Blocked players{count}</h2></summary>
       <div className="mt-5">
-        {blocked === null ? <p role="alert" className="text-sm text-danger">Couldn’t load the players you’ve blocked. Try again in a moment.</p>
+        {blocked === null ? <ErrorState compact message="Couldn’t load blocked players." onRetry={() => { if (!busy) startRefresh(() => router.refresh()); }} />
           : blocked.items.length === 0 ? <EmptyState title="You haven’t blocked anyone." />
           : <>
               <ul className="grid gap-2">{blocked.items.map((player) => <li key={player.id} className={row}>
                 <Player player={player} />
                 {/* aria-disabled, not disabled: Firefox restores a stale disabled state on reload (frontend/AGENTS.md). */}
-                <button type="button" aria-disabled={busy} onClick={() => void unblock(player.id)} className={secondary}>Unblock</button>
+                <button type="button" aria-label={`Unblock ${displayName(player)}`} aria-disabled={busy} onClick={() => void unblock(player.id)} className={secondary}>Unblock</button>
               </li>)}</ul>
               {blocked.next_offset !== null && <p className="mt-2 text-xs text-ink-faint">Showing your newest {shown}.</p>}
             </>}
-        <p aria-live="polite" className="mt-2 text-xs text-danger">{error}</p>
+        <p aria-live="polite" className={`mt-2 text-xs ${error ? "text-danger" : "text-ink-faint"}`}>{error || (busy ? "Updating blocked players…" : "")}</p>
       </div>
     </details>
   </section>;

@@ -87,8 +87,9 @@ function PairPanel({ code, error, creating, onCreate }: { code: PairingCode | nu
           ? <BilcCommands args={[`pair ${grouped(code.code)}`, `model set --model ${MODEL}`, "run"]} />
           // aria-disabled, not disabled: Firefox restores a stale disabled state on reload (frontend/AGENTS.md).
           : <Button variant="primary" onClick={() => { if (!creating) onCreate(); }} aria-disabled={creating}>{creating ? "Getting a code…" : code ? "Get a new code" : "Get pairing code"}</Button>}
-        <p aria-live="polite" className="mt-2 min-h-4 text-xs text-ink-faint">
-          {error ? <span className="text-danger">{error}</span> : active ? <>Expires in <span className="stat text-base text-ink">{Math.floor(left / 60)}:{String(left % 60).padStart(2, "0")}</span>. Your device shows up below once it pairs.</> : code ? "That code expired." : ""}
+        {active && !error && <p className="mt-2 text-xs text-ink-faint">Expires in <span role="timer" aria-label="Pairing code expires in" aria-live="off" className="stat text-base text-ink">{Math.floor(left / 60)}:{String(left % 60).padStart(2, "0")}</span>.</p>}
+        <p aria-live="polite" className={`min-h-4 text-xs ${error ? "mt-2 text-danger" : "text-ink-faint"}`}>
+          {error || (active ? "Your device shows up below once it pairs." : code ? "That code expired." : "")}
         </p>
       </div></li>
     </ol>
@@ -105,21 +106,22 @@ function DeviceRow({ device, onRevoke }: { device: BilcDevice; onRevoke: (id: st
   const [confirming, setConfirming] = useState(false);
   const [revoking, setRevoking] = useState(false);
   const status = STATUS[device.status];
-  return <li className="flex items-center justify-between gap-4 border-b border-line py-4 last:border-0">
-    <div className="flex min-w-0 items-center gap-3">
+  return <li className="flex min-w-0 flex-wrap items-center justify-between gap-4 border-b border-line py-4 last:border-0">
+    <div className="flex min-w-0 flex-1 basis-72 items-start gap-3">
       <span className={`stat w-24 shrink-0 rounded-control border py-1 text-center text-sm uppercase ${status.tone}`}>{status.label}</span>
       <div className="min-w-0">
-        <p className="truncate text-sm font-semibold">{device.name}</p>
-        <p className="truncate text-xs text-ink-faint">
-          {device.model_name ?? "no model reported yet"}{device.size_class && ` (${SIZE_CLASS_LABELS[device.size_class]})`} · {device.platform} · BILC {device.client_version}
+        <p className="wrap-anywhere text-sm font-semibold">{device.name}</p>
+        <p className="mt-1 wrap-anywhere text-xs text-ink-muted">{device.model_name ?? "no model reported yet"}{device.size_class && ` (${SIZE_CLASS_LABELS[device.size_class]})`}</p>
+        <p className="mt-1 wrap-anywhere text-xs text-ink-faint">
+          {device.platform} · BILC {device.client_version}
           {device.last_seen_at && ` · last seen ${new Date(device.last_seen_at).toLocaleString()}`}
         </p>
       </div>
     </div>
     {confirming
-      ? <div className="flex shrink-0 gap-2">
-          <Button size="sm" disabled={revoking} onClick={() => setConfirming(false)}>Keep</Button>
-          <Button size="sm" variant="primary" disabled={revoking} onClick={async () => { setRevoking(true); await onRevoke(device.id); setRevoking(false); setConfirming(false); }}>{revoking ? "Revoking…" : "Revoke device"}</Button>
+      ? <div className="flex flex-wrap gap-2">
+          <Button size="sm" aria-disabled={revoking} onClick={() => { if (!revoking) setConfirming(false); }}>Keep</Button>
+          <Button size="sm" variant="primary" aria-disabled={revoking} onClick={async () => { if (revoking) return; setRevoking(true); await onRevoke(device.id); setRevoking(false); setConfirming(false); }}>{revoking ? "Revoking…" : "Revoke device"}</Button>
         </div>
       : <Button size="sm" variant="danger" onClick={() => setConfirming(true)}>Revoke…</Button>}
   </li>;

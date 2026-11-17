@@ -7,12 +7,12 @@ export default function AuthLayout({ eyebrow, heading, intro, children }: { eyeb
   return (
     <div className="flex min-h-svh flex-col bg-canvas font-sans text-ink">
       <header className="flex h-16 shrink-0 items-center justify-between border-b border-line px-gutter xl:h-[76px]">
-        <Link href="/" aria-label="Chicken fAIght home" className="rounded-control focus-ring"><Wordmark /></Link>
-        <Link href="/" className="rounded-control text-xs font-medium text-ink-muted transition-colors duration-(--duration-fast) hover:text-ink focus-ring">← Back to the lobby</Link>
+        <Link href="/" aria-label="chickenfAIght. home" className="rounded-control focus-ring"><Wordmark /></Link>
+        <Link href="/" className="rounded-control text-right text-xs font-medium text-ink-muted transition-colors duration-(--duration-fast) hover:text-ink focus-ring">Back to the lobby</Link>
       </header>
       <main className="mx-auto flex w-full max-w-[1120px] flex-1 items-center px-gutter py-10">
-        <div className="grid w-full items-center gap-12 md:grid-cols-[1.1fr_1fr] lg:gap-20">
-          <section aria-labelledby="arena-heading" className="animate-rise">
+        <div className="grid w-full min-w-0 items-center gap-12 md:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)] lg:gap-20">
+          <section aria-labelledby="arena-heading" className="min-w-0 animate-rise">
             <p className="eyebrow mb-5 text-accent-ink">The debate arena</p>
             <h1 id="arena-heading" className="headline text-7xl leading-[0.92]">Small prompt.<br /><span className="text-accent">Big fight.</span></h1>
             <p className="mt-6 max-w-sm text-sm leading-7 text-ink-muted">Your words. Your strategy. Your AI.<br />Take a side and give your model something worth arguing about.</p>
@@ -26,16 +26,16 @@ export default function AuthLayout({ eyebrow, heading, intro, children }: { eyeb
               ))}
             </ol>
           </section>
-          <section aria-labelledby="auth-heading" className="panel p-panel animate-rise [animation-delay:80ms] lg:p-10">
+          <section aria-labelledby="auth-heading" className="panel min-w-0 p-panel animate-rise [animation-delay:80ms] lg:p-10">
             <p className="eyebrow text-accent-ink">{eyebrow}</p>
-            <h2 id="auth-heading" className="mt-3 text-3xl font-bold tracking-tight">{heading}</h2>
+            <h2 id="auth-heading" className="mt-3 text-3xl font-bold tracking-tight text-balance">{heading}</h2>
             <p className="mt-3 text-sm leading-6 text-ink-muted">{intro}</p>
             {children}
             <div className="eyebrow mt-8 border-t border-line pt-5 text-center">One prompt. Two sides. One winner.</div>
           </section>
         </div>
       </main>
-      <footer className="flex shrink-0 items-center justify-between gap-4 px-gutter py-5 text-xs text-ink-faint"><span>All brains. A little bit of bird.</span><span>Chicken fAIght <span className="mx-2 text-line-strong">/</span> Made for a good argument.</span></footer>
+      <footer className="flex shrink-0 flex-wrap items-center justify-between gap-x-6 gap-y-2 px-gutter py-5 text-xs text-ink-faint"><span>All brains. A little bit of bird.</span><span>Chicken fAIght <span className="mx-2 text-line-strong">/</span> Made for a good argument.</span></footer>
     </div>
   );
 }

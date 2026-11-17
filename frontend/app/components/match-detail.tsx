@@ -16,8 +16,8 @@ function Argument({ match, side }: { match: Match; side: Side }) {
   const turn = match.turns.find((candidate) => candidate.side === side);
   const position = side === "pro" ? match.pro_position : match.con_position;
   return <section aria-label={`${SIDE_LABEL[side]} argument`} className="panel min-w-0 p-panel">
-    <p className="text-xs font-bold uppercase tracking-wider"><span className={SIDE_TEXT[side]}>{SIDE_LABEL[side]}</span> <span className="text-ink-muted">· {side === match.you ? "You" : opponentName(match)}</span></p>
-    {position && <p className="mt-1 text-xs text-ink-faint">{position}</p>}
+    <p className="wrap-anywhere text-xs font-bold uppercase tracking-wider"><span className={SIDE_TEXT[side]}>{SIDE_LABEL[side]}</span> <span className="text-ink-muted">· {side === match.you ? "You" : opponentName(match)}</span></p>
+    {position && <p className="mt-1 wrap-anywhere text-xs text-ink-faint">{position}</p>}
     {/* Model output is untrusted: plain text only. */}
     {turn ? <p className="mt-4 whitespace-pre-wrap break-words text-sm leading-relaxed">{turn.content}</p>
       : <p className="mt-4 text-sm text-ink-faint">No argument was generated.</p>}
@@ -59,7 +59,7 @@ export default function MatchDetail({ matchId }: { matchId: string }) {
     return () => controller.abort();
   }, [matchId, attempt]);
 
-  const back = <Link href="/matches" className="rounded-control text-xs text-ink-muted transition-colors duration-(--duration-fast) hover:text-ink focus-ring">← Match history</Link>;
+  const back = <Link href="/matches" className="rounded-control text-xs text-ink-muted transition-colors duration-(--duration-fast) hover:text-ink focus-ring">← Debate history</Link>;
   if (phase !== "ready" || !match) return <>
     {back}
     <div aria-live="polite" className="mt-4">
@@ -72,18 +72,18 @@ export default function MatchDetail({ matchId }: { matchId: string }) {
   const change = eloChange(match);
   return <>
     {back}
-    <section aria-labelledby="match-title" className="panel mt-4 p-panel">
+    <section aria-labelledby="match-title" className="panel mt-4 min-w-0 p-panel">
       <div className="flex flex-wrap items-center gap-4">
         <h1 id="match-title" className="headline text-5xl">{HEADING[match.outcome]}</h1>
         <span className={`stat rounded-control border px-3 py-1 text-base uppercase ${OUTCOME_COLOR[match.outcome]}`}>{OUTCOME_LABEL[match.outcome]}</span>
         {change !== null && <span className={`stat text-2xl ${eloChangeColor(change)}`}>{formatEloChange(change)}</span>}
       </div>
-      <p className="mt-3 text-lg font-semibold">{match.topic ?? "Topic removed"}</p>
+      <p className="mt-3 wrap-anywhere text-lg font-semibold">{match.topic ?? "Topic removed"}</p>
       <div className="well mt-6 px-5 py-5"><FaceOff you={player(match, match.you)} opponent={player(match, otherSide(match.you))} label="Who debated" /></div>
-      <dl className="mt-6 grid grid-cols-2 gap-x-6 gap-y-3 text-sm xl:grid-cols-3">
-        <div><dt className="eyebrow">Your model</dt><dd className="mt-1 truncate">{modelLabel(match)}</dd></div>
-        <div><dt className="eyebrow">Played</dt><dd className="mt-1 truncate">{new Date(match.ended_at).toLocaleString()}</dd></div>
-        <div><dt className="eyebrow">Ended</dt><dd className="mt-1">{endReasonLabel(match)}</dd></div>
+      <dl className="mt-6 grid gap-x-6 gap-y-4 text-sm sm:grid-cols-2 xl:grid-cols-3">
+        <div className="min-w-0"><dt className="eyebrow">Your model</dt><dd className="mt-1 wrap-anywhere">{modelLabel(match)}</dd></div>
+        <div className="min-w-0"><dt className="eyebrow">Played</dt><dd className="mt-1"><time dateTime={match.ended_at}>{new Date(match.ended_at).toLocaleString()}</time></dd></div>
+        <div className="min-w-0"><dt className="eyebrow">Ended</dt><dd className="mt-1">{endReasonLabel(match)}</dd></div>
       </dl>
       {match.verdict_reasoning && <div className="mt-6 border-t border-line pt-5">
         <h2 className="text-sm font-bold">{match.end_reason === "judged" ? "The judge’s verdict" : "Why it ended"}</h2>

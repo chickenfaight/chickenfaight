@@ -83,12 +83,12 @@ export default function SearchResults({ query }: { query: string }) {
 
   return (
     <>
-      <ul className="grid grid-cols-[repeat(auto-fill,minmax(240px,1fr))] gap-3">
+      <ul className="grid grid-cols-[repeat(auto-fill,minmax(min(100%,240px),1fr))] gap-3">
         {items.map((user, index) => (
           <li key={user.id} className="animate-rise" style={{ animationDelay: `${Math.min(index, 12) * 30}ms` }}>
-            <Link href={profileHref(user.tag)} className="panel flex items-center gap-4 p-4 transition-[border-color,transform] duration-(--duration-fast) hover:-translate-y-0.5 hover:border-line-strong focus-ring">
+            <Link href={profileHref(user.tag)} className="panel group flex min-w-0 items-center gap-4 p-4 transition-[border-color,background-color] duration-(--duration-fast) hover:border-line-strong hover:bg-surface-raised focus-ring">
               <Avatar name={displayName(user)} url={user.avatar_url} size={44} />
-              <span className="min-w-0"><span className="block truncate text-sm font-bold">{displayName(user)}</span><span className="block truncate text-xs text-ink-faint">{user.tag}</span></span>
+              <span className="min-w-0"><span className="block truncate text-sm font-bold group-hover:underline">{displayName(user)}</span><span className="block truncate text-xs text-ink-faint">@{user.tag}</span></span>
             </Link>
           </li>
         ))}
