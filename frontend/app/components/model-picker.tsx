@@ -3,12 +3,23 @@
 import { useId, useRef, useState, type KeyboardEvent } from "react";
 import type { Arena } from "../lib/protocol";
 import Icon from "./line-icon";
+import { modelBrand } from "../lib/model-brand";
+import Image from "next/image";
 
-// Keep the catalogue's names (including any published size) rather than guessing model metadata.
+function ModelLogo({ arena }: { arena: Arena }) {
+  const brand = modelBrand(arena);
+  return <span aria-hidden="true" className="flex h-9 w-9 shrink-0 items-center justify-center rounded-control border border-line bg-inset">
+    {brand ? <Image src={`/model-logos/${brand.logo}.svg`} alt="" width={22} height={22} unoptimized className={`h-5 w-5 ${["openai", "anthropic", "grok"].includes(brand.logo) ? "brightness-0 invert" : ""}`} />
+      : <Icon name={arena.id === "quick" ? "bolt" : "chip"} className="h-5 w-5 text-ink-muted" />}
+  </span>;
+}
+
 function modelLabel(arena: Arena) {
   const parts = arena.display_name.split(": ");
+  const brand = modelBrand(arena);
+  const author = parts.length > 1 ? parts[0] : brand?.name ?? "Cloud model";
   return { name: parts.length > 1 ? parts.slice(1).join(": ") : arena.display_name,
-    detail: arena.id === "quick" ? "Find an available cloud arena" : parts.length > 1 ? parts[0] : "Cloud model" };
+    detail: arena.id === "quick" ? "Find an available cloud arena" : author };
 }
 
 export default function ModelPicker({ arenas, value, locked, queueLabel, placeholder, onChange }: {
@@ -78,7 +89,8 @@ export default function ModelPicker({ arenas, value, locked, queueLabel, placeho
       aria-activedescendant={open ? `${id}-${active}` : undefined} data-value={value}
       onKeyDown={keyDown} onClick={() => { if (open) popup.current?.hidePopover(); else show(); }}
       className="focus-ring flex min-h-20 w-full items-center justify-between gap-3 rounded-control border border-line-strong bg-inset px-4 py-3 text-left transition-colors hover:border-ink-faint aria-disabled:opacity-60">
-      <span className="min-w-0"><span className="block break-words text-sm font-semibold">{queueLabel ?? label?.name ?? placeholder}</span>
+      {!queueLabel && selected && <ModelLogo arena={selected} />}
+      <span className="min-w-0 flex-1"><span className="block break-words text-sm font-semibold">{queueLabel ?? label?.name ?? placeholder}</span>
         {!queueLabel && label && <span className="mt-1 block text-xs text-ink-muted">{label.detail}</span>}</span>
       <Icon name="chevron" className="h-4 w-4 shrink-0 text-ink-muted" />
     </button>
@@ -91,7 +103,8 @@ export default function ModelPicker({ arenas, value, locked, queueLabel, placeho
         return <div key={arena.id} id={`${id}-${index}`} role="option" aria-label={arena.display_name} aria-selected={arena.id === value} data-value={arena.id}
           onPointerMove={event => { if (event.movementX || event.movementY) setActive(index); }} onMouseDown={event => event.preventDefault()} onClick={() => choose(index)}
           className={`flex cursor-pointer items-center justify-between gap-4 rounded-control px-3 py-3 ${index === active ? "bg-surface-raised outline outline-1 -outline-offset-1 outline-line-strong" : ""} ${arena.id === value ? "text-accent-ink" : ""}`}>
-          <span className="min-w-0"><span className="block break-words text-sm font-semibold">{item.name}</span><span className="mt-1 block text-xs text-ink-muted">{item.detail}</span></span>
+          <ModelLogo arena={arena} />
+          <span className="min-w-0 flex-1"><span className="block break-words text-sm font-semibold">{item.name}</span><span className="mt-1 block text-xs text-ink-muted">{item.detail}</span></span>
           {arena.id === value && <span className="text-xs font-semibold">Selected</span>}
         </div>;
       })}

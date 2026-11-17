@@ -121,7 +121,7 @@ The homepage reads `/v1/users/me/arena-stats` via `app/services/arena_stats.py`:
 
 ## Matchmaking and Elo
 
-The arena repository lists active `models` rows. `ArenaService.list_active()` validates each row as `ArenaRead`, returning the model's UUID `id`, `display_name`, and `kind` defaulted to `provided`, then appends the BYOM arena (`BYOM_ARENA`, fixed `BYOM_ARENA_ID`, in `app/services/arena.py`). `GET /v1/arenas` exposes this list to signed-in users.
+The arena repository joins active `models` rows to their provider. `ArenaService.list_active()` returns each model's UUID `id`, `display_name`, `kind` defaulted to `provided`, plus optional presentation identity `provider_slug` (the database provider slug) and `model_slug` (the exact API model ID). Identity metadata lets the frontend recognize the model author without guessing from display names; it does not change inference routing. It then appends the BYOM arena, whose identity fields are null (`BYOM_ARENA`, fixed `BYOM_ARENA_ID`, in `app/services/arena.py`). `GET /v1/arenas` exposes this list to signed-in users.
 
 Cloud matchmaking keeps separate queues for each model UUID and daily challenge date. The queue endpoint checks that the model is active and its ladder exists. Each entry holds a user UUID, enqueue time, and Elo. A user can occupy one queue or match at a time. Each pass takes the first eligible pair in queue order. A pair qualifies if its Elo gap is under 50 or the earlier player has waited more than 15 seconds. When no pair qualifies, the queue waits for the next pass.
 

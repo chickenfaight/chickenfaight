@@ -19,8 +19,11 @@ class ArenaService:
         self.arenas = ArenaRepository(session)
 
     async def list_active(self) -> list[ArenaRead]:
-        arenas: list[Model] = await self.arenas.get_active_arenas()
-        return [ArenaRead.model_validate(arena) for arena in arenas] + [BYOM_ARENA]
+        arenas = await self.arenas.get_active_arenas()
+        return [ArenaRead(
+            id=model.id, display_name=model.display_name,
+            provider_slug=provider_slug, model_slug=model.api_model_id,
+        ) for model, provider_slug in arenas] + [BYOM_ARENA]
 
     async def require_active(self, model_id: UUID) -> None:
         await self.get_active(model_id)

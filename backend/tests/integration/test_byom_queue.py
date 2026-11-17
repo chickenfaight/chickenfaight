@@ -30,7 +30,35 @@ def connect(device_id: str, owner, parameter_size="14B"):
 async def test_arena_list_includes_byom(client, log_in, make_user):
     log_in(await make_user("viewer"))
     arenas = (await client.get("/v1/arenas")).json()
-    assert {"id": str(BYOM_ARENA_ID), "display_name": "Bring your own model", "kind": "byom"} in arenas
+    assert {"id": str(BYOM_ARENA_ID), "display_name": "Bring your own model", "kind": "byom", "provider_slug": None, "model_slug": None} in arenas
+
+
+@pytest.mark.parametrize(("provider_slug", "model_slug"), [
+    ("openrouter", "anthropic/claude-example"),
+    ("anthropic", "claude-example"),
+])
+async def test_cloud_arena_identity_uses_database_fields(
+    client, log_in, make_user, make_model, db_session, provider_slug, model_slug,
+):
+    from app.models import Provider
+
+    model = await make_model()
+    provider = await db_session.get(Provider, model.provider_id)
+    provider.slug = provider_slug
+    model.api_model_id = model_slug
+    # Display text need not identify the author, and must not determine the logo.
+    model.display_name = "Friendly arena name"
+    await db_session.commit()
+    inactive = await make_model(is_active=False)
+    log_in(await make_user("viewer"))
+    response = await client.get("/v1/arenas")
+    assert response.status_code == 200
+    arenas = response.json()
+    assert {
+        "id": str(model.id), "display_name": "Friendly arena name", "kind": "provided",
+        "provider_slug": provider_slug, "model_slug": model_slug,
+    } in arenas
+    assert str(inactive.id) not in [arena["id"] for arena in arenas]
 
 
 async def test_queue_with_an_idle_device(client, log_in, make_user):

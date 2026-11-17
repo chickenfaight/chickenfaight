@@ -120,3 +120,26 @@ test("BYOM shows setup instead of allowing an unready device into a match and re
   await expect(page.getByRole("combobox", { name: "AI model", exact: true })).toHaveAttribute("data-value", modelId);
   await expect(page.getByRole("button", { name: "Find match", exact: true })).toHaveAttribute("aria-disabled", "false");
 });
+
+test("local logos load for routed and first-party models with a neutral unknown-author fallback", async ({ page, context }) => {
+  await account(context);
+  await page.route("**/v1/arenas", route => route.fulfill({ json: [
+    { id: modelId, display_name: "OpenAI: GPT example", kind: "provided", provider_slug: "openrouter", model_slug: "openai/gpt-example" },
+    { id: failedModelId, display_name: "Claude example", kind: "provided", provider_slug: "anthropic", model_slug: "claude-example" },
+    { id: "33333333-3333-4333-8333-333333333333", display_name: "Unknown model", kind: "provided", provider_slug: "openrouter", model_slug: "unknown/model" },
+  ] }));
+  await page.goto("/");
+  const picker = page.getByRole("combobox", { name: "AI model", exact: true });
+  await expect(picker).toHaveAttribute("aria-disabled", "false");
+  await picker.click();
+  const routed = page.getByRole("option", { name: "OpenAI: GPT example", exact: true });
+  await expect(routed).not.toContainText("via OpenRouter");
+  const direct = page.getByRole("option", { name: "Claude example", exact: true });
+  await expect(routed.locator("img")).toHaveAttribute("src", "/model-logos/openai.svg");
+  await expect(direct.locator("img")).toHaveAttribute("src", "/model-logos/anthropic.svg");
+  await expect.poll(() => routed.locator("img").evaluate((img: HTMLImageElement) => img.naturalWidth)).toBeGreaterThan(0);
+  await expect.poll(() => direct.locator("img").evaluate((img: HTMLImageElement) => img.naturalWidth)).toBeGreaterThan(0);
+  await expect(page.getByRole("option", { name: "Unknown model", exact: true }).locator("img")).toHaveCount(0);
+  await direct.click();
+  await expect(picker.locator("img")).toHaveAttribute("src", "/model-logos/anthropic.svg");
+});

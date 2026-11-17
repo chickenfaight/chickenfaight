@@ -149,7 +149,9 @@ class ArenaRead(BaseModel):
 
     id: UUID
     display_name: str
-    kind: Literal["provided", "byom"] = "provided" # TODO default to provided before BYOM is implemented
+    kind: Literal["provided", "byom"] = "provided"
+    provider_slug: str | None = None
+    model_slug: str | None = None
 
 
 class TipsMessage(BaseModel):
