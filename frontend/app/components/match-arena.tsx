@@ -45,7 +45,7 @@ function MatchIntro({ you, opponent, topic, onDone }: { you: FaceOffPlayer; oppo
     className="pointer-events-none fixed inset-0 z-40 flex flex-col items-center justify-center gap-10 bg-canvas px-gutter animate-intro">
     <p className="headline text-5xl text-accent animate-stamp">Match found</p>
     <div className="w-full max-w-4xl"><FaceOff you={you} opponent={opponent} size="lg" motion delay={250} /></div>
-    <p className="max-w-2xl text-center text-xl font-semibold text-ink-muted animate-rise" style={at(700)}>{topic}</p>
+    <p className="max-w-2xl wrap-anywhere text-center text-xl font-semibold text-ink-muted animate-rise" style={at(700)}>{topic}</p>
   </div>;
 }
 
@@ -60,7 +60,7 @@ function EloLine({ result, side }: { result: ArenaResult; side: Side }) {
   }
   const note = result.status === "voided" ? "Voided debates don’t change ratings."
     : result.status === "forfeited" ? "Ratings don’t change on a forfeit."
-    : "Your new rating will show in your match history.";
+    : "Your new rating will show in your debate history.";
   return <p className="mt-5 text-sm text-ink-faint animate-rise" style={at(REVEAL.elo)}>{note}</p>;
 }
 
@@ -130,11 +130,11 @@ export default function MatchArena() {
   const header = completed ? "Debate complete" : composing ? "Write your prompt" : state.phase === "connecting" ? "Entering the arena" : "Debate in progress";
 
   return <PageTransition><div className="min-h-svh bg-canvas font-sans text-ink">
-    <header className="grid h-[54px] grid-cols-[1fr_auto_1fr] items-center border-b border-line px-gutter">
+    <header className="grid min-h-[54px] grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 gap-y-2 border-b border-line px-gutter py-3 sm:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] sm:py-0">
       {live
         ? <button type="button" onClick={() => setConfirmLeave(true)} aria-label="Leave the debate and return to the lobby" className="justify-self-start rounded-control focus-ring"><Wordmark /></button>
         : <Link href="/" aria-label="Return to the lobby" className="justify-self-start rounded-control focus-ring"><Wordmark /></Link>}
-      <p role="status" className="eyebrow text-ink-muted">{header}</p>
+      <p role="status" className="eyebrow order-3 col-span-2 text-ink-muted sm:order-none sm:col-span-1">{header}</p>
       <div className="justify-self-end text-sm text-ink-muted">{completed || state.disconnected ? <Link href="/" className="rounded-control transition-colors duration-(--duration-fast) hover:text-ink focus-ring">Leave arena ↗</Link> : <span className="stat text-base uppercase tracking-wider">Arena</span>}</div>
     </header>
     <Modal open={confirmLeave} busy={leaving} onClose={() => setConfirmLeave(false)} title="Leave and forfeit?" width="sm">
@@ -148,7 +148,7 @@ export default function MatchArena() {
     {!state.topic ? <main className="mx-auto flex min-h-[calc(100svh-54px)] max-w-xl flex-col items-center justify-center gap-6 px-gutter text-center">
       {state.error ? <><p role="alert" className="text-sm text-danger">{state.error}</p><Link href="/" className={buttonClass("primary")}>Back to lobby</Link></>
         : <><span aria-hidden="true" className="h-10 w-10 rounded-full border-[3px] border-accent/20 border-t-accent motion-safe:animate-spin" /><p role="status" className="text-sm text-ink-muted">Waiting for both players to enter the arena…</p></>}
-    </main> : <main className={`mx-auto w-full px-gutter pb-14 motion-safe:transition-[padding,max-width] motion-safe:duration-700 motion-safe:ease-out ${completed ? "max-w-[980px] pt-8" : "max-w-[880px] pt-8"}`}>
+    </main> : <main className={`mx-auto w-full min-w-0 px-gutter pb-14 pt-8 ${completed ? "max-w-[980px]" : "max-w-[880px]"}`}>
       {composing && !introDone && <MatchIntro you={me} opponent={them} topic={state.topic.topic} onDone={() => setIntroDone(true)} />}
 
       {!completed && <div className="panel mb-10 px-panel py-4 animate-fade"><FaceOff you={me} opponent={them} /></div>}
@@ -156,15 +156,15 @@ export default function MatchArena() {
       <section aria-labelledby="topic-title" className="text-center">
         <p className="mb-4 break-words text-sm text-ink-muted">Model · <span className="font-semibold text-ink">{state.model_display_name}</span></p>
         <p className="eyebrow">The topic</p>
-        <h1 id="topic-title" className={`mx-auto mt-3 font-bold tracking-tight motion-safe:transition-[font-size,max-width,line-height] motion-safe:duration-700 ${composing ? "max-w-[520px] text-4xl" : "max-w-full text-3xl"}`}>{state.topic.topic}</h1>
+        <h1 id="topic-title" className={`mx-auto mt-3 wrap-anywhere text-balance font-bold tracking-tight ${composing ? "max-w-[520px] text-4xl" : "max-w-full text-3xl"}`}>{state.topic.topic}</h1>
         <p className={`font-semibold uppercase tracking-[0.12em] ${composing ? "mt-6 text-sm" : "mt-4 text-xs"}`}><span className={SIDE_TEXT[state.side]}>{completed ? "You" : "Your side"} · {SIDE_LABEL[state.side]}</span>{completed && <><span className="mx-5 font-normal text-ink-faint">|</span><span className={SIDE_TEXT[opponentSide]}>Opponent · {SIDE_LABEL[opponentSide]}</span></>}</p>
-        <div className={`grid motion-safe:transition-[grid-template-rows,opacity,margin] motion-safe:duration-700 ${composing ? "mt-2 grid-rows-[1fr] opacity-100" : "mt-0 grid-rows-[0fr] opacity-0"}`}><p className="overflow-hidden text-lg text-ink-muted">{state.topic[`${state.side}_position`]}</p></div>
+        <div className={`grid motion-safe:transition-opacity motion-safe:duration-700 ${composing ? "mt-2 grid-rows-[1fr] opacity-100" : "mt-0 grid-rows-[0fr] opacity-0"}`}><p className="overflow-hidden wrap-anywhere text-lg text-ink-muted">{state.topic[`${state.side}_position`]}</p></div>
       </section>
 
       {state.error && <p role="alert" className="mt-6 text-center text-sm text-danger">{state.error}</p>}
 
       {composing ? <form onSubmit={submit} className="mt-10">
-        <div className="mb-4 flex items-end justify-between gap-4"><label htmlFor="player-prompt" className="text-2xl font-semibold tracking-tight">Give your AI a strategy.</label><Countdown deadline={state.deadline} /></div>
+        <div className="mb-4 flex flex-wrap items-end justify-between gap-4"><label htmlFor="player-prompt" className="text-2xl font-semibold tracking-tight">Give your AI a strategy.</label><Countdown deadline={state.deadline} /></div>
         {state.challenge && <p className="mb-4 rounded-inset border border-gold/30 bg-gold/[0.06] px-5 py-3 text-sm text-ink"><span className="font-bold text-gold">Daily challenge · {state.challenge.title}.</span> {state.challenge.description}</p>}
         <textarea ref={textarea} id="player-prompt" autoFocus value={draft} onChange={event => setDraft(event.target.value)} maxLength={promptLimit} disabled={state.disconnected} placeholder="How should your AI make its case?" className="block h-[210px] w-full resize-none rounded-panel border border-line-strong bg-inset px-6 py-5 text-lg leading-relaxed text-ink shadow-pressed placeholder:text-ink-faint transition-colors duration-(--duration-fast) hover:border-ink-faint focus-ring" aria-describedby="prompt-privacy prompt-count" />
         <div className="mt-4 flex items-start justify-between"><p id="prompt-count" className="stat text-base text-ink-muted">{draft.length} / {promptLimit}</p><Button type="submit" variant="primary" size="lg" className="px-9" disabled={!draft.trim() || state.disconnected}>Submit prompt</Button></div>
@@ -186,7 +186,7 @@ export default function MatchArena() {
             {(["you", "opponent"] as const).map(value => <button key={value} type="button" id={`${value}-tab`} role="tab" aria-selected={tab === value} aria-controls="argument-panel" tabIndex={tab === value ? 0 : -1} onClick={() => setTab(value)} onKeyDown={event => { if (["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) { event.preventDefault(); const next = event.key === "Home" ? "you" : event.key === "End" ? "opponent" : tab === "you" ? "opponent" : "you"; setTab(next); document.getElementById(`${next}-tab`)?.focus(); } }} className={`min-h-14 border-b-2 text-center text-base font-semibold transition-colors duration-(--duration-fast) focus-ring ${tab === value ? "border-accent text-ink" : "border-transparent text-ink-muted hover:text-ink"}`}>{value === "you" ? "Your argument" : "Opponent’s argument"}</button>)}
           </div>
           <div role="tabpanel" id="argument-panel" aria-labelledby={`${tab}-tab`} tabIndex={0} className="rounded-control pt-5 focus-ring">
-            <div className="mb-5 flex items-center gap-3 text-sm font-semibold"><span>{tab === "you" ? me.name : them.name}</span><span className="font-normal text-ink-faint">|</span><span className={`text-xs uppercase tracking-wider ${SIDE_TEXT[viewedSide]}`}>{SIDE_LABEL[viewedSide]}</span></div>
+            <div className="mb-5 flex flex-wrap items-center gap-3 text-sm font-semibold"><span className="min-w-0 wrap-anywhere">{tab === "you" ? me.name : them.name}</span><span className="font-normal text-ink-faint">|</span><span className={`text-xs uppercase tracking-wider ${SIDE_TEXT[viewedSide]}`}>{SIDE_LABEL[viewedSide]}</span></div>
             {tab === "you" && state.prompt !== null && <div className="mb-4 border-b border-line pb-4"><h3 className="eyebrow">Your prompt</h3><p className="mt-1.5 whitespace-pre-wrap break-words text-base leading-relaxed">{state.prompt}</p></div>}
             <h3 className="eyebrow">{tab === "you" ? "Your AI’s argument" : "Opponent’s AI’s argument"}</h3>
             <div className="mt-2 space-y-3 text-lg leading-relaxed">{(result.arguments[viewedSide] || "No argument was generated.").split(/\n\s*\n/).map((paragraph, index) => <p key={index} className="whitespace-pre-wrap break-words">{paragraph}</p>)}</div>

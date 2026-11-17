@@ -8,7 +8,7 @@ import { displayName, parseLadders, parseLeaderboard, type Ladder, type Leaderbo
 import { profileHref } from "../lib/routes";
 import { savedArena } from "../lib/selected-arena";
 import Avatar from "./avatar";
-import Button from "./button";
+import Button, { buttonClass } from "./button";
 import EmptyState from "./empty-state";
 import ErrorState from "./error-state";
 import PageHeader from "./page-header";
@@ -94,7 +94,7 @@ function StandingsTable({ ladder }: { ladder: Ladder }) {
   if (entries.length === 0) {
     return status === "loading" ? <Skeleton label="Loading rankings…" variant="rows" count={6} />
       : status === "error" ? <ErrorState message="Couldn’t load rankings." onRetry={loadMore} />
-      : <EmptyState title="No ranked players in this arena yet.">Finish a debate on this model to claim the top spot.</EmptyState>;
+      : <EmptyState title="No ranked players in this arena yet." action={<Link href="/" className={buttonClass("primary")}>Find a debate</Link>}>Finish a debate in this arena to earn your first rating.</EmptyState>;
   }
 
   const podium = entries.slice(0, 3);
@@ -104,27 +104,28 @@ function StandingsTable({ ladder }: { ladder: Ladder }) {
       <Podium entries={podium} meId={meId} />
       {rest.length > 0 && (
         <div className="panel mt-stack overflow-hidden">
-          <table className="w-full text-left text-sm">
+          <table className="w-full table-fixed text-left text-sm">
             <caption className="sr-only">Rankings for {ladder.display_name}, from fourth place</caption>
             <thead className="eyebrow">
               <tr>
-                <th scope="col" className="w-24 px-5 py-3.5 font-semibold">Rank</th>
+                <th scope="col" className="w-16 px-3 py-3.5 font-semibold sm:w-24 sm:px-5">Rank</th>
                 <th scope="col" className="px-3 py-3.5 font-semibold">Player</th>
-                <th scope="col" className="w-32 px-5 py-3.5 text-right font-semibold">Elo</th>
+                <th scope="col" className="w-20 px-3 py-3.5 text-right font-semibold sm:w-32 sm:px-5">Elo</th>
               </tr>
             </thead>
             <tbody>
               {rest.map(({ rank, user, rating }) => {
                 const me = user.id === meId;
                 return <tr key={user.id} className={`border-t border-line transition-colors duration-(--duration-fast) ${me ? "bg-accent-wash" : "hover:bg-white/[0.025]"}`}>
-                  <td className="stat px-5 py-2.5 text-xl text-ink-muted">{rank}</td>
+                  <td className="stat px-3 py-3 text-xl text-ink-muted sm:px-5">{rank}</td>
                   <td className="px-3 py-2.5">
-                    <Link href={profileHref(user.tag)} prefetch={false} className="inline-flex items-center gap-3 rounded-control focus-ring">
-                      <Avatar name={displayName(user)} url={user.avatar_url} size={34} />
-                      <span><span className="block font-semibold hover:underline">{displayName(user)}{me && <span className="eyebrow ml-2 text-accent-ink">You</span>}</span><span className="block text-xs text-ink-faint">@{user.tag}</span></span>
+                    <Link href={profileHref(user.tag)} prefetch={false} className="group flex min-w-0 items-center gap-3 rounded-control focus-ring">
+                      <span className="hidden sm:block"><Avatar name={displayName(user)} url={user.avatar_url} size={34} /></span>
+                      <span className="min-w-0"><span className="block truncate font-semibold group-hover:underline">{displayName(user)}</span><span className="block truncate text-xs text-ink-faint">@{user.tag}</span></span>
+                      {me && <span className="shrink-0 text-xs font-semibold text-accent-ink">You</span>}
                     </Link>
                   </td>
-                  <td className="stat px-5 py-2.5 text-right text-2xl">{rating.elo}</td>
+                  <td className="stat px-3 py-3 text-right text-2xl sm:px-5">{rating.elo}</td>
                 </tr>;
               })}
             </tbody>
@@ -149,11 +150,11 @@ const MEDAL = [
 // The top three, first place raised in the middle. Read in rank order; laid out 2-1-3.
 function Podium({ entries, meId }: { entries: LeaderboardEntry[]; meId: string | null }) {
   return (
-    <ol aria-label="Top three" className="grid items-end gap-stack pt-6 lg:grid-cols-3">
+    <ol aria-label="Top three" className="grid grid-cols-1 items-end gap-stack pt-6 lg:grid-cols-3">
       {entries.map(({ rank, user, rating }, index) => {
         const medal = MEDAL[index];
         const me = user.id === meId;
-        return <li key={user.id} className={`animate-rise ${index === 0 ? "lg:order-2" : index === 1 ? "lg:order-1" : "lg:order-3"}`} style={{ animationDelay: `${[0, 90, 180][index]}ms` }}>
+        return <li key={user.id} className={`min-w-0 animate-rise ${index === 0 ? "lg:order-2" : index === 1 ? "lg:order-1" : "lg:order-3"}`} style={{ animationDelay: `${[0, 90, 180][index]}ms` }}>
           <Link href={profileHref(user.tag)} prefetch={false}
             className={`panel group flex flex-col items-center px-5 pb-7 pt-7 text-center transition-[transform,border-color] duration-(--duration-base) hover:-translate-y-1 focus-ring ${medal.border} ${medal.lift} ${me ? "bg-accent-wash" : ""}`}>
             <span className={`stat text-6xl ${medal.text}`}><span className="sr-only">Rank </span>{rank}</span>
@@ -201,10 +202,10 @@ export default function Leaderboards() {
   return (
     <>
       <PageHeader id="leaderboards-title" eyebrow="Rankings" title="Leaderboards" description="The top 50 players on each arena’s ladder. Every model keeps its own Elo."
-        actions={ladder && <label className="flex items-center gap-3 text-sm font-semibold">
+        actions={ladder && <label className="flex min-w-0 flex-wrap items-center gap-3 text-sm font-semibold">
           Arena
           <select value={ladder.slug} onChange={(event) => setSelected(event.target.value)} autoComplete="off"
-            className="h-11 w-80 max-w-full rounded-control border border-line-strong bg-inset px-3 text-sm scheme-dark transition-colors duration-(--duration-fast) hover:border-ink-faint focus-ring">
+            className="h-11 w-80 max-w-full min-w-0 rounded-control border border-line-strong bg-inset px-3 text-sm scheme-dark transition-colors duration-(--duration-fast) hover:border-ink-faint focus-ring">
             {catalog?.map((item) => (
               <option key={item.slug} value={item.slug}>{item.kind === "byom" ? "Bring your own model (BYOM)" : item.display_name}</option>
             ))}

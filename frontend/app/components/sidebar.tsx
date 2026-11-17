@@ -15,7 +15,9 @@ const SECTIONS: { href: string; label: string; icon: IconName; matches: (path: s
   { href: "/challenge", label: "Daily challenge", icon: "bolt", matches: (path: string) => path.startsWith("/challenge") },
   { href: "/tips", label: "Debate tips", icon: "chat", matches: (path: string) => path.startsWith("/tips") },
   { href: "/bilc", label: "BILC", icon: "chip", matches: (path: string) => path.startsWith("/bilc") },
-  { href: PROFILE_ALIAS, label: "Profile", icon: "user", matches: (path: string) => path.startsWith("/profile") || path.startsWith("/matches") },
+  { href: "/matches", label: "Debate history", icon: "history", matches: (path: string) => path.startsWith("/matches") },
+  { href: PROFILE_ALIAS, label: "Profile", icon: "user", matches: (path: string) => path.startsWith("/profile") },
+  { href: "/settings", label: "Settings", icon: "gear", matches: (path: string) => path.startsWith("/settings") },
 ];
 
 // Only for tags the backend lists as admins; the page itself is gated by the backend.
@@ -28,7 +30,7 @@ export default function Sidebar() {
   const { user } = useSession();
   const sections = user?.is_admin ? [...SECTIONS, ADMIN_SECTION] : SECTIONS;
   return (
-    <nav aria-label="Sections" style={{ viewTransitionName: "site-sidebar" }} className="shrink-0 border-r border-line px-2.5 py-5 lg:w-56 lg:px-4">
+    <nav aria-label="Sections" style={{ viewTransitionName: "site-sidebar" }} className="min-h-0 shrink-0 overflow-y-auto border-r border-line px-2.5 py-5 lg:w-56 lg:px-4">
       <ul className="flex flex-col gap-1">
         {sections.map((section) => {
           const current = section.matches(pathname);
@@ -36,7 +38,7 @@ export default function Sidebar() {
           const href = profile && user?.tag ? profileHref(user.tag) : section.href;
           const waiting = profile ? count : 0;
           const waitingLabel = `${waiting} friend ${waiting === 1 ? "request" : "requests"}`;
-          return <li key={section.href}>
+          return <li key={section.href} className={section.href === "/matches" ? "mt-4 border-t border-line pt-4" : undefined}>
             <Link href={href} aria-current={current ? "page" : undefined} title={waiting ? `${section.label}: ${waitingLabel}` : section.label}
               className={`relative flex items-center gap-3 rounded-control px-3 py-2.5 text-sm font-semibold transition-[color,background-color,transform] duration-(--duration-fast) focus-ring active:scale-[0.98] ${current ? "bg-accent-wash text-accent-ink" : "text-ink-muted hover:bg-white/[0.05] hover:text-ink"}`}>
               <Icon name={section.icon} className="h-5 w-5 shrink-0" />

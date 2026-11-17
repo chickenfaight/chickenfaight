@@ -50,8 +50,14 @@ export default function SignupForm() {
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (pending) return;
+    const form = event.currentTarget;
     setTouched({ tag: true, username: true, password: true, confirm: true });
-    if (Object.keys(local).length) return;
+    const firstInvalid = (["tag", "username", "password", "confirm"] as const).find((name) => local[name]);
+    if (firstInvalid) {
+      (form.elements.namedItem(firstInvalid) as HTMLInputElement | null)?.focus();
+      return;
+    }
     controller.current?.abort();
     const current = new AbortController();
     controller.current = current;
@@ -73,6 +79,8 @@ export default function SignupForm() {
         : { form: "Couldn’t create your account. Try again." },
       );
       setPending(false);
+      const invalidField = code.startsWith("TAG_") ? "tag" : code.startsWith("USERNAME_") ? "username" : null;
+      if (invalidField) (form.elements.namedItem(invalidField) as HTMLInputElement | null)?.focus();
     }
   }
 
@@ -95,12 +103,12 @@ export default function SignupForm() {
     <form
       // Without this, a form submitted before the page's JavaScript loads puts the password in the URL.
       method="post"
-      onSubmit={onSubmit} noValidate className="mt-6">
-      {field("tag", "Tag", { autoComplete: "username", maxLength: 64, placeholder: "e.g. Rooster_42" }, "Permanent and unique: 3–24 letters, numbers, or underscores. You sign in with it.")}
+      onSubmit={onSubmit} noValidate aria-busy={pending} className="mt-6">
+      {field("tag", "Tag", { autoComplete: "username", autoCapitalize: "none", spellCheck: false, maxLength: 64, placeholder: "e.g. Rooster_42" }, "Permanent and unique: 3–24 letters, numbers, or underscores. You sign in with it.")}
       {field("username", "Username", { autoComplete: "nickname", maxLength: 64, placeholder: "How others see you" }, "Shown to other players. You can change it anytime.")}
       {field("password", "Password", { type: "password", autoComplete: "new-password", maxLength: MAX_PASSWORD }, `At least ${MIN_PASSWORD} characters.`)}
       {field("confirm", "Confirm password", { type: "password", autoComplete: "new-password", maxLength: MAX_PASSWORD })}
-      <button type="submit" disabled={pending} className={buttonClass("primary", "lg", "mt-2 w-full")}>{pending ? "Creating account…" : "Create account"}</button>
+      <button type="submit" aria-disabled={pending} className={buttonClass("primary", "lg", "mt-2 w-full")}>{pending ? "Creating account…" : "Create account"}</button>
       <p role="alert" className="mt-2 min-h-4 text-xs text-danger">{serverErrors.form}</p>
     </form>
   );

@@ -12,19 +12,22 @@ const challenge = {
   reward_points: 50, completed: false, resets_at: "2026-11-17T00:00:00Z",
 };
 
-test("homepage focuses on play and shows the full challenge with one navigation entry per destination", async ({ page, context }) => {
+test("homepage focuses on play with one sidebar entry per destination and the full challenge", async ({ page, context }) => {
   await account(context);
   await page.route("**/v1/challenge/today", route => route.fulfill({ json: challenge }));
   await page.goto("/");
   await expect(page.getByRole("heading", { name: "Find a debate", exact: true })).toBeVisible();
   await expect(page.getByRole("link", { name: "Play", exact: true })).toHaveCount(1);
   await expect(page.getByRole("link", { name: "Leaderboards", exact: true })).toHaveCount(1);
+  const navigation = page.getByRole("navigation", { name: "Sections", exact: true });
+  await expect(navigation.getByRole("link", { name: "Debate history", exact: true })).toHaveCount(1);
+  await expect(navigation.getByRole("link", { name: "Settings", exact: true })).toHaveCount(1);
   await expect(page.getByRole("button", { name: "How to play", exact: true })).toHaveCount(1);
   await expect(page.getByText(topic, { exact: true })).toBeVisible();
   await expect(page.getByText(twist, { exact: true })).toBeVisible();
   await expect(page.getByText(topic, { exact: true })).not.toHaveCSS("white-space", "nowrap");
   await expect(page.getByText(twist, { exact: true })).not.toHaveCSS("white-space", "nowrap");
-  await expect(page.getByRole("link", { name: /history/i })).toBeVisible();
+  await expect(page.getByRole("main").getByRole("link", { name: /history/i })).toBeVisible();
 });
 
 test("model picker supports keyboard selection, dismissal and remembered selection", async ({ page, context }) => {
@@ -94,7 +97,7 @@ test("Quick Queue sends an automatic model choice and Settings remains in the ac
   });
   await page.goto("/");
   await page.getByRole("button", { name: me.tag, exact: true }).press("Enter");
-  await expect(page.getByRole("link", { name: "Settings", exact: true })).toBeVisible();
+  await expect(page.locator("header").getByRole("link", { name: "Settings", exact: true })).toBeVisible();
   await page.getByRole("heading", { name: "Find a debate", exact: true }).click();
   await selectModel(page, "quick");
   const registration = page.waitForRequest(request => request.url().endsWith("/v1/match/queue") && request.method() === "POST");

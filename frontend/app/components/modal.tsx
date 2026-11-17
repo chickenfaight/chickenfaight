@@ -39,7 +39,7 @@ export default function Modal({ open, title, onClose, children, busy = false, bl
       aria-describedby={description ? descriptionId : undefined}
       onCancel={(event) => { if (busy || blocking) event.preventDefault(); }}
       onClose={onClose}
-      className={`fixed inset-0 m-auto max-h-[calc(100dvh-2rem)] overflow-y-auto rounded-panel border border-line-strong bg-surface p-panel text-ink shadow-overlay open:animate-pop backdrop:animate-fade ${width === "sm" ? "w-[min(440px,calc(100vw-2rem))]" : "w-[min(520px,calc(100vw-2rem))]"}`}
+      className={`fixed inset-0 m-auto max-h-[calc(100dvh-2rem)] overflow-y-auto overscroll-contain rounded-panel border border-line-strong bg-surface p-panel text-ink shadow-overlay open:animate-pop backdrop:animate-fade ${width === "sm" ? "w-[min(440px,calc(100vw-2rem))]" : "w-[min(520px,calc(100vw-2rem))]"}`}
     >
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0">

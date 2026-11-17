@@ -208,8 +208,13 @@ later debate phases, and signed self-updates remain planned.
 
 ### UI quality checks
 
-`accessibility.spec.ts` runs WCAG A/AA axe checks on sign-in, lobby and the open
-model picker in Chromium and WebKit within the normal browser suite. Firefox
+`ui-polish.spec.ts` covers keyboard skip navigation and active account navigation,
+coach-load retry, plain-text replies outside live regions, and editable oversized
+follow-up drafts with no over-budget request. Homepage tests distinguish sidebar
+navigation from contextual history links and the account menu.
+
+`accessibility.spec.ts` runs WCAG A/AA axe checks on sign-in, Settings and its username
+dialog, lobby and the open model picker in Chromium and WebKit within the normal browser suite. Firefox
 axe checks are explicitly skipped because its process repeatedly crashes during
 axe frame evaluation; existing Firefox keyboard/menu tests remain enabled. Axe supplements manual keyboard,
 focus, screen-reader and reduced-motion reviews; it does not certify accessibility.
