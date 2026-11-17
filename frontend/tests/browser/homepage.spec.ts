@@ -132,14 +132,14 @@ test("local logos load for routed and first-party models with a neutral unknown-
   const picker = page.getByRole("combobox", { name: "AI model", exact: true });
   await expect(picker).toHaveAttribute("aria-disabled", "false");
   await picker.click();
-  const routed = page.getByRole("option", { name: "OpenAI: GPT example", exact: true });
+  const routed = page.getByRole("option").and(page.locator(`[data-value="${modelId}"]`));
   await expect(routed).not.toContainText("via OpenRouter");
-  const direct = page.getByRole("option", { name: "Claude example", exact: true });
+  const direct = page.getByRole("option").and(page.locator(`[data-value="${failedModelId}"]`));
   await expect(routed.locator("img")).toHaveAttribute("src", "/model-logos/openai.svg");
   await expect(direct.locator("img")).toHaveAttribute("src", "/model-logos/anthropic.svg");
   await expect.poll(() => routed.locator("img").evaluate((img: HTMLImageElement) => img.naturalWidth)).toBeGreaterThan(0);
   await expect.poll(() => direct.locator("img").evaluate((img: HTMLImageElement) => img.naturalWidth)).toBeGreaterThan(0);
-  await expect(page.getByRole("option", { name: "Unknown model", exact: true }).locator("img")).toHaveCount(0);
+  await expect(page.getByRole("option").filter({ hasText: "Unknown model" }).locator("img")).toHaveCount(0);
   await direct.click();
   await expect(picker.locator("img")).toHaveAttribute("src", "/model-logos/anthropic.svg");
 });

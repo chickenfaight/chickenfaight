@@ -7,7 +7,7 @@ export default function AuthLayout({ eyebrow, heading, intro, children }: { eyeb
   return (
     <div className="flex min-h-svh flex-col bg-canvas font-sans text-ink">
       <header className="flex h-16 shrink-0 items-center justify-between border-b border-line px-gutter xl:h-[76px]">
-        <Link href="/" aria-label="Chicken fAIght home" className="rounded-control focus-ring"><Wordmark /></Link>
+        <Link href="/" aria-label="chickenfAIght. home" className="rounded-control focus-ring"><Wordmark /></Link>
         <Link href="/" className="rounded-control text-xs font-medium text-ink-muted transition-colors duration-(--duration-fast) hover:text-ink focus-ring">← Back to the lobby</Link>
       </header>
       <main className="mx-auto flex w-full max-w-[1120px] flex-1 items-center px-gutter py-10">

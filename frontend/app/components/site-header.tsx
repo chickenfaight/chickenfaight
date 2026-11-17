@@ -25,7 +25,7 @@ export default function SiteHeader({ query }: { current?: "play" | "leaderboards
   return (
     <>
       <header style={{ viewTransitionName: "site-header" }} className="z-20 flex h-16 shrink-0 items-center justify-between gap-3 border-b border-line bg-canvas px-gutter xl:h-[76px]">
-        <Link href="/" className="rounded-control focus-ring" aria-label="Chicken fAIght home"><Wordmark /></Link>
+        <Link href="/" className="rounded-control focus-ring" aria-label="chickenfAIght. home"><Wordmark /></Link>
         <div className="flex min-w-0 items-center gap-3 sm:gap-4">
           <button type="button" onClick={() => setDetail("How to play")} className="shrink-0 rounded-control py-2 text-xs font-semibold text-ink-muted transition-colors duration-(--duration-fast) hover:text-ink focus-ring">How to play</button>
           <div className="max-[640px]:hidden"><UserSearch key={query} initialQuery={query} /></div>

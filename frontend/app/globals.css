@@ -26,8 +26,8 @@
   --ink-faint: oklch(0.65 0.012 275);
 
   /* Action red: fills, hover, red text on charcoal, and translucent washes. */
-  --accent: oklch(0.6 0.2 22);
-  --accent-hover: oklch(0.655 0.195 22);
+  --accent: oklch(0.57 0.2 22);
+  --accent-hover: oklch(0.59 0.195 22);
   --accent-press: oklch(0.55 0.19 22);
   --accent-ink: oklch(0.76 0.14 18);
   --accent-wash: oklch(0.62 0.2 22 / 0.12);

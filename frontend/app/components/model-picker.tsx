@@ -100,7 +100,7 @@ export default function ModelPicker({ arenas, value, locked, queueLabel, placeho
       className="fixed inset-auto m-0 overflow-y-auto overscroll-contain rounded-control border border-line-strong bg-surface p-1.5 text-ink shadow-overlay">
       {arenas.map((arena, index) => {
         const item = modelLabel(arena);
-        return <div key={arena.id} id={`${id}-${index}`} role="option" aria-label={arena.display_name} aria-selected={arena.id === value} data-value={arena.id}
+        return <div key={arena.id} id={`${id}-${index}`} role="option" aria-selected={arena.id === value} data-value={arena.id}
           onPointerMove={event => { if (event.movementX || event.movementY) setActive(index); }} onMouseDown={event => event.preventDefault()} onClick={() => choose(index)}
           className={`flex cursor-pointer items-center justify-between gap-4 rounded-control px-3 py-3 ${index === active ? "bg-surface-raised outline outline-1 -outline-offset-1 outline-line-strong" : ""} ${arena.id === value ? "text-accent-ink" : ""}`}>
           <ModelLogo arena={arena} />

@@ -1,0 +1,2 @@
+/* Hide Next development tools, which are not part of the shipped UI. */
+nextjs-portal { display: none !important; }
