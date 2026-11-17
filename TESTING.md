@@ -137,6 +137,7 @@ Backend dependencies (`uv sync`) and Go (for the Go/Python contract test) are re
   Strict Mode, prompt rejection/retry, heartbeat echo, streamed text, waiting and
   judging transitions, result retention after closure, malformed-message recovery,
   heartbeat silence/unmount cleanup, and resign-before-navigation.
+- `homepage.spec.ts`: focused lobby hierarchy, complete challenge text and retry, single navigation entries, model-picker keyboard/dismissal/persistence, Quick Queue payload, daily model restrictions and account-menu Settings.
 - `recovery.spec.ts`: queue conflicts, delisted model recovery, history error/retry/
   empty state, session expiry, network-loss recovery without duplicate registration, and account edits surviving reload.
 - `account-social.spec.ts`: avatar format validation/upload/reload/removal and
