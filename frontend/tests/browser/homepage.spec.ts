@@ -6,10 +6,10 @@ test.afterEach(cleanupAccounts);
 const topic = "Should cities make public transit free for everyone, including visitors and commuters?";
 const twist = "Make your argument without using the word very, and explain one concrete example.";
 const challenge = {
-  day: "2026-11-16",
+  day: new Date().toISOString().slice(0, 10),
   topic: { topic, pro_position: "Transit should be free.", con_position: "Transit should not be free." },
   twist: { title: "Very banned", description: twist, max_chars: null },
-  reward_points: 50, completed: false, resets_at: "2026-11-17T00:00:00Z",
+  reward_points: 50, completed: false, resets_at: new Date(Date.now() + 3_600_000).toISOString(),
 };
 
 test("homepage focuses on play with one sidebar entry per destination and the full challenge", async ({ page, context }) => {

@@ -13,7 +13,7 @@ export default async function ChallengePage() {
   if (await serverSession() === "out") redirect("/login");
   return (
       <main aria-labelledby="challenge-title" className="mx-auto w-full max-w-[1200px] flex-1 px-gutter py-8 xl:py-10">
-        <PageHeader id="challenge-title" eyebrow="Today only" title="Daily challenge" description="Everyone gets the same topic and twist. Finish once today for bonus points." />
+        <PageHeader id="challenge-title" title="Daily challenge" description="Everyone gets the same topic and twist." />
         <DailyChallenge />
       </main>
   );

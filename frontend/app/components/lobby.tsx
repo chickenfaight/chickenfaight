@@ -1,9 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
-import { api } from "../lib/api";
-import { parseChallengeToday, type ChallengeToday } from "../lib/protocol";
+import { useDailyChallenge } from "../lib/use-daily-challenge";
 import MatchmakingCard from "./matchmaking-card";
 import ArenaStatsCard from "./arena-stats";
 import { useSession } from "./providers/session-provider";
@@ -16,18 +14,7 @@ import { buttonClass } from "./button";
 
 export default function Lobby() {
   const { user, status: session, setUser, logout, loggingOut, logoutError } = useSession();
-  const [challenge, setChallenge] = useState<ChallengeToday | null>(null);
-  const [challengeError, setChallengeError] = useState(false);
-  const [attempt, setAttempt] = useState(0);
-
-  useEffect(() => {
-    if (session !== "in") return;
-    const controller = new AbortController();
-    api("/v1/challenge/today", controller.signal)
-      .then(data => { if (!controller.signal.aborted) setChallenge(parseChallengeToday(data)); })
-      .catch(() => { if (!controller.signal.aborted) setChallengeError(true); });
-    return () => controller.abort();
-  }, [session, attempt]);
+  const { challenge, status: challengeStatus, refresh: refreshChallenge } = useDailyChallenge(session === "in");
 
   return (
     <>
@@ -40,10 +27,10 @@ export default function Lobby() {
             <section aria-labelledby="daily-title" className="panel min-w-0 p-panel">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <h2 id="daily-title" className="text-base font-bold">Daily challenge</h2>
-                {challenge && <span className={`text-xs font-semibold ${challenge.completed ? "text-win" : "text-gold"}`}>{challenge.completed ? "Completed today" : `+${challenge.reward_points} points`}</span>}
+                {challenge?.topic && <span className={`text-xs font-semibold ${challenge.completed ? "text-win" : "text-gold"}`}>{challenge.completed ? "Completed today" : `+${challenge.reward_points} points`}</span>}
               </div>
               <div className="mt-5" aria-live="polite">
-                {challengeError ? <ErrorState compact message="Couldn’t load today’s challenge." retryLabel="Retry challenge" onRetry={() => { setChallengeError(false); setAttempt(value => value + 1); }} />
+                {challengeStatus === "error" ? <ErrorState compact message="Couldn’t load today’s challenge." retryLabel="Retry challenge" onRetry={refreshChallenge} />
                   : !challenge ? <Skeleton label="Loading today’s challenge…" variant="lines" count={4} />
                   : !challenge.topic ? <EmptyState title="No challenge topic available">Check back later for today’s challenge.</EmptyState>
                   : <>
