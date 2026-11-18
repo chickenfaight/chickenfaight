@@ -142,6 +142,7 @@ Backend dependencies (`uv sync`) and Go (for the Go/Python contract test) are re
 - `homepage.spec.ts`: focused lobby hierarchy, complete challenge text and retry, single navigation entries, model-picker keyboard/dismissal/persistence, Quick Queue payload, daily model restrictions and account-menu Settings.
 - `daily-challenge.spec.ts`: UTC rollover on an open page and recovery when today's topic is unavailable.
 - `navigation.spec.ts`: labeled mobile navigation, dismissal and destination focus, and player search at 320 px.
+- `queue-persistence.spec.ts`: elapsed time after navigation and reload, the model and timer in the phone header without shifting content, cancellation after a failed status request, entry into the arena from Settings, and recovery from a disconnected arena.
 - `recovery.spec.ts`: queue conflicts, delisted model recovery, history error/retry/
   empty state, session expiry, network-loss recovery without duplicate registration, and account edits surviving reload.
 - `account-social.spec.ts`: avatar format validation/upload/reload/removal and

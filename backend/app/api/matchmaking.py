@@ -9,7 +9,7 @@ from app.db.session import get_session
 from app.models.user import User
 from app.models.ladder_rating import DEFAULT_ELO, Ladder
 from sqlalchemy import select
-from app.schemas.schemas import QueueRequest
+from app.schemas.schemas import QueueRequest, QueueStatus
 from app.services.arena import BYOM_ARENA_ID, ArenaService
 from app.services.bilc import BilcService
 from app.services.bilc_connections import BilcConnections
@@ -19,8 +19,8 @@ from app.services.exceptions import (
     ArenaNotFoundError,
     BilcBusyError,
     BilcOfflineError,
-    ByomQueueInvalidError,
     ChallengeAlreadyCompletedError,
+    QueueInvalidError,
 )
 from app.services.rewards import completed_challenge
 from app.services.user import require_tag
@@ -38,7 +38,7 @@ async def queue_match(
     request: Request,
     user: CurrentUserDependency,
     session: SessionDependency,
-) -> dict[str, str]:
+) -> QueueStatus:
     """Registers user to the matchmaking queue."""
     require_tag(user)
     matchmaker: Matchmaker = request.app.state.matchmaker
@@ -46,9 +46,12 @@ async def queue_match(
         await queue_byom(body, request, user, session)
         return matchmaker.get_status(user.id)
     if body.bilc_id is not None:
-        raise ByomQueueInvalidError("Only the BYOM arena takes a device.")
+        raise QueueInvalidError("Only the BYOM arena takes a device.")
+    if body.daily and body.model_id is None:
+        raise QueueInvalidError("Choose a cloud model for the daily challenge.")
+    model_name = None
     if body.model_id is not None:
-        await ArenaService(session).require_active(body.model_id)
+        model_name = (await ArenaService(session).get_active(body.model_id)).display_name
     challenge_day = None
     if body.daily:
         challenge_day = today()
@@ -65,7 +68,7 @@ async def queue_match(
             raise ArenaNotFoundError()
         rating = await rating_service.get_rating(user.id, ladder.id)
     elo = rating.elo if rating is not None else DEFAULT_ELO
-    matchmaker.register(user.id, body.model_id, elo, challenge_day)
+    matchmaker.register(user.id, body.model_id, elo, challenge_day, model_display_name=model_name)
 
     return matchmaker.get_status(user.id)
 
@@ -73,9 +76,9 @@ async def queue_match(
 async def queue_byom(body: QueueRequest, request: Request, user: User, session: AsyncSession) -> None:
     """The BYOM arena needs one of the caller's own devices, connected and not already playing."""
     if body.daily:
-        raise ByomQueueInvalidError("The daily challenge isn't played in the BYOM arena.")
+        raise QueueInvalidError("The daily challenge isn't played in the BYOM arena.")
     if body.bilc_id is None:
-        raise ByomQueueInvalidError("Choose one of your BILC devices to play with.")
+        raise QueueInvalidError("Choose one of your BILC devices to play with.")
     device = await BilcService(session).get_owned(user, body.bilc_id)
     bilc: BilcConnections = request.app.state.bilc_connections
     match bilc.status(device.id):
@@ -95,6 +98,6 @@ async def cancel_queue(request: Request, user: CurrentUserDependency) -> Respons
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 @router.get("/status", status_code=status.HTTP_200_OK)
-async def queue_status(request: Request, user: CurrentUserDependency):
+async def queue_status(request: Request, user: CurrentUserDependency) -> QueueStatus:
     """Gets user queued status."""
     return request.app.state.matchmaker.get_status(user.id)

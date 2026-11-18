@@ -1,7 +1,7 @@
 """Lifecycle regressions: fake clocks/sockets/models, no real DB or provider."""
 import asyncio
 from json import JSONDecodeError
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 from uuid import uuid4
@@ -10,6 +10,7 @@ import pytest
 from fastapi import WebSocketDisconnect
 
 from app.engine.game_engine import ConnectionActivity, GameEngine
+from app.services.challenge import today
 from app.services.matchmaking import Matchmaker
 from app.services.rewards import _advance_streak, effective_streak
 from test_engine_heartbeat import Socket
@@ -43,7 +44,7 @@ def test_streak_grace_boundary(gap, expected):
 async def test_quick_queue_fills_regular_queue_only(daily_first):
     mm = Matchmaker()
     model, daily, regular, quick = (uuid4() for _ in range(4))
-    registrations = [(daily, date(2026, 11, 15)), (regular, None)]
+    registrations = [(daily, today()), (regular, None)]
     for user, day in registrations if daily_first else reversed(registrations):
         mm.register(user, model, 1000, day)
     mm.register(quick, None, 1000)
@@ -52,7 +53,7 @@ async def test_quick_queue_fills_regular_queue_only(daily_first):
     assert game.call_count == 1
     assert set(game.call_args.args[1]) == {regular, quick}
     assert game.call_args.args[3] is None
-    assert mm.get_status(daily) == {"status": "queued"}
+    assert mm.get_status(daily)["queue"]["mode"] == "daily"
 
 
 @pytest.mark.parametrize("joined", [0, 1])

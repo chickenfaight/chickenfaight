@@ -1,11 +1,11 @@
 """Quick Queue fallback works even when no model queues exist."""
-from datetime import date
 from unittest.mock import AsyncMock, patch
 from uuid import uuid4
 
 import pytest
 from sqlalchemy.exc import SQLAlchemyError
 
+from app.services.challenge import today
 from app.services.matchmaking import Matchmaker
 
 
@@ -43,7 +43,7 @@ async def test_remaining_quick_players_pair_in_order_on_random_models(catalogue,
             match_ids.append(mm.assignments[first])
         assert len(set(match_ids)) == count // 2
         assert [entry[0] for entry in mm.randomqueue] == users[count // 2 * 2:]
-        assert mm.queued_users == dict.fromkeys(users[count // 2 * 2:])
+        assert {user: entry.key for user, entry in mm.queued_users.items()} == dict.fromkeys(users[count // 2 * 2:])
         await mm.match_available_players()
         assert start.call_count == count // 2
     catalogue.assert_awaited_once()
@@ -54,7 +54,7 @@ async def test_arena_matching_precedes_quick_fallback(catalogue):
     regular, daily, model = uuid4(), uuid4(), uuid4()
     quick = [uuid4() for _ in range(3)]
     mm.register(regular, model, 1000)
-    mm.register(daily, model, 1000, date(2026, 11, 17))
+    mm.register(daily, model, 1000, today())
     for user in quick:
         mm.register(user, None, 1000)
     with patch('app.services.matchmaking.GameEngine') as game, patch.object(mm, 'start'):
@@ -63,7 +63,7 @@ async def test_arena_matching_precedes_quick_fallback(catalogue):
     assert game.call_args_list[0].args[1:] == ((regular, quick[0]), model, None)
     assert game.call_args_list[1].args[1] == tuple(quick[1:])
     assert game.call_args_list[1].args[2] in catalogue.return_value
-    assert mm.get_status(daily) == {'status': 'queued'}
+    assert mm.get_status(daily)["queue"]["mode"] == "daily"
 
 
 @pytest.mark.parametrize('count', [0, 1])
@@ -89,7 +89,7 @@ async def test_unavailable_catalogue_retains_players_and_retries(catalogue, fail
         await mm.match_available_players()
         game.assert_not_called()
         assert list(mm.randomqueue) == entries
-        assert mm.queued_users == dict.fromkeys(users)
+        assert {user: entry.key for user, entry in mm.queued_users.items()} == dict.fromkeys(users)
         assert not mm.assignments
         catalogue.side_effect = None
         catalogue.return_value = [uuid4()]
@@ -123,7 +123,7 @@ async def test_odd_leftover_matches_new_arrival_on_later_pass(catalogue):
         mm.register(user, None, 1000)
     with patch('app.services.matchmaking.GameEngine') as game, patch.object(mm, 'start'):
         await mm.match_available_players()
-        assert mm.get_status(users[2]) == {'status': 'queued'}
+        assert mm.get_status(users[2])["queue"]["mode"] == "quick"
         first_match = mm.assignments[users[0]]
         mm.register(users[3], None, 1000)
         await mm.match_available_players()
@@ -150,5 +150,5 @@ async def test_cancellation_during_lookup_can_leave_fewer_than_two_players(catal
         await mm.match_available_players()
         game.assert_not_called()
     assert not mm.assignments
-    assert mm.queued_users == dict.fromkeys(users[cancel_count:])
+    assert {user: entry.key for user, entry in mm.queued_users.items()} == dict.fromkeys(users[cancel_count:])
     assert [entry[0] for entry in mm.randomqueue] == users[cancel_count:]

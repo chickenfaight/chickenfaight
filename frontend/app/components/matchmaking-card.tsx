@@ -1,23 +1,19 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { api, ApiError } from "../lib/api";
-import { parseArenas, parseBilcDevices, parseQueueStatus, SIZE_CLASS_LABELS, type Arena, type BilcDevice } from "../lib/protocol";
+import { parseArenas, parseBilcDevices, SIZE_CLASS_LABELS, type Arena, type BilcDevice } from "../lib/protocol";
 import { preferredArena, savedArena, saveSelectedArena } from "../lib/selected-arena";
 import Button, { buttonClass } from "./button";
 import ModelPicker from "./model-picker";
-
-type Phase = "checking" | "idle" | "joining" | "cancelling" | "queued" | "matched" | "error" | "signed-out";
+import { queueName, showQueueIndicator, useQueue } from "./providers/queue-provider";
+import { QueueElapsed } from "./queue-status-indicator";
 
 // `daily` joins today's daily-challenge queue for the chosen model instead of a regular match.
 export default function MatchmakingCard({ daily = false, onChallengeDone }: { daily?: boolean; onChallengeDone?: () => void }) {
-  const [phase, setPhase] = useState<Phase>("checking");
-  const [error, setError] = useState("");
-  const router = useRouter();
-  const [elapsed, setElapsed] = useState(0);
-  const [attempt, setAttempt] = useState(0);
+  const queueState = useQueue();
+  const { phase, queue, error, join, cancel, retry } = queueState;
   const [arenas, setArenas] = useState<Arena[]>([]);
   const [catalogPhase, setCatalogPhase] = useState<"loading" | "ready" | "error" | "signed-out">("loading");
   const [catalogAttempt, setCatalogAttempt] = useState(0);
@@ -27,16 +23,6 @@ export default function MatchmakingCard({ daily = false, onChallengeDone }: { da
   const [devicesError, setDevicesError] = useState(false);
   const [devicesAttempt, setDevicesAttempt] = useState(0);
   const [deviceId, setDeviceId] = useState("");
-  const joinDevice = useRef<string | null>(null);
-  // A ref, so a new callback each render doesn't restart the queue effect.
-  const challengeDone = useRef(onChallengeDone);
-  useEffect(() => { challengeDone.current = onChallengeDone; });
-  const [queuedModel, setQueuedModel] = useState<Arena | null>(null);
-  const [queueActive, setQueueActive] = useState(false);
-  const joinModel = useRef<Arena | null>(null);
-  const action = useRef<"GET" | "POST" | "DELETE">("GET");
-  const busy = useRef(false);
-  const activeController = useRef<AbortController | null>(null);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -85,133 +71,24 @@ export default function MatchmakingCard({ daily = false, onChallengeDone }: { da
     setCatalogAttempt(value => value + 1);
   }
 
-  useEffect(() => {
-    const controller = new AbortController();
-    activeController.current = controller;
-    let timer: ReturnType<typeof setTimeout>;
-    let method = action.current;
-    action.current = "GET";
-    let joining = method === "POST";
-
-    async function poll() {
-      try {
-        let data: unknown;
-        try {
-          if (method === "POST") {
-            // Recover an existing entry before attempting a new registration.
-            data = await api("/v1/match/status", controller.signal);
-            if (controller.signal.aborted) return;
-            if (parseQueueStatus(data).status === "none") {
-              const model = joinModel.current;
-              if (!model) throw new Error("No arena selected");
-              const body = model.id == "quick" ? {model_id: null} : (daily ? { model_id: model.id, daily: true }
-                : model.kind === "byom" ? { model_id: model.id, bilc_id: joinDevice.current } : { model_id: model.id });
-              data = await api("/v1/match/queue", controller.signal, "POST", body);
-              if (!controller.signal.aborted) setQueuedModel(model);
-            } else {
-              setQueuedModel(null);
-            }
-          } else {
-            data = await api(method === "DELETE" ? "/v1/match/queue" : "/v1/match/status", controller.signal, method);
-          }
-          if (method === "DELETE") data = { status: "none" };
-        } catch (err) {
-          // A previous tab/request may already have registered this user.
-          if (err instanceof ApiError && err.status === 409 && ["ALREADY_QUEUED", "IN_MATCH"].includes(err.code ?? "")) {
-            setQueuedModel(null);
-            data = await api("/v1/match/status", controller.signal);
-          } else throw err;
-        }
-        if (controller.signal.aborted) return;
-        const status = parseQueueStatus(data);
-        setError("");
-        if (status.status === "matched") {
-          router.push(`/match/${encodeURIComponent(status.match_id)}`);
-          setPhase("matched");
-          busy.current = false;
-          return;
-        }
-        if (status.status === "none") {
-          setPhase("idle");
-          setQueueActive(false);
-          setQueuedModel(null);
-          if (joining) {
-            setError("The server reports no queue entry. You are not currently queued.");
-          }
-          busy.current = false;
-          return;
-        }
-        setPhase("queued");
-        setQueueActive(true);
-        busy.current = false;
-        method = "GET";
-        joining = false;
-        timer = setTimeout(poll, 1000);
-      } catch (err) {
-        if (controller.signal.aborted) return;
-        busy.current = false;
-        if (err instanceof ApiError && method === "POST" && joinModel.current?.kind === "byom"
-          && (err.code === "BILC_OFFLINE" || err.code === "BILC_BUSY" || err.code === "NOT_FOUND")) {
-          // The device went offline, got busy, or was revoked since the list loaded.
-          setPhase("idle");
-          setQueueActive(false);
-          setQueuedModel(null);
-          setError(err.code === "NOT_FOUND" ? "That device is no longer paired. Choose another one." : err.detail ?? "That device can’t play right now.");
-          setDevicesAttempt(value => value + 1);
-        } else if (err instanceof ApiError && err.status === 401) {
-          setPhase("signed-out");
-          setQueueActive(false);
-          setQueuedModel(null);
-          setError("Sign in to join the queue.");
-        } else if (err instanceof ApiError && err.status === 404 && err.code === "NOT_FOUND" && method === "POST") {
-          setPhase("idle");
-          setQueueActive(false);
-          setQueuedModel(null);
-          setSelectedId("");
-          setCatalogPhase("loading");
-          setCatalogAttempt(value => value + 1);
-          setError("That arena is no longer available. Choose an arena from the refreshed list.");
-        } else if (err instanceof ApiError && err.code === "TAG_REQUIRED") {
-          setPhase("idle");
-          setError("Create your tag to join the queue.");
-        } else if (err instanceof ApiError && err.code === "CHALLENGE_ALREADY_COMPLETED") {
-          setPhase("idle");
-          setError("You’ve already completed today’s challenge.");
-          challengeDone.current?.();
-        } else {
-          setPhase("error");
-          setError("Couldn’t confirm your queue status. Retry queue status; we’ll check for an existing game or queue entry first.");
-        }
-      }
+  async function joinSelectedArena() {
+    const arena = arenas.find(candidate => candidate.id === selectedId);
+    if (!arena || (arena.kind === "byom" && !deviceReady)) return;
+    const failure = await join(arena, daily, deviceId);
+    if (failure === "device") refreshDevices();
+    if (failure === "arena") {
+      setSelectedId("");
+      refreshArenas();
     }
-    void poll();
-    return () => { controller.abort(); clearTimeout(timer); };
-  }, [attempt, router, daily]);
-
-  useEffect(() => {
-    if (phase !== "queued") return;
-    const start = Date.now();
-    const timer = setInterval(() => setElapsed(Math.floor((Date.now() - start) / 1000)), 1000);
-    return () => clearInterval(timer);
-  }, [phase]);
-
-  function request(method: "GET" | "POST" | "DELETE") {
-    if (busy.current) return;
-    if (method === "POST") {
-      const model = arenas.find(arena => arena.id === selectedId && (arena.kind === "provided" || (byomSelected && deviceReady)));
-      if (catalogPhase !== "ready" || !model || phase !== "idle") return;
-      joinModel.current = model;
-      joinDevice.current = model.kind === "byom" ? deviceId : null;
-      setQueuedModel(null);
-    }
-    busy.current = true;
-    activeController.current?.abort();
-    action.current = method;
-    setError("");
-    setElapsed(0);
-    setPhase(method === "POST" ? "joining" : method === "DELETE" ? "cancelling" : "checking");
-    setAttempt(value => value + 1);
+    if (failure === "challenge") onChallengeDone?.();
   }
+
+  // The shared strip takes over once a queue starts on the challenge page.
+  if (daily && showQueueIndicator(queueState)) return null;
+  if (phase === "finishing") return <div className="panel p-panel">
+    <p className="text-base font-bold" role="status">Waiting for your previous debate to end…</p>
+    <p className="mt-2 text-sm text-ink-muted">You can join a new queue once the debate ends.</p>
+  </div>;
 
   const queued = phase === "queued";
   const deviceReady = devices?.some(device => device.id === deviceId && device.status === "idle") ?? false;
@@ -219,7 +96,7 @@ export default function MatchmakingCard({ daily = false, onChallengeDone }: { da
   // The daily challenge is played on the provided models only.
   const listed = daily ? arenas.filter(arena => arena.kind === "provided") : arenas;
   const selectionLocked = phase !== "idle" || catalogPhase !== "ready";
-  const showQueue = queueActive || phase === "matched";
+  const showQueue = queue !== null || phase === "matched";
   const signedOut = phase === "signed-out" || catalogPhase === "signed-out";
   const waiting = queued || phase === "joining" || phase === "checking" || phase === "cancelling";
   const buttonDisabled = (waiting && !queued) || (!queued && !canJoin);
@@ -231,10 +108,11 @@ export default function MatchmakingCard({ daily = false, onChallengeDone }: { da
   const select = "h-12 w-full rounded-control border border-line-strong bg-inset px-3 text-sm text-ink transition-colors duration-(--duration-fast) hover:border-ink-faint disabled:text-ink-muted disabled:hover:border-line-strong focus-ring";
   const smallLink = "font-semibold text-accent-ink underline underline-offset-2 focus-ring";
   return <div className={`min-w-0 rounded-panel border p-panel shadow-raised transition-[border-color,background-color] duration-(--duration-slow) ${queued ? "border-accent/40 bg-accent-wash" : "border-line bg-inset/60"}`}>
-    <div className="mb-5 flex min-h-8 items-center gap-3" role="status">
+    <div className="mb-5 flex min-h-8 items-center gap-3">
       {waiting && <span aria-hidden="true" className="h-7 w-7 shrink-0 rounded-full border-[3px] border-accent/20 border-t-accent motion-safe:animate-spin" />}
-      <h3 className={`text-base font-bold ${queued ? "text-accent-ink" : "text-ink"}`}>{title}</h3>
+      <h2 className={`text-base font-bold ${queued ? "text-accent-ink" : "text-ink"}`}>{title}</h2>
     </div>
+    <span role="status" className="sr-only">{phase === "idle" ? "" : title}</span>
     {!daily && !showQueue && <div role="group" aria-label="Model source" className="mb-5 flex flex-wrap gap-2">
       <Button size="sm" variant={!byomSelected ? "secondary" : "ghost"} aria-pressed={!byomSelected} aria-disabled={selectionLocked} onClick={() => { if (!selectionLocked && byomSelected) { const id = arenas.find(arena => arena.kind === "provided")?.id ?? ""; setSelectedId(id); saveSelectedArena(id); } }}>Provided models</Button>
       <Button size="sm" variant={byomSelected ? "secondary" : "ghost"} aria-pressed={byomSelected} aria-disabled={selectionLocked || !arenas.some(arena => arena.kind === "byom")} onClick={() => { if (!selectionLocked) { const id = arenas.find(arena => arena.kind === "byom")?.id; if (id) { setSelectedId(id); saveSelectedArena(id); } } }}>Bring your own model</Button>
@@ -242,7 +120,7 @@ export default function MatchmakingCard({ daily = false, onChallengeDone }: { da
     {byomSelected && !showQueue ? <p className="mb-3 text-sm text-ink-muted">Play using a model on your computer. Each player connects their own device.</p> : <ModelPicker
       arenas={listed.filter(arena => arena.kind === "provided")}
       value={selectedId} locked={selectionLocked}
-      queueLabel={showQueue ? queuedModel?.display_name ?? "Existing queue · model unknown" : undefined}
+      queueLabel={queue ? queueName(queue) : undefined}
       placeholder={signedOut ? "Sign in to choose an arena" : catalogPhase === "loading" ? "Loading arenas…" : "Choose an arena"}
       onChange={id => { setSelectedId(id); saveSelectedArena(id); }}
     />}
@@ -251,7 +129,7 @@ export default function MatchmakingCard({ daily = false, onChallengeDone }: { da
       {catalogPhase === "error" && <p className="text-danger">Couldn’t load arenas. <button type="button" onClick={refreshArenas} className={smallLink}>Retry arenas</button></p>}
       {catalogPhase === "ready" && !arenas.some(arena => arena.kind === "provided") && <p>No arenas available yet. <button type="button" onClick={refreshArenas} className={smallLink}>Refresh arenas</button></p>}
       {signedOut && <p>Sign in to choose an arena.</p>}
-      {showQueue && !queuedModel && <p>Your existing queue’s model will be shown when the debate starts.</p>}
+      {queue?.mode === null && <p>Your queue’s model will be shown when the debate starts.</p>}
     </div>
     {byomSelected && !showQueue && <>
       <label htmlFor="queue-device" className="eyebrow mb-2 mt-3 block">Your device</label>
@@ -273,14 +151,14 @@ export default function MatchmakingCard({ daily = false, onChallengeDone }: { da
       </div>
     </>}
     <div className="flex min-h-12 items-center justify-between gap-2 text-xs text-ink-faint">
-      <span>{queued ? "Time searching on this page" : showQueue ? "Your arena will be confirmed when the debate starts." : byomSelected ? "Paired with models of a similar size" : selectedId === "quick" ? "Quick Queue finds an available cloud arena for you." : "Both players debate using the same model."}</span>
-      {queued && <span className="stat text-2xl text-accent-ink">{String(Math.floor(elapsed / 60)).padStart(2, "0")}:{String(elapsed % 60).padStart(2, "0")}</span>}
+      <span>{queue ? "Time in queue" : showQueue ? "Your arena will be confirmed when the debate starts." : byomSelected ? "Paired with models of a similar size" : selectedId === "quick" ? "Quick Queue finds an available cloud arena for you." : "Both players debate using the same model."}</span>
+      {queue && phase !== "matched" && <QueueElapsed since={queue.elapsedSince} className="stat text-2xl text-accent-ink" />}
     </div>
     {phase === "matched" ? <p role="status" className="py-3 text-sm font-semibold text-accent-ink">Opponent found. Entering the arena…</p>
-      : signedOut && !queueActive ? <Link href="/login" className={buttonClass("primary", "lg", "w-full")}>Sign in to queue</Link>
-      : phase === "error" ? <div className="flex gap-2"><Button variant="primary" size="lg" className="flex-1" onClick={() => request("GET")}>Retry queue status</Button>{queueActive && <Button size="lg" onClick={() => request("DELETE")}>Cancel queue</Button>}</div>
+      : signedOut && !queue ? <Link href="/login" className={buttonClass("primary", "lg", "w-full")}>Sign in to queue</Link>
+      : phase === "error" ? <div className="flex flex-wrap gap-2"><Button variant="primary" size="lg" className="flex-1" onClick={retry}>Retry queue status</Button>{queue && <Button size="lg" onClick={cancel}>Cancel queue</Button>}</div>
       // Firefox restores native disabled state on reload, which can break hydration.
-      : <Button variant={queued ? "secondary" : "primary"} size="lg" className="w-full" aria-disabled={buttonDisabled} onClick={() => { if (!buttonDisabled) request(queued ? "DELETE" : "POST"); }}>{queued ? "Cancel queue" : phase === "cancelling" ? "Cancelling…" : phase === "checking" ? "Checking…" : phase === "joining" ? "Joining…" : "Find match"}</Button>}
+      : <Button variant={queued ? "secondary" : "primary"} size="lg" className="w-full" aria-disabled={buttonDisabled} onClick={() => { if (!buttonDisabled) { if (queued) cancel(); else void joinSelectedArena(); } }}>{queued ? "Cancel queue" : phase === "cancelling" ? "Cancelling…" : phase === "checking" ? "Checking…" : phase === "joining" ? "Joining…" : "Find match"}</Button>}
     {error && <p role="alert" className="mt-3 text-xs leading-relaxed text-danger">{error}</p>}
     <p className="mt-3 text-center text-xs leading-relaxed text-ink-faint">{phase === "matched" ? "Your debate is ready." : queued ? "You can leave the queue anytime before an opponent is found." : byomSelected ? deviceReady ? "Your device is ready." : "Connect an online device to find a match." : "Write one prompt. Your AI debates. The judge decides."}</p>
   </div>;

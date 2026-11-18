@@ -1,13 +1,16 @@
 "use client";
 
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { useState } from "react";
 import { profileHref } from "../lib/routes";
 import Avatar from "./avatar";
 import Icon from "./line-icon";
 import InfoDialog, { type DetailTitle } from "./info-dialog";
 import PopoverMenu from "./popover-menu";
+import { showQueueIndicator, useQueue } from "./providers/queue-provider";
 import { useSession } from "./providers/session-provider";
+import QueueStatusIndicator from "./queue-status-indicator";
 import { MobileNavigation } from "./sidebar";
 import UserSearch from "./user-search";
 
@@ -17,17 +20,20 @@ export function Wordmark({ compact = false }: { compact?: boolean }) {
   return <span translate="no" className={`whitespace-nowrap font-extrabold tracking-[-0.04em] ${compact ? "text-lg max-[359px]:text-base sm:text-xl" : "text-xl"}`}>chicken<span className="text-accent">fAIght.</span></span>;
 }
 
-// The sidebar owns navigation; the header holds help, search, and account actions.
+// The header holds the queue, help, search, and account actions.
 export default function SiteHeader({ query }: { current?: "play" | "leaderboards"; query?: string }) {
   const { user, status: session, logout, loggingOut, logoutError } = useSession();
+  const queueStatus = useQueue();
+  const queueVisible = usePathname() !== "/" && showQueueIndicator(queueStatus);
   const [detail, setDetail] = useState<DetailTitle | null>(null);
   const name = user?.username || user?.tag || (session === "in" ? "Player" : "Guest player");
 
   return (
     <>
-      <header style={{ viewTransitionName: "site-header" }} className="relative z-20 flex h-16 shrink-0 items-center justify-between gap-2 border-b border-line bg-canvas/75 px-gutter backdrop-blur-sm max-[359px]:px-3 xl:h-[76px]">
-        <Link href="/" className="shrink-0 rounded-control focus-ring" aria-label="chickenfAIght. home"><Wordmark compact /></Link>
-        <div className="flex items-center gap-1 sm:gap-4">
+      <header style={{ viewTransitionName: "site-header" }} className={`${queueVisible ? "sticky top-0" : "relative"} z-20 flex h-16 shrink-0 items-center justify-between gap-2 border-b border-line bg-canvas/75 px-gutter backdrop-blur-sm max-[359px]:px-3 xl:h-[76px]`}>
+        <Link href="/" className={`shrink-0 rounded-control focus-ring ${queueVisible ? "max-[479px]:hidden" : ""}`} aria-label="chickenfAIght. home"><Wordmark compact /></Link>
+        {queueVisible && <QueueStatusIndicator status={queueStatus} />}
+        <div className="ml-auto flex shrink-0 items-center gap-1 sm:gap-4">
           <button type="button" onClick={() => setDetail("How to play")} className="hidden min-h-11 shrink-0 items-center rounded-control px-2 text-sm font-semibold text-ink-muted transition-colors duration-(--duration-fast) hover:text-ink focus-ring lg:flex">How to play</button>
           <MobileNavigation onHelp={() => setDetail("How to play")} />
           <UserSearch key={query} initialQuery={query} />

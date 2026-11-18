@@ -38,7 +38,8 @@ async def test_daily_queue_is_separate_from_regular(client, log_in, make_user, m
     await seed_rating(user, model, 1234)
     response = await client.post("/v1/match/queue", json={"model_id": str(model.id), "daily": True})
     assert response.status_code == 202
-    assert app.state.matchmaker.queued_users[user.id] == (model.id, today())
+    assert response.json()["queue"]["mode"] == "daily"
+    assert app.state.matchmaker.queued_users[user.id].key == (model.id, today())
 
 
 async def test_profile_shows_points_streak_and_rank(client, log_in, make_user, db_session):

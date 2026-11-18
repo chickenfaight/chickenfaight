@@ -24,9 +24,22 @@ test("invalid match payloads fail closed", () => {
 });
 test("queue status needs a match id only when matched", () => {
   assert.deepEqual(parseQueueStatus({ status: "none" }), { status: "none" });
-  assert.deepEqual(parseQueueStatus({ status: "queued" }), { status: "queued" });
+  assert.deepEqual(parseQueueStatus({ status: "queued" }), { status: "queued", queue: null });
   assert.throws(() => parseQueueStatus({ status: "matched" }));
   assert.throws(() => parseQueueStatus({ status: "unknown" }));
+});
+test("queue metadata validates the mode, original join time, and elapsed seconds", () => {
+  const queue = {
+    mode: "daily", model_id: "11111111-1111-4111-8111-111111111111", model_display_name: "Test model",
+    joined_at: "2026-11-18T00:00:00Z", elapsed_seconds: 45,
+  };
+  assert.deepEqual(parseQueueStatus({ status: "queued", queue }), { status: "queued", queue });
+  const quick = { ...queue, mode: "quick", model_id: null, model_display_name: null };
+  assert.deepEqual(parseQueueStatus({ status: "queued", queue: quick }), { status: "queued", queue: quick });
+  for (const invalid of [{ mode: "competitive" }, { model_id: 1 }, { joined_at: "yesterday" }, { elapsed_seconds: -1 }, { elapsed_seconds: 0.5 }]) {
+    assert.throws(() => parseQueueStatus({ status: "queued", queue: { ...queue, ...invalid } }));
+  }
+  assert.throws(() => parseQueueStatus({ status: "queued", queue: null }));
 });
 test("stats reject impossible totals and rates", () => {
   const empty = { points: 0, debates_played: 0, wins: 0, win_rate: null, recent_form: [] };

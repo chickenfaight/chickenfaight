@@ -64,4 +64,4 @@ async def test_missing_ladder_is_a_logged_404_and_provisioning_fixes_it(client, 
     await db_session.commit()
     await provision_ladders(db_session)
     response = await client.post(QUEUE, json={"model_id": str(model.id)})
-    assert response.status_code == 202 and response.json() == {"status": "queued"}
+    assert response.status_code == 202 and response.json()["status"] == "queued"

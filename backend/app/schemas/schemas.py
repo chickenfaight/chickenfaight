@@ -1,5 +1,5 @@
 from datetime import date, datetime
-from typing import Literal, Self
+from typing import Literal, Self, TypedDict
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, computed_field, model_validator
@@ -172,6 +172,34 @@ class QueueRequest(BaseModel):
     model_id: UUID | None
     daily: bool = False  # join today's daily-challenge queue for this model
     bilc_id: UUID | None = None  # required for, and only for, the BYOM arena
+
+
+type QueueMode = Literal["quick", "model", "daily", "byom"]
+
+
+class QueueInfo(TypedDict):
+    mode: QueueMode
+    model_id: str | None
+    model_display_name: str | None
+    joined_at: datetime
+    elapsed_seconds: int
+
+
+class NotQueued(TypedDict):
+    status: Literal["none"]
+
+
+class WaitingInQueue(TypedDict):
+    status: Literal["queued"]
+    queue: QueueInfo
+
+
+class Matched(TypedDict):
+    status: Literal["matched"]
+    match_id: str
+
+
+type QueueStatus = NotQueued | WaitingInQueue | Matched
 
 
 class ChallengeTwist(BaseModel):

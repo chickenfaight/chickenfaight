@@ -22,7 +22,7 @@ async def test_quick_queue_http_to_engine_and_completion(
         log_in(user)
         response = await client.post('/v1/match/queue', json={'model_id': None})
         assert response.status_code == 202
-        assert response.json() == {'status': 'queued'}
+        assert response.json()["queue"]["mode"] == "quick"
     assert not mm.queues  # No player has selected a model.
 
     @asynccontextmanager

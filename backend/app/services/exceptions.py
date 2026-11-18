@@ -193,7 +193,7 @@ class BilcBusyError(TagError):
     detail = "That device is already playing a debate."
 
 
-class ByomQueueInvalidError(TagError):
+class QueueInvalidError(TagError):
     code = "VALIDATION_ERROR"
     status_code = 422
 
