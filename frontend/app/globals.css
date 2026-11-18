@@ -134,21 +134,12 @@
   --animate-rise: rise var(--duration-slow) var(--ease-out-expo) both;
   --animate-fade: fade var(--duration-base) var(--ease-out-expo) both;
   --animate-pop: pop var(--duration-slow) var(--ease-overshoot) both;
-  --animate-stamp: stamp 520ms var(--ease-overshoot) both;
-  --animate-enter-left: enter-left 560ms var(--ease-out-expo) both;
-  --animate-enter-right: enter-right 560ms var(--ease-out-expo) both;
   --animate-shimmer: shimmer 1.4s var(--ease-in-out-soft) infinite;
-  --animate-intro: intro 2.1s linear both;
 
   @keyframes rise { from { opacity: 0; transform: translateY(10px); } }
   @keyframes fade { from { opacity: 0; } }
   @keyframes pop { from { opacity: 0; transform: scale(0.92); } }
-  @keyframes stamp { from { opacity: 0; transform: scale(1.35); } }
-  @keyframes enter-left { from { opacity: 0; transform: translateX(-48px); } }
-  @keyframes enter-right { from { opacity: 0; transform: translateX(48px); } }
   @keyframes shimmer { 50% { opacity: 0.45; } }
-  /* The "match found" overlay: in, hold, out. */
-  @keyframes intro { 0% { opacity: 0; } 8% { opacity: 1; } 82% { opacity: 1; } 100% { opacity: 0; } }
 }
 
 /* Every interactive element: a visible keyboard focus ring. */

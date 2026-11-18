@@ -19,10 +19,16 @@ test("one socket in Strict Mode, rejected prompts can retry, heartbeat echoes, r
     ws.send(JSON.stringify(initial));
   });
   await page.goto(`/match/${matchId}`);
-  await submit(page);
+  const editor = page.getByRole("textbox", { name: "Give your AI a strategy" });
+  const submitButton = page.getByRole("button", { name: "Submit prompt" });
+  await editor.fill("Use concrete evidence.");
+  await submitButton.press("Enter");
+  await expect(page.getByRole("heading", { name: "Your AI’s argument" })).toBeFocused();
   await expect.poll(() => received.filter(m => m.type === "SUBMIT_PROMPT").length).toBe(1);
   socket!.send(JSON.stringify({ type: "ERROR", payload: { code: "PROMPT_BREAKS_CHALLENGE", message: "Edit and retry" } }));
-  await expect(page.locator("textarea")).toBeVisible();
+  await expect(editor).toBeFocused();
+  await expect(editor).toHaveValue("Use concrete evidence.");
+  await expect(editor).toHaveAccessibleDescription(/Edit and retry/);
   await submit(page, "Revised strategy");
   await expect.poll(() => received.filter(m => m.type === "SUBMIT_PROMPT").length).toBe(2);
   const heartbeat = { type: "HEARTBEAT", payload: { ts: 12345 } };
@@ -37,6 +43,7 @@ test("one socket in Strict Mode, rejected prompts can retry, heartbeat echoes, r
   await expect(page.getByText("Waiting for the verdict…", { exact: true })).toBeVisible();
   socket!.send(JSON.stringify(result));
   await expect(page.getByText("Saved result", { exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "You won." })).toBeFocused();
   await socket!.close();
   await expect(page.getByText("Saved result", { exact: true })).toBeVisible();
   expect(opened).toBe(1);
@@ -48,6 +55,69 @@ test("malformed socket updates show an actionable error", async ({ page, context
   await page.goto(`/match/${matchId}`);
   await expect(page.locator("p[role=alert]")).toContainText(/debate update|connection was lost/);
   await expect(page.getByRole("link", { name: "Back to lobby", exact: true })).toBeVisible();
+});
+
+test("a phone can reach the timed prompt controls and see judging while reading a long argument", async ({ page, context }) => {
+  await account(context);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  let socket: WebSocketRoute;
+  await page.routeWebSocket("**/v1/game/**", ws => {
+    socket = ws;
+    ws.send(JSON.stringify({ ...initial, payload: {
+      ...initial.payload,
+      topic: { category: "Cities", topic: "Should public transit be free for every passenger in a large city?", pro_position: "Everyone should be able to use public transit regardless of their ability to pay the fare.", con_position: "Cities need fares to maintain their transit systems." },
+      challenge: { title: "Keep it short", description: "Write a strategy with 120 characters or fewer.", max_chars: 120 },
+    } }));
+  });
+  await page.goto(`/match/${matchId}`);
+  const editor = page.getByRole("textbox", { name: "Give your AI a strategy" });
+  await expect(editor).toBeInViewport({ ratio: 1 });
+  await expect(page.getByRole("timer")).toBeInViewport({ ratio: 1 });
+  await expect(page.getByRole("button", { name: "Submit prompt" })).toBeInViewport({ ratio: 1 });
+  await expect(editor).toHaveAccessibleDescription(/Write a strategy with 120 characters or fewer/);
+  await submit(page);
+  const argument = "A long argument about public transit. ".repeat(80).trim();
+  socket!.send(JSON.stringify({ type: "TURN_DELTA", payload: { delta: argument } }));
+  await expect(page.getByText(argument, { exact: true })).toBeVisible();
+  await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+  await expect.poll(() => page.evaluate(() => scrollY)).toBeGreaterThan(200);
+  socket!.send(JSON.stringify({ type: "JUDGING", payload: {} }));
+  const phase = page.getByRole("banner").getByRole("status");
+  await expect(phase).toHaveText("Waiting for the verdict…");
+  await expect(phase).toBeInViewport({ ratio: 1 });
+  expect(await page.evaluate(() => scrollY)).toBeGreaterThan(200);
+});
+
+test("a no-show outcome is visible before either side or topic is announced", async ({ page, context }) => {
+  await account(context);
+  await page.routeWebSocket("**/v1/game/**", ws => ws.send(JSON.stringify({ ...result, payload: {
+    ...result.payload, winner: "con", status: "forfeited", end_reason: "no_show", reason: "The opponent did not join in time.",
+  } })));
+  await page.goto(`/match/${matchId}`);
+  await expect(page.getByRole("heading", { name: "You won.", level: 1 })).toBeFocused();
+  await expect(page.getByText("The opponent did not join in time.")).toBeVisible();
+  await expect(page.getByRole("link", { name: "Back to lobby", exact: true })).toBeVisible();
+});
+
+test("a server-confirmed deadline keeps the draft available to copy", async ({ page, context }) => {
+  await account(context);
+  await page.routeWebSocket("**/v1/game/**", ws => {
+    ws.send(JSON.stringify(initial));
+    ws.onMessage(message => {
+      if (JSON.parse(String(message)).type === "SUBMIT_PROMPT") {
+        ws.send(JSON.stringify({ type: "ERROR", payload: { code: "PROMPT_DEADLINE_PASSED", message: "The prompt window has closed." } }));
+      }
+    });
+  });
+  await page.goto(`/match/${matchId}`);
+  await submit(page);
+  await expect(page.getByRole("banner").getByRole("status")).toHaveText("Prompt window closed");
+  const editor = page.getByRole("textbox", { name: "Give your AI a strategy" });
+  await expect(editor).toBeFocused();
+  await expect(editor).toHaveValue("Use concrete evidence.");
+  await expect(editor).not.toBeEditable();
+  await expect(page.getByRole("button", { name: "Submit prompt" })).toBeDisabled();
 });
 
 test("leaving resigns once and navigates after the result", async ({ page, context }) => {
@@ -64,7 +134,12 @@ test("leaving resigns once and navigates after the result", async ({ page, conte
   });
   await page.goto(`/match/${matchId}`);
   await expect(page.locator("textarea")).toBeVisible();
-  await page.getByRole("button", { name: /leave|lobby/i }).click();
+  const leave = page.getByRole("button", { name: "Leave debate…" });
+  await leave.press("Enter");
+  await expect(page.getByRole("dialog", { name: "Leave and forfeit?" })).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(leave).toBeFocused();
+  await leave.press("Enter");
   await page.getByRole("button", { name: "Forfeit and leave", exact: true }).click();
   await expect(page).toHaveURL("/");
   expect(resignations).toBe(1);
