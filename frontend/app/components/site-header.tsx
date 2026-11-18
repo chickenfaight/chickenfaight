@@ -24,7 +24,7 @@ export default function SiteHeader({ query }: { current?: "play" | "leaderboards
 
   return (
     <>
-      <header style={{ viewTransitionName: "site-header" }} className="z-20 flex h-16 shrink-0 items-center justify-between gap-3 border-b border-line bg-canvas px-gutter xl:h-[76px]">
+      <header style={{ viewTransitionName: "site-header" }} className="z-20 flex h-16 shrink-0 items-center justify-between gap-3 border-b border-line bg-canvas/75 backdrop-blur-sm px-gutter xl:h-[76px]">
         <Link href="/" className="shrink-0 rounded-control focus-ring" aria-label="chickenfAIght. home"><Wordmark /></Link>
         <div className="flex min-w-0 items-center gap-3 sm:gap-4">
           <button type="button" onClick={() => setDetail("How to play")} className="flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-control text-xs font-semibold text-ink-muted transition-colors duration-(--duration-fast) hover:text-ink focus-ring"><Icon name="help" className="h-5 w-5 sm:hidden" /><span className="sr-only sm:not-sr-only">How to play</span></button>

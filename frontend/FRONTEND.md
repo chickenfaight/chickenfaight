@@ -120,3 +120,9 @@ Production URLs, cookies, build configuration, and hosting requirements are in
 Automated checks use Node's built-in unit runner and Playwright (Chromium/Firefox/WebKit); see TESTING.md for the isolated backend harness and destructive test DB requirements. Before finishing: `pnpm test`, `pnpm lint` and `pnpm build` pass, and the change was used in a browser (see [TESTING.md](../TESTING.md)).
 
 The lobby recent-results strip loads `/v1/users/me/arena-stats` and displays real points and the latest five results (newest first). It includes loading, retry and no-results states.
+
+The homepage and Daily Challenge share a persistent burgundy backdrop with softly sweeping rose and peach overhead lights. Only the lighting moves, and reduced motion freezes it.
+
+Shared sidebar navigation starts as an icon rail. Hovering expands it over the lobby and moving away collapses it. Keyboard focus reveals the labels, Escape closes the rail, and touch users can tap the icons directly.
+
+The shared header is translucent. On the lobby and Daily Challenge, the same overscanned lighting layer extends behind the header and page content.

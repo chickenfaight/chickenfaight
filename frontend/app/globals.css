@@ -259,3 +259,58 @@ dialog::backdrop {
     animation: none !important;
   }
 }
+
+.debate-stage {
+  flex: 1;
+  position: relative;
+  isolation: isolate;
+  background: radial-gradient(ellipse at 75% 8%, #60293655, transparent 55%),
+    linear-gradient(155deg, #492532, #301c29 46%, #201720 90%);
+}
+.stage-scenery {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  z-index: -1;
+  pointer-events: none;
+}
+.stage-lights {
+  position: absolute;
+  inset: 0 -10%;
+  background:
+    conic-gradient(from 157deg at 23% -13%, transparent, #ffd0b326 8deg, #ffc8ab2c 11deg, transparent 22deg),
+    conic-gradient(from 181deg at 86% -12%, transparent, #ff84992e 9deg, #ffc49746 12deg, transparent 24deg);
+  animation: stage-light-drift 8s ease-in-out infinite alternate;
+}
+@keyframes stage-light-drift {
+  from { transform: translateX(-4%); }
+  to { transform: translateX(4%); }
+}
+
+.stage-lights::after {
+  content: "";
+  position: absolute;
+  inset: 0 -16%;
+  background: radial-gradient(ellipse at 70% 30%, #ffae5528, transparent 43%);
+  animation: stage-color 10s ease-in-out infinite alternate;
+}
+@keyframes stage-color {
+  from { transform: translateX(-9%); opacity: .45; }
+  to { transform: translateX(9%); }
+}
+
+.site-rail { position: relative; width: 64px; flex: none; z-index: 5; }
+.site-rail nav {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 14rem;
+  padding-inline: 10px;
+  background: var(--color-canvas);
+  clip-path: inset(0 calc(100% - 64px) 0 0);
+  transition: clip-path 240ms var(--ease-out-expo);
+}
+.site-rail[data-expanded="true"] nav { clip-path: inset(0); }
+.site-rail nav a { white-space: nowrap; }
+.site-rail[data-expanded="false"] nav a { width: 44px; }
+.rail-label { opacity: 0; transform: translateX(-5px); transition: opacity 160ms, transform 220ms; }
+.site-rail[data-expanded="true"] .rail-label { opacity: 1; transform: none; }
