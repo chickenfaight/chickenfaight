@@ -5,8 +5,8 @@ import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 // A menu on the native popover: the button toggles it, Escape and clicking elsewhere close it (and
 // return focus to the button), and with a mouse it also opens on hover. It sits under the button's
 // right edge, placed when it opens.
-export default function PopoverMenu({ button, buttonClassName = "", label, children }: {
-  button: ReactNode; buttonClassName?: string; label: string; children: ReactNode;
+export default function PopoverMenu({ button, buttonClassName = "", label, children, openOnHover = true, closeOnAction = false }: {
+  button: ReactNode; buttonClassName?: string; label: string; children: ReactNode; openOnHover?: boolean; closeOnAction?: boolean;
 }) {
   const id = useId();
   const trigger = useRef<HTMLButtonElement>(null);
@@ -22,8 +22,11 @@ export default function PopoverMenu({ button, buttonClassName = "", label, child
     const anchor = trigger.current?.getBoundingClientRect();
     const element = menu.current;
     if (!anchor || !element) return;
-    element.style.top = `${anchor.bottom + 8}px`;
-    element.style.right = `${Math.max(8, document.documentElement.clientWidth - anchor.right)}px`;
+    const viewportGap = 8;
+    const right = document.documentElement.clientWidth - anchor.right;
+    element.style.top = `${anchor.bottom + viewportGap}px`;
+    element.style.right = `clamp(${viewportGap}px, ${right}px, calc(100% - var(--popover-width) - ${viewportGap}px))`;
+    element.style.maxHeight = `calc(100dvh - ${anchor.bottom + viewportGap * 2}px)`;
   }
 
   function show() {
@@ -46,8 +49,8 @@ export default function PopoverMenu({ button, buttonClassName = "", label, child
 
   return (
     <div className="relative"
-      onPointerEnter={(event) => { if (event.pointerType === "mouse") show(); }}
-      onPointerLeave={(event) => { if (event.pointerType === "mouse") hideSoon(); }}>
+      onPointerEnter={(event) => { if (openOnHover && event.pointerType === "mouse") show(); }}
+      onPointerLeave={(event) => { if (openOnHover && event.pointerType === "mouse") hideSoon(); }}>
       <button ref={trigger} type="button" popoverTarget={id} aria-expanded={open} aria-controls={id} className={buttonClassName}
         onClick={(event) => { if (hovered.current && open) { event.preventDefault(); hovered.current = false; } }}>
         {button}
@@ -55,9 +58,8 @@ export default function PopoverMenu({ button, buttonClassName = "", label, child
       <div ref={menu} id={id} popover="auto" aria-label={label}
         onBeforeToggle={(event) => { if (event.newState === "open") place(); }}
         onToggle={(event) => { setOpen(event.newState === "open"); if (event.newState === "closed") hovered.current = false; }}
-        // Following a link closes the menu; buttons decide for themselves (an error may need showing).
-        onClick={(event) => { if ((event.target as HTMLElement).closest("a")) menu.current?.hidePopover(); }}
-        className="fixed inset-auto m-0 w-56 rounded-panel border border-line-strong bg-surface p-2 text-sm text-ink shadow-overlay [&:popover-open]:animate-pop">
+        onClick={(event) => { if ((event.target as Element).closest(closeOnAction ? "a, button" : "a")) menu.current?.hidePopover(); }}
+        className="fixed inset-auto m-0 w-(--popover-width) overflow-y-auto overscroll-contain rounded-panel border border-line-strong bg-surface p-2 text-sm text-ink shadow-overlay [--popover-width:14rem] [&:popover-open]:animate-pop">
         {children}
       </div>
     </div>

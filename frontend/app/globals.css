@@ -298,19 +298,3 @@ dialog::backdrop {
   from { transform: translateX(-9%); opacity: .45; }
   to { transform: translateX(9%); }
 }
-
-.site-rail { position: relative; width: 64px; flex: none; z-index: 5; }
-.site-rail nav {
-  position: absolute;
-  inset: 0 auto 0 0;
-  width: 14rem;
-  padding-inline: 10px;
-  background: var(--color-canvas);
-  clip-path: inset(0 calc(100% - 64px) 0 0);
-  transition: clip-path 240ms var(--ease-out-expo);
-}
-.site-rail[data-expanded="true"] nav { clip-path: inset(0); }
-.site-rail nav a { white-space: nowrap; }
-.site-rail[data-expanded="false"] nav a { width: 44px; }
-.rail-label { opacity: 0; transform: translateX(-5px); transition: opacity 160ms, transform 220ms; }
-.site-rail[data-expanded="true"] .rail-label { opacity: 1; transform: none; }
