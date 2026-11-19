@@ -32,6 +32,8 @@ test("queue time persists across signed-in routes and reload", async ({ page, co
   await expect.poll(async () => elapsed(await timer.innerText())).toBeGreaterThanOrEqual(beforeReload);
   const cancel = indicator.getByRole("button", { name: "Cancel queue", exact: true });
   await expect(cancel).toBeVisible();
+  const [statusBounds, cancelBounds] = await Promise.all([trigger.boundingBox(), cancel.boundingBox()]);
+  expect(cancelBounds!.x).toBeGreaterThanOrEqual(statusBounds!.x + statusBounds!.width);
   await cancel.click();
   await expect(indicator).toHaveCount(0);
   expect(await (await context.request.get(`${backend}/v1/match/status`)).json()).toEqual({ status: "none" });
@@ -68,8 +70,9 @@ test("the phone header keeps the queue details and recovery actions in one row",
   await page.emulateMedia({ reducedMotion: "no-preference" });
   let fail = false;
   let cancelled = false;
+  const arena = "Nemotron 3.5 Super VL: Extended context edition";
   const queued = { status: "queued", queue: {
-    mode: "daily", model_id: modelId, model_display_name: "Test model with a longer display name",
+    mode: "daily", model_id: modelId, model_display_name: `NVIDIA: ${arena}`,
     joined_at: "2026-11-18T00:00:00Z", elapsed_seconds: 45,
   } };
   await page.route("**/v1/match/status", route => route.fulfill(fail
@@ -85,8 +88,10 @@ test("the phone header keeps the queue details and recovery actions in one row",
   const indicator = header.getByRole("region", { name: "Matchmaking queue" });
   const active = indicator.getByRole("button", { name: /^Daily queue/ });
   const cancel = indicator.getByRole("button", { name: "Cancel queue", exact: true });
-  const arena = "Test model with a longer display name";
-  await expect(active.getByText(arena, { exact: true })).toBeVisible();
+  const model = active.getByText(arena, { exact: true });
+  await expect(model).toBeVisible();
+  await expect(model).toHaveCSS("text-overflow", "ellipsis");
+  expect(await model.evaluate(element => element.scrollWidth > element.clientWidth)).toBe(true);
   await expect.poll(async () => elapsed(await indicator.getByRole("timer").innerText())).toBeGreaterThanOrEqual(45);
   await expect(active).toBeInViewport({ ratio: 1 });
   await expect(cancel).toBeInViewport({ ratio: 1 });
