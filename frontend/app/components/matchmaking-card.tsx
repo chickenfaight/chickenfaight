@@ -8,7 +8,7 @@ import { preferredArena, savedArena, saveSelectedArena } from "../lib/selected-a
 import Button, { buttonClass } from "./button";
 import ModelPicker from "./model-picker";
 import { queueName, showQueueIndicator, useQueue } from "./providers/queue-provider";
-import { QueueElapsed } from "./queue-status-indicator";
+import { QueueElapsed, QueueSearchRing } from "./queue-status-indicator";
 
 // `daily` joins today's daily-challenge queue for the chosen model instead of a regular match.
 export default function MatchmakingCard({ daily = false, onChallengeDone }: { daily?: boolean; onChallengeDone?: () => void }) {
@@ -109,7 +109,7 @@ export default function MatchmakingCard({ daily = false, onChallengeDone }: { da
   const smallLink = "font-semibold text-accent-ink underline underline-offset-2 focus-ring";
   return <div className={`min-w-0 rounded-panel border p-panel shadow-raised transition-[border-color,background-color] duration-(--duration-slow) ${queued ? "border-accent/40 bg-accent-wash" : "border-line bg-inset/60"}`}>
     <div className="mb-5 flex min-h-8 items-center gap-3">
-      {waiting && <span aria-hidden="true" className="h-7 w-7 shrink-0 rounded-full border-[3px] border-accent/20 border-t-accent motion-safe:animate-spin" />}
+      {waiting && <QueueSearchRing />}
       <h2 className={`text-base font-bold ${queued ? "text-accent-ink" : "text-ink"}`}>{title}</h2>
     </div>
     <span role="status" className="sr-only">{phase === "idle" ? "" : title}</span>
