@@ -6,12 +6,13 @@ export class ApiError extends Error {
   }
 }
 
-export async function api(path: string, signal: AbortSignal, method = "GET", body?: unknown): Promise<unknown> {
+export async function api(path: string, signal: AbortSignal | undefined, method = "GET", body?: unknown): Promise<unknown> {
+  const timeout = AbortSignal.timeout(5000);
   const response = await fetch(`${backendUrl}${path}`, {
     method,
     credentials: "include",
     cache: "no-store",
-    signal: AbortSignal.any([signal, AbortSignal.timeout(5000)]),
+    signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
     ...(body === undefined ? {} : { headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }),
   });
   if (response.status === 204) return undefined;

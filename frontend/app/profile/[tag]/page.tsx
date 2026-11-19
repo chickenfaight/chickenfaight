@@ -164,7 +164,7 @@ function Profile({ profile, me, friends, incoming, outgoing, blocked }: ProfileP
           <h1 id="profile-title" className="headline truncate text-6xl">{displayName(profile)}</h1>
           <p className="mt-1 truncate text-sm text-ink-muted"><span className="sr-only">Tag: </span>{profile.tag}</p>
           {meId === profile.id && me?.email && <p className="mt-2 truncate text-xs text-ink-faint">{me.email} <span className="text-ink-faint/70">· only you can see this</span></p>}
-          {meId && meId !== profile.id && <div className="flex flex-wrap items-start gap-x-3">
+          {meId && meId !== profile.id && <div className="mt-4 flex flex-wrap items-start gap-x-3 gap-y-2">
             {/* Neither player can send a request while blocked; unblocking remounts it with fresh state. */}
             {!profile.is_blocked && <AddFriendButton key={profile.id} userId={profile.id} initialIsFriend={profile.is_friend} initialRequest={profile.friend_request} />}
             <BlockButton key={`block-${profile.id}`} userId={profile.id} initialIsBlocked={profile.is_blocked} />
@@ -222,7 +222,7 @@ export default async function ProfilePage({ params }: PageProps<"/profile/[tag]"
               : "Couldn’t load this profile. Try again in a moment.")}
             </p>
             {result.status === "blocked" && meId && (
-              <BlockButton key={`block-${result.profile.id}`} userId={result.profile.id} initialIsBlocked={result.profile.is_blocked} />
+              <div className="mt-4"><BlockButton key={`block-${result.profile.id}`} userId={result.profile.id} initialIsBlocked={result.profile.is_blocked} /></div>
             )}
           </section>
         )}

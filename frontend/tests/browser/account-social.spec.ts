@@ -40,13 +40,20 @@ test("friend request, acceptance and blocking update both players", async ({ bro
     const other = await otherContext.newPage();
     await page.goto(`/profile/${second.tag}`);
     await page.getByRole("button", { name: "Add friend", exact: true }).click();
-    await expect(page.getByRole("button", { name: "Cancel request", exact: true })).toBeVisible();
+    const cancel = page.getByRole("button", { name: "Cancel request", exact: true });
+    const block = page.getByRole("button", { name: "Block", exact: true });
+    await expect(cancel).toBeVisible();
+    await expect(page.getByText("Friend request sent.", { exact: true })).toBeVisible();
+    await expect.poll(async () => {
+      const [cancelBox, blockBox] = await Promise.all([cancel.boundingBox(), block.boundingBox()]);
+      return cancelBox && blockBox ? Math.abs(cancelBox.y - blockBox.y) : Infinity;
+    }).toBeLessThan(1);
     await other.goto(`/profile/${first.tag}`);
     await other.getByRole("button", { name: "Accept", exact: true }).click();
     await expect(other.getByRole("button", { name: "Remove friend", exact: true })).toBeVisible();
     await page.reload();
     await expect(page.getByRole("button", { name: "Remove friend", exact: true })).toBeVisible();
-    await page.getByRole("button", { name: "Block", exact: true }).click();
+    await block.click();
     await expect(page.getByRole("button", { name: "Unblock", exact: true })).toBeVisible();
     // The block label updates locally before the refreshed profile removes the
     // friendship controls. Wait for that layout change before the next click.

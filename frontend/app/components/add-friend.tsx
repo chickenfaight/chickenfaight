@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import { api, ApiError } from "../lib/api";
 import { parseFriendshipStatus, type FriendRequestState } from "../lib/protocol";
 import { buttonClass } from "./button";
@@ -22,28 +22,21 @@ type Props = {
 export default function AddFriendButton({ userId, initialIsFriend, initialRequest }: Props) {
   const router = useRouter();
   const { refresh: recount } = useFriendRequests();
-  const controller = useRef<AbortController | null>(null);
   const [relation, setRelation] = useState<Relation>(initialIsFriend ? "friends" : initialRequest ?? "none");
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
 
-  useEffect(() => () => controller.current?.abort(), []);
-
   const id = encodeURIComponent(userId);
 
-  // Each action resolves to the relationship it leaves behind.
-  async function run(action: (signal: AbortSignal) => Promise<Relation>) {
+  // The click owns the mutation. Effect cleanup can replay while it is in flight.
+  async function run(action: () => Promise<Relation>) {
     if (pending) return;
-    controller.current?.abort();
-    const current = new AbortController();
-    controller.current = current;
     setPending(true);
     setError("");
     try {
-      setRelation(await action(current.signal));
+      setRelation(await action());
       void recount();
     } catch (err) {
-      if (current.signal.aborted) return;
       if (err instanceof ApiError && err.status === 401) { router.replace("/login"); return; }
       if (err instanceof ApiError && err.code === "NOT_FOUND") { setRelation("none"); void recount(); }
       setError(err instanceof ApiError && err.status === 429 ? "Too many changes. Wait a moment and try again."
@@ -51,24 +44,24 @@ export default function AddFriendButton({ userId, initialIsFriend, initialReques
         : err instanceof ApiError && err.code === "TAG_REQUIRED" ? "Create your tag before adding friends."
         : "Couldn’t update friends. Try again.");
     } finally {
-      if (!current.signal.aborted) setPending(false);
+      setPending(false);
     }
   }
 
-  const send = () => run(async (signal) => {
-    const status = parseFriendshipStatus(await api(`/v1/friends/requests/${id}`, signal, "PUT"));
+  const send = () => run(async () => {
+    const status = parseFriendshipStatus(await api(`/v1/friends/requests/${id}`, undefined, "PUT"));
     return status.is_friend ? "friends" : status.friend_request ?? "none";
   });
-  const accept = () => run(async (signal) => { await api(`/v1/friends/requests/${id}/accept`, signal, "POST"); return "friends"; });
-  const clearRequest = () => run(async (signal) => { await api(`/v1/friends/requests/${id}`, signal, "DELETE"); return "none"; });
-  const remove = () => run(async (signal) => { await api(`/v1/friends/${id}`, signal, "DELETE"); return "none"; });
+  const accept = () => run(async () => { await api(`/v1/friends/requests/${id}/accept`, undefined, "POST"); return "friends"; });
+  const clearRequest = () => run(async () => { await api(`/v1/friends/requests/${id}`, undefined, "DELETE"); return "none"; });
+  const remove = () => run(async () => { await api(`/v1/friends/${id}`, undefined, "DELETE"); return "none"; });
+
+  const status = relation === "sent" ? "Friend request sent." : relation === "received" ? "Wants to be your friend." : "";
 
   return (
-    <div className="mt-4">
-      {relation === "received" && <p className="mb-2 text-xs text-ink-muted">Wants to be your friend.</p>}
-      {relation === "sent" && <p className="mb-2 text-xs text-ink-muted">Friend request sent.</p>}
+    <div className="min-w-0">
       {/* aria-disabled, not disabled: Firefox restores a stale disabled state on reload (frontend/AGENTS.md). */}
-      <div className="flex gap-2">
+      <div className="flex flex-wrap gap-2">
         {relation === "none" && <button type="button" onClick={send} aria-disabled={pending} className={primary}>Add friend</button>}
         {relation === "sent" && <button type="button" onClick={clearRequest} aria-disabled={pending} className={secondary}>Cancel request</button>}
         {relation === "received" && <>
@@ -77,7 +70,7 @@ export default function AddFriendButton({ userId, initialIsFriend, initialReques
         </>}
         {relation === "friends" && <button type="button" onClick={remove} aria-disabled={pending} className={secondary}>Remove friend</button>}
       </div>
-      <p aria-live="polite" className="mt-2 text-xs text-danger">{error}</p>
+      <p aria-live="polite" className={`text-xs not-empty:mt-2 ${error ? "text-danger" : "text-ink-muted"}`}>{error || status}</p>
     </div>
   );
 }
