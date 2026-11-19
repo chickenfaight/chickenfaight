@@ -5,16 +5,18 @@ import time
 from uuid import UUID, uuid4
 from collections import deque, defaultdict
 from dataclasses import dataclass
-from datetime import date
+from datetime import UTC, date, datetime
 
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.db.session import SessionFactory
 from app.engine.game_engine import GameEngine
 from app.repositories.arena import ArenaRepository
-from app.services.arena import BYOM_ARENA_ID
+from app.schemas.schemas import QueueMode, QueueStatus
+from app.services.arena import BYOM_ARENA, BYOM_ARENA_ID
 from app.services.bilc_connections import BilcConnections
 from app.services.bilc_rules import SizeClass, class_distance
+from app.services.challenge import today
 from app.services.exceptions import AlreadyMatchedError, AlreadyQueuedError
 
 logger = logging.getLogger(__name__)
@@ -32,6 +34,14 @@ class ByomEntry:
     device_id: UUID
     size_class: SizeClass
     joined_at: float  # time.monotonic()
+
+
+@dataclass
+class QueueEntry:
+    key: QueueKey | None  # current queue, None while still in Quick Queue
+    mode: QueueMode       # the player's original choice, even after a quick transfer
+    joined_at: float
+    model_display_name: str | None = None
 
 
 def pair_byom(entries: list[ByomEntry], now: float, widen_after: float = BYOM_WIDEN_AFTER) -> list[tuple[ByomEntry, ByomEntry]]:
@@ -62,8 +72,7 @@ class Matchmaker:
         # One queue per (model_id, challenge_day): regular matches use challenge_day None; daily-challenge
         # players wait in their own queue so they only meet others playing today's challenge.
         self.queues: defaultdict[QueueKey, list[tuple[UUID, float, int]]] = defaultdict(list)
-        # The current queue for each user. None means they are still in Quick Queue.
-        self.queued_users: dict[UUID, QueueKey | None] = {}
+        self.queued_users: dict[UUID, QueueEntry] = {}
         self.assignments: dict[UUID, UUID] = {} # dict[user_id, match_id]
         self.randomqueue: deque[tuple[UUID, float]] = deque()
         self.engines: dict[UUID, GameEngine] = {}       # dict[match_id, engine]
@@ -75,11 +84,17 @@ class Matchmaker:
             await asyncio.sleep(1)
 
     async def match_available_players(self):
+        day = today()
+        for key in list(self.queues):
+            if key[1] is not None and key[1] < day:
+                for user_id, _, _ in self.queues.pop(key):
+                    del self.queued_users[user_id]
+
         for (model_id, challenge_day), queue in self.queues.items():
             if challenge_day is None and self.randomqueue and len(queue) % 2 == 1:
                 user_id, joined_at = self.randomqueue.popleft()
                 queue.append((user_id, joined_at, 1000))
-                self.queued_users[user_id] = (model_id, challenge_day)
+                self.queued_users[user_id].key = (model_id, challenge_day)
             while len(queue) >= 2:
                 player1pos = -1
                 player2pos = -1
@@ -197,21 +212,25 @@ class Matchmaker:
         return match_id
 
 
-    def register(self, user_id: UUID, model_id: UUID | None, elo: int, challenge_day: date | None = None):
+    def register(
+        self, user_id: UUID, model_id: UUID | None, elo: int, challenge_day: date | None = None,
+        *, model_display_name: str | None = None,
+    ) -> None:
         self.check_free(user_id)
+        joined_at = time.time()
         if model_id is None:
-            self.randomqueue.append((user_id, time.time()))
-            self.queued_users[user_id] = None
+            self.randomqueue.append((user_id, joined_at))
+            self.queued_users[user_id] = QueueEntry(None, "quick", joined_at)
         else:
             key = (model_id, challenge_day)
-            self.queues[key].append((user_id, time.time(), elo))
-            self.queued_users[user_id] = key
+            self.queues[key].append((user_id, joined_at, elo))
+            self.queued_users[user_id] = QueueEntry(key, "daily" if challenge_day else "model", joined_at, model_display_name)
 
     def register_byom(self, user_id: UUID, device_id: UUID, size_class: SizeClass) -> None:
         """Queue for the BYOM arena with one of the user's devices (the route checked it's idle)."""
         self.check_free(user_id)
         self.byom_queue.append(ByomEntry(user_id, device_id, size_class, time.monotonic()))
-        self.queued_users[user_id] = BYOM_KEY
+        self.queued_users[user_id] = QueueEntry(BYOM_KEY, "byom", time.time(), BYOM_ARENA.display_name)
 
     def check_free(self, user_id: UUID) -> None:
         if user_id in self.queued_users:
@@ -219,15 +238,24 @@ class Matchmaker:
         if (match_id := self.active_match(user_id)) is not None:
             raise AlreadyMatchedError(user_id, match_id)
 
-    def get_status(self, user_id: UUID) -> dict[str, str]:
+    def get_status(self, user_id: UUID) -> QueueStatus:
         if (match_id := self.active_match(user_id)) is not None:
             return {
                 "status": "matched",
                 "match_id": str(match_id),
             }
 
-        if user_id in self.queued_users:
-            return {"status": "queued"}
+        if (entry := self.queued_users.get(user_id)) is not None:
+            return {
+                "status": "queued",
+                "queue": {
+                    "mode": entry.mode,
+                    "model_id": str(entry.key[0]) if entry.key is not None and entry.mode != "quick" else None,
+                    "model_display_name": entry.model_display_name,
+                    "joined_at": datetime.fromtimestamp(entry.joined_at, UTC),
+                    "elapsed_seconds": max(0, int(time.time() - entry.joined_at)),
+                },
+            }
 
         return {"status": "none"}
 
@@ -243,10 +271,11 @@ class Matchmaker:
         if (match_id := self.active_match(user_id)) is not None:
             raise AlreadyMatchedError(user_id, match_id)
 
-        if user_id not in self.queued_users:
+        entry = self.queued_users.get(user_id)
+        if entry is None:
             return
 
-        key = self.queued_users[user_id]
+        key = entry.key
         if key is None:
             self.randomqueue = deque(entry for entry in self.randomqueue if entry[0] != user_id)
         elif key == BYOM_KEY:

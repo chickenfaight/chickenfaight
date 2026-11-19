@@ -25,9 +25,6 @@ class ArenaService:
             provider_slug=provider_slug, model_slug=model.api_model_id,
         ) for model, provider_slug in arenas] + [BYOM_ARENA]
 
-    async def require_active(self, model_id: UUID) -> None:
-        await self.get_active(model_id)
-
     async def get_active(self, model_id: UUID) -> Model:
         model = await self.arenas.get_active_arena(model_id)
         if model is None:

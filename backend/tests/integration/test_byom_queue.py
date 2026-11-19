@@ -66,7 +66,9 @@ async def test_queue_with_an_idle_device(client, log_in, make_user):
     device_id = await paired_device(client, log_in, owner)
     connect(device_id, owner, "14B")
     response = await client.post(QUEUE, json={"model_id": str(BYOM_ARENA_ID), "bilc_id": device_id})
-    assert response.status_code == 202 and response.json() == {"status": "queued"}
+    assert response.status_code == 202 and response.json()["status"] == "queued"
+    info = response.json()["queue"]
+    assert (info["mode"], info["model_id"]) == ("byom", str(BYOM_ARENA_ID))
     [entry] = app.state.matchmaker.byom_queue
     assert (str(entry.device_id), entry.size_class) == (device_id, "medium")
     devices = (await client.get("/v1/bilc/devices")).json()

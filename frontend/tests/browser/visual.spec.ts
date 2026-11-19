@@ -5,6 +5,7 @@ test.afterEach(cleanupAccounts);
 
 test("lobby and picker", async ({ page, context }) => {
   const me = await account(context);
+  await page.clock.setFixedTime(new Date("2026-11-17T12:00:00Z"));
   await page.route("**/v1/challenge/today", route => route.fulfill({ json: {
     day: "2026-11-17", topic: { topic: "Should public transit be free?", pro_position: "Yes", con_position: "No" },
     twist: { title: "Be concrete", description: "Use one concrete example.", max_chars: null },

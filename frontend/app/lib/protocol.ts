@@ -74,17 +74,40 @@ export function parseArenas(data: unknown): Arena[] {
   });
 }
 
+export type QueueMode = "quick" | "model" | "daily" | "byom";
+export type QueueInfo = {
+  mode: QueueMode;
+  model_id: string | null;
+  model_display_name: string | null;
+  joined_at: string;
+  elapsed_seconds: number;
+};
+
 export type QueueStatus =
-  | { status: "none" | "queued" }
+  | { status: "none" }
+  | { status: "queued"; queue: QueueInfo | null }
   | { status: "matched"; match_id: string };
 
 export function parseQueueStatus(data: unknown): QueueStatus {
-  if (typeof data !== "object" || data === null || !("status" in data)) {
-    throw new Error("Invalid queue status");
-  }
-  if (data.status === "none" || data.status === "queued") return { status: data.status };
-  if (data.status === "matched" && "match_id" in data && typeof data.match_id === "string" && data.match_id.trim()) {
-    return { status: "matched", match_id: data.match_id };
+  if (isObject(data)) {
+    if (data.status === "none") return { status: "none" };
+    if (data.status === "matched" && typeof data.match_id === "string" && data.match_id.trim()) {
+      return { status: "matched", match_id: data.match_id };
+    }
+    if (data.status === "queued") {
+      if (data.queue === undefined) return { status: "queued", queue: null };
+      const queue = data.queue;
+      if (isObject(queue)
+        && (queue.mode === "quick" || queue.mode === "model" || queue.mode === "daily" || queue.mode === "byom")
+        && optionalString(queue.model_id) && optionalString(queue.model_display_name)
+        && typeof queue.joined_at === "string" && Number.isFinite(Date.parse(queue.joined_at))
+        && typeof queue.elapsed_seconds === "number" && Number.isSafeInteger(queue.elapsed_seconds) && queue.elapsed_seconds >= 0) {
+        return { status: "queued", queue: {
+          mode: queue.mode, model_id: queue.model_id, model_display_name: queue.model_display_name,
+          joined_at: queue.joined_at, elapsed_seconds: queue.elapsed_seconds,
+        } };
+      }
+    }
   }
   throw new Error("Invalid queue status");
 }

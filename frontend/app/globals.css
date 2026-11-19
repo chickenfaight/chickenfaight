@@ -134,21 +134,16 @@
   --animate-rise: rise var(--duration-slow) var(--ease-out-expo) both;
   --animate-fade: fade var(--duration-base) var(--ease-out-expo) both;
   --animate-pop: pop var(--duration-slow) var(--ease-overshoot) both;
-  --animate-stamp: stamp 520ms var(--ease-overshoot) both;
-  --animate-enter-left: enter-left 560ms var(--ease-out-expo) both;
-  --animate-enter-right: enter-right 560ms var(--ease-out-expo) both;
   --animate-shimmer: shimmer 1.4s var(--ease-in-out-soft) infinite;
-  --animate-intro: intro 2.1s linear both;
+  --animate-match-intro: match-intro 2.1s linear both;
+  --animate-match-corner: match-corner var(--duration-slow) var(--ease-out-expo) both;
 
   @keyframes rise { from { opacity: 0; transform: translateY(10px); } }
   @keyframes fade { from { opacity: 0; } }
   @keyframes pop { from { opacity: 0; transform: scale(0.92); } }
-  @keyframes stamp { from { opacity: 0; transform: scale(1.35); } }
-  @keyframes enter-left { from { opacity: 0; transform: translateX(-48px); } }
-  @keyframes enter-right { from { opacity: 0; transform: translateX(48px); } }
   @keyframes shimmer { 50% { opacity: 0.45; } }
-  /* The "match found" overlay: in, hold, out. */
-  @keyframes intro { 0% { opacity: 0; } 8% { opacity: 1; } 82% { opacity: 1; } 100% { opacity: 0; } }
+  @keyframes match-intro { 0% { opacity: 0; } 8%, 82% { opacity: 1; } 100% { opacity: 0; } }
+  @keyframes match-corner { from { opacity: 0; transform: translateX(var(--match-entry-offset)); } }
 }
 
 /* Every interactive element: a visible keyboard focus ring. */
@@ -258,4 +253,43 @@ dialog::backdrop {
   ::view-transition-new(*) {
     animation: none !important;
   }
+}
+
+.debate-stage {
+  flex: 1;
+  position: relative;
+  isolation: isolate;
+  background: radial-gradient(ellipse at 75% 8%, #60293655, transparent 55%),
+    linear-gradient(155deg, #492532, #301c29 46%, #201720 90%);
+}
+.stage-scenery {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  z-index: -1;
+  pointer-events: none;
+}
+.stage-lights {
+  position: absolute;
+  inset: 0 -10%;
+  background:
+    conic-gradient(from 157deg at 23% -13%, transparent, #ffd0b326 8deg, #ffc8ab2c 11deg, transparent 22deg),
+    conic-gradient(from 181deg at 86% -12%, transparent, #ff84992e 9deg, #ffc49746 12deg, transparent 24deg);
+  animation: stage-light-drift 8s ease-in-out infinite alternate;
+}
+@keyframes stage-light-drift {
+  from { transform: translateX(-4%); }
+  to { transform: translateX(4%); }
+}
+
+.stage-lights::after {
+  content: "";
+  position: absolute;
+  inset: 0 -16%;
+  background: radial-gradient(ellipse at 70% 30%, #ffae5528, transparent 43%);
+  animation: stage-color 10s ease-in-out infinite alternate;
+}
+@keyframes stage-color {
+  from { transform: translateX(-9%); opacity: .45; }
+  to { transform: translateX(9%); }
 }

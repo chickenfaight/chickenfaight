@@ -50,3 +50,25 @@ test("lobby and open model picker pass accessibility checks", async ({ page, con
   await picker.press("Escape");
   await expect(picker).toBeFocused();
 });
+
+test("the mobile match editor and verdict pass automated accessibility checks", async ({ page, context }) => {
+  await account(context);
+  await page.setViewportSize({ width: 390, height: 844 });
+  let socket: import("@playwright/test").WebSocketRoute;
+  await page.routeWebSocket("**/v1/game/**", ws => {
+    socket = ws;
+    ws.send(JSON.stringify({ type: "MATCH_STATE", payload: {
+      model_display_name: "Test model", topic: { category: "Cities", topic: "Should public transit be free?", pro_position: "Transit should be free.", con_position: "Transit should not be free." },
+      you: "pro", deadline: new Date(Date.now() + 120000).toISOString(), challenge: null,
+    } }));
+  });
+  await page.goto("/match/33333333-3333-4333-8333-333333333333");
+  await expect(page.getByRole("textbox", { name: "Give your AI a strategy" })).toBeVisible();
+  await audit(page);
+  socket!.send(JSON.stringify({ type: "MATCH_RESULT", payload: {
+    winner: "pro", reason: "The judge preferred the argument for free public transit.", status: "completed", end_reason: "judged",
+    arguments: { pro: "Free transit improves access to work.", con: "Transit requires sustainable funding." },
+  } }));
+  await expect(page.getByRole("heading", { name: "You won." })).toBeFocused();
+  await audit(page);
+});

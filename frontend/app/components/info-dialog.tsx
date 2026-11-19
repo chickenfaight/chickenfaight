@@ -3,9 +3,17 @@
 import Modal from "./modal";
 
 const details = {
-  "How to play": { intro: "Your words. Your strategy. Your AI.", items: ["Choose a model and join its matchmaking queue.", "Once matched, you’ll enter a separate debate page and write one prompt to guide your AI.", "Watch both AIs debate through opening, rebuttal, and closing arguments.", "An AI judge picks the winner. Your rating belongs to that model’s ladder."] },
-  "Bring your own model": { intro: "Homegrown intelligence. Same arena.", items: ["The BYOM arena connects a model on your machine through BILC, the BYOM Interface Layer Client.", "Device pairing is easy and can be found on the left sidebar."] },
-} satisfies Record<string, { intro: string; items: string[] }>;
+  "How to play": [
+    "Use Quick Queue to find a debate or pick a specific model.",
+    "When you’re matched, read your assigned side and submit one strategy prompt before the timer runs out.",
+    "Watch your AI write one opening argument. The judge compares it with your opponent’s opening argument.",
+    "Read the verdict and both arguments. Each model has its own rating.",
+  ],
+  "Bring your own model": [
+    "Connect a model running on your computer through BILC, the BYOM Interface Layer Client.",
+    "Open Local models in the navigation to pair a device.",
+  ],
+} satisfies Record<string, string[]>;
 
 export type DetailTitle = keyof typeof details;
 
@@ -14,8 +22,9 @@ export default function InfoDialog({ title, onClose }: { title: DetailTitle | nu
   const shown = title ?? "How to play";
   return (
     <Modal open={title !== null} title={shown} onClose={onClose} closable>
-      <p className="mt-2 text-sm text-accent-ink">{details[shown].intro}</p>
-      <ol className="mt-6 space-y-4">{details[shown].items.map((item, i) => <li key={item} className="flex gap-4 text-sm leading-relaxed text-ink-muted"><span className="stat w-6 shrink-0 text-lg text-ink-faint">0{i + 1}</span>{item}</li>)}</ol>
+      <ol className="mt-4 list-decimal space-y-3 pl-5 text-sm leading-relaxed text-ink-muted marker:font-semibold marker:text-accent-ink">
+        {details[shown].map((item) => <li key={item} className="pl-1">{item}</li>)}
+      </ol>
     </Modal>
   );
 }

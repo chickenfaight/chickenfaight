@@ -136,10 +136,13 @@ Backend dependencies (`uv sync`) and Go (for the Go/Python contract test) are re
   Auth transitions wait for the signed-in profile control or login form; logout
   uses the UI and awaits its redirect rather than starting a competing navigation.
 - `match-state.spec.ts`: controlled WebSocket messages verify one connection in
-  Strict Mode, prompt rejection/retry, heartbeat echo, streamed text, waiting and
-  judging transitions, result retention after closure, malformed-message recovery,
-  heartbeat silence/unmount cleanup, and resign-before-navigation.
+  Strict Mode, the player reveal and reduced-motion behavior, focus after submission and rejection, a copyable expired draft, mobile prompt
+  controls and sticky judging status, early no-show results, heartbeat echo and cleanup,
+  plain-text streaming, verdict retention, and the forfeit confirmation.
 - `homepage.spec.ts`: focused lobby hierarchy, complete challenge text and retry, single navigation entries, model-picker keyboard/dismissal/persistence, Quick Queue payload, daily model restrictions and account-menu Settings.
+- `daily-challenge.spec.ts`: UTC rollover on an open page and recovery when today's topic is unavailable.
+- `navigation.spec.ts`: labeled mobile navigation, dismissal and destination focus, and player search at 320 px.
+- `queue-persistence.spec.ts`: elapsed time after navigation and reload, the model and timer in the phone header without shifting content, reduced-motion behavior for the queue ring, direct cancellation and recovery after a failed status request, entry into the arena from Settings, and recovery from a disconnected arena.
 - `recovery.spec.ts`: queue conflicts, delisted model recovery, history error/retry/
   empty state, session expiry, network-loss recovery without duplicate registration, and account edits surviving reload.
 - `account-social.spec.ts`: avatar format validation/upload/reload/removal and
@@ -214,8 +217,8 @@ follow-up drafts with no over-budget request. Homepage tests distinguish sidebar
 navigation from contextual history links and the account menu.
 
 `accessibility.spec.ts` runs WCAG A/AA axe checks on sign-in, Settings and its username
-dialog, lobby and the open model picker in Chromium and WebKit within the normal browser suite. Firefox
-axe checks are explicitly skipped because its process repeatedly crashes during
+dialog, lobby, the open model picker, and the mobile prompt editor and verdict in Chromium and
+WebKit. Firefox axe checks are explicitly skipped because its process repeatedly crashes during
 axe frame evaluation; existing Firefox keyboard/menu tests remain enabled. Axe supplements manual keyboard,
 focus, screen-reader and reduced-motion reviews; it does not certify accessibility.
 

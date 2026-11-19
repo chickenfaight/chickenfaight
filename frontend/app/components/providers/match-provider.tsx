@@ -10,6 +10,7 @@ type State = {
   model_display_name: string | null;
   side: Side;
   deadline: string | null;
+  promptClosed: boolean;
   challenge: MatchChallenge | null;
   // Both players for the face-off; empty if the server didn't say.
   participants: ArenaPlayer[];
@@ -20,7 +21,7 @@ type State = {
   disconnected: boolean;
 };
 type Action = MatchMessage | { type: "SUBMITTED"; prompt: string } | { type: "DISCONNECTED"; message: string };
-const initialState: State = { phase: "connecting", topic: null, model_display_name: null, side: "pro", deadline: null, challenge: null, participants: [], prompt: null, argument: "", result: null, error: "", disconnected: false };
+const initialState: State = { phase: "connecting", topic: null, model_display_name: null, side: "pro", deadline: null, promptClosed: false, challenge: null, participants: [], prompt: null, argument: "", result: null, error: "", disconnected: false };
 
 // Errors meaning the prompt wasn't accepted, so the player can edit and resubmit.
 const REJECTED_PROMPT = ["PROMPT_TOO_LONG", "BAD_MESSAGE", "PROMPT_BREAKS_CHALLENGE"];
@@ -35,8 +36,9 @@ function reducer(state: State, action: Action): State {
     case "MATCH_RESULT": return { ...state, result: action.payload, phase: "completed", error: "" };
     case "DISCONNECTED": return state.result ? state : { ...state, error: action.message, disconnected: true };
     case "ERROR": {
-      const rejected = REJECTED_PROMPT.includes(action.payload.code) && !state.argument;
-      return { ...state, error: action.payload.message, ...(rejected ? { phase: "prompting" as const, prompt: null } : {}) };
+      const promptClosed = action.payload.code === "PROMPT_DEADLINE_PASSED";
+      const rejected = state.phase === "generating" && !state.argument && (promptClosed || REJECTED_PROMPT.includes(action.payload.code));
+      return { ...state, error: action.payload.message, ...(rejected ? { phase: "prompting" as const, prompt: null, promptClosed } : {}) };
     }
     default: return state;
   }

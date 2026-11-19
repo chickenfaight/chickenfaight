@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import { Barlow_Condensed, Geist, Geist_Mono } from "next/font/google";
+import NavigationFocus from "./components/navigation-focus";
 import FriendRequestsProvider from "./components/providers/friend-requests-provider";
+import QueueProvider from "./components/providers/queue-provider";
 import SessionProvider from "./components/providers/session-provider";
 import "./globals.css";
 
@@ -32,7 +34,16 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       lang="en"
       className={`${geistSans.variable} ${geistMono.variable} ${barlowCondensed.variable} dark h-full antialiased`}
     >
-      <body className="flex min-h-full flex-col bg-canvas text-ink"><SessionProvider><FriendRequestsProvider>{children}</FriendRequestsProvider></SessionProvider></body>
+      <body className="flex min-h-full flex-col bg-canvas text-ink">
+        <SessionProvider>
+          <FriendRequestsProvider>
+            <QueueProvider>
+              <NavigationFocus />
+              {children}
+            </QueueProvider>
+          </FriendRequestsProvider>
+        </SessionProvider>
+      </body>
     </html>
   );
 }
