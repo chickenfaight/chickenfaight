@@ -83,7 +83,7 @@ export default function MatchmakingCard({ daily = false, onChallengeDone }: { da
     if (failure === "challenge") onChallengeDone?.();
   }
 
-  // The shared strip takes over once a queue starts on the challenge page.
+  // The shared header takes over once a queue starts on the challenge page.
   if (daily && showQueueIndicator(queueState)) return null;
   if (phase === "finishing") return <div className="panel p-panel">
     <p className="text-base font-bold" role="status">Waiting for your previous debate to end…</p>

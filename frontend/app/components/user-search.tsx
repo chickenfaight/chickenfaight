@@ -18,7 +18,7 @@ type Suggestions =
   | { status: "error"; detail: string };
 
 // Player search with live completion. Enter opens the highlighted player, or the full results page.
-export default function UserSearch({ initialQuery = "" }: { initialQuery?: string }) {
+export default function UserSearch({ initialQuery = "", compact = false }: { initialQuery?: string; compact?: boolean }) {
   const router = useRouter();
   const listId = useId();
   const trigger = useRef<HTMLButtonElement>(null);
@@ -114,10 +114,10 @@ export default function UserSearch({ initialQuery = "" }: { initialQuery?: strin
           flushSync(() => setFieldOpen(true));
           input.current?.focus();
         }}
-        className={`flex h-11 items-center justify-center rounded-control px-2 text-sm font-semibold text-ink-muted transition-colors duration-(--duration-fast) hover:text-ink focus-ring lg:absolute lg:left-0 lg:top-0 lg:z-10 lg:w-11 lg:px-0 ${fieldOpen ? "" : "hover:bg-surface-raised"}`}
+        className={`flex h-11 min-w-11 items-center justify-center rounded-control px-2 text-sm font-semibold text-ink-muted transition-colors duration-(--duration-fast) hover:text-ink focus-ring lg:absolute lg:left-0 lg:top-0 lg:z-10 lg:w-11 lg:px-0 ${fieldOpen ? "" : "hover:bg-surface-raised"}`}
       >
-        <Icon name="search" className="hidden h-5 w-5 lg:block" />
-        <span className="lg:hidden">Search</span>
+        <Icon name="search" className={`hidden h-5 w-5 lg:block ${compact ? "max-[399px]:block" : ""}`} />
+        <span className={`lg:hidden ${compact ? "max-[399px]:hidden" : ""}`}>Search</span>
       </button>
       <div id={`${listId}-field`} className={`absolute inset-x-gutter top-full mt-2 transition-opacity duration-(--duration-fast) max-[359px]:inset-x-3 lg:static lg:mt-0 ${fieldOpen ? "visible opacity-100" : "invisible pointer-events-none opacity-0"}`}>
         <label htmlFor={`${listId}-input`} className="sr-only">Search players by username or tag</label>

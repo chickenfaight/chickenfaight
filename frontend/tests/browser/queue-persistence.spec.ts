@@ -30,8 +30,9 @@ test("queue time persists across signed-in routes and reload", async ({ page, co
 
   await page.reload();
   await expect.poll(async () => elapsed(await timer.innerText())).toBeGreaterThanOrEqual(beforeReload);
-  await trigger.click();
-  await indicator.getByRole("button", { name: "Cancel queue", exact: true }).click();
+  const cancel = indicator.getByRole("button", { name: "Cancel queue", exact: true });
+  await expect(cancel).toBeVisible();
+  await cancel.click();
   await expect(indicator).toHaveCount(0);
   expect(await (await context.request.get(`${backend}/v1/match/status`)).json()).toEqual({ status: "none" });
 });
@@ -64,6 +65,7 @@ test("finding a match in Settings opens the arena", async ({ browser, page, cont
 test("the phone header keeps the queue details and recovery actions in one row", async ({ page, context }) => {
   await account(context);
   await page.setViewportSize({ width: 320, height: 740 });
+  await page.emulateMedia({ reducedMotion: "no-preference" });
   let fail = false;
   let cancelled = false;
   const queued = { status: "queued", queue: {
@@ -82,10 +84,16 @@ test("the phone header keeps the queue details and recovery actions in one row",
   const header = page.getByRole("banner");
   const indicator = header.getByRole("region", { name: "Matchmaking queue" });
   const active = indicator.getByRole("button", { name: /^Daily queue/ });
+  const cancel = indicator.getByRole("button", { name: "Cancel queue", exact: true });
   const arena = "Test model with a longer display name";
   await expect(active.getByText(arena, { exact: true })).toBeVisible();
   await expect.poll(async () => elapsed(await indicator.getByRole("timer").innerText())).toBeGreaterThanOrEqual(45);
   await expect(active).toBeInViewport({ ratio: 1 });
+  await expect(cancel).toBeInViewport({ ratio: 1 });
+  const ring = active.locator('[class*="animate-spin"]');
+  await expect(ring).toHaveCSS("animation-name", "spin");
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await expect(ring).toHaveCSS("animation-name", "none");
   await expect(header.getByRole("button", { name: "Search players" })).toBeInViewport({ ratio: 1 });
   const contentTop = await page.locator("#main-content").evaluate(element => element.getBoundingClientRect().top + scrollY);
   expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBe(0);
@@ -96,7 +104,8 @@ test("the phone header keeps the queue details and recovery actions in one row",
   await issue.press("Enter");
   await expect(indicator.getByText(`Daily challenge · ${arena}`, { exact: true })).toBeVisible();
   await expect(indicator.getByRole("button", { name: "Retry queue status" })).toBeVisible();
-  await indicator.getByRole("button", { name: "Cancel queue", exact: true }).click();
+  await page.keyboard.press("Escape");
+  await cancel.click();
   await expect(indicator).toHaveCount(0);
   expect(await page.locator("#main-content").evaluate(element => element.getBoundingClientRect().top + scrollY)).toBe(contentTop);
   expect(cancelled).toBe(true);

@@ -36,7 +36,7 @@ export default function SiteHeader({ query }: { current?: "play" | "leaderboards
         <div className="ml-auto flex shrink-0 items-center gap-1 sm:gap-4">
           <button type="button" onClick={() => setDetail("How to play")} className="hidden min-h-11 shrink-0 items-center rounded-control px-2 text-sm font-semibold text-ink-muted transition-colors duration-(--duration-fast) hover:text-ink focus-ring lg:flex">How to play</button>
           <MobileNavigation onHelp={() => setDetail("How to play")} />
-          <UserSearch key={query} initialQuery={query} />
+          <UserSearch key={query} initialQuery={query} compact={queueVisible} />
           <PopoverMenu label="Profile options" buttonClassName="flex h-11 min-w-11 items-center justify-center rounded-control text-left transition-colors duration-(--duration-fast) hover:bg-white/[0.04] focus-ring lg:h-auto lg:gap-3 lg:px-2 lg:py-2"
             button={<>
               <Avatar name={name} url={user?.avatar_url ?? null} size={36} />
