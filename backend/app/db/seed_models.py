@@ -115,7 +115,7 @@ async def import_models(session: AsyncSession, models: list[OpenRouterModel]) ->
         cached_price = model.pricing.get("input_cache_read")
         rows.append({
             "api_model_id": model.id,
-            "display_name": model.name,
+            "display_name": model.name.rstrip().removesuffix("(free)").rstrip() or model.name,
             "input_cost": model.pricing["prompt"] * Decimal(1_000_000),
             "output_cost": model.pricing["completion"] * Decimal(1_000_000),
             "cached_input_cost": cached_price * Decimal(1_000_000) if cached_price is not None else None,

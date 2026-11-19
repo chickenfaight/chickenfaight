@@ -72,6 +72,7 @@ async def test_import_uses_one_provider_and_preserves_ids_on_refresh(db_session)
         assert len(saved) == 2
         assert {model.provider_id for model in saved.values()} == {provider.id}
         first = saved[models[0].id]
+        assert first.display_name == "NVIDIA: Example"
         assert first.input_cost == first.output_cost == first.cached_input_cost == Decimal("0")
         assert first.context_window == 128_000
         assert first.max_output_tokens == 8_192
@@ -79,11 +80,12 @@ async def test_import_uses_one_provider_and_preserves_ids_on_refresh(db_session)
         assert first.is_active
         assert first.provider_metadata["supported_parameters"] == ["response_format"]
         assert saved[models[1].id].cached_input_cost is None
+        assert saved[models[1].id].display_name == "Google: Example"
         assert saved[models[1].id].max_output_tokens is None
         first.is_active = False
         provider.is_active = False
 
-    models[0].name = "Updated name"
+    models[0].name = "Updated name (free) Edition (free)"
     models[0].context_length = 256_000
     assert await import_models(db_session, models) == 2
     # Core upserts bypass the ORM identity map; reload it before inspecting.
@@ -92,7 +94,7 @@ async def test_import_uses_one_provider_and_preserves_ids_on_refresh(db_session)
         provider = (await db_session.scalars(select(Provider))).one()
         saved = {model.api_model_id: model for model in await db_session.scalars(select(Model))}
         assert {api_id: model.id for api_id, model in saved.items()} == original_ids
-        assert saved[models[0].id].display_name == "Updated name"
+        assert saved[models[0].id].display_name == "Updated name (free) Edition"
         assert saved[models[0].id].context_window == 256_000
         assert not saved[models[0].id].is_active
         assert not provider.is_active
