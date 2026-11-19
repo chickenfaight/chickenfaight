@@ -4,7 +4,7 @@ import Avatar from "./avatar";
 import CountUp from "./count-up";
 
 export type FaceOffPlayer = {
-  side: Side;
+  side: Side | null;
   name: string;
   tag: string | null;
   avatarUrl: string | null;
@@ -29,13 +29,13 @@ function Corner({ player, align, presentation }: { player: FaceOffPlayer; align:
   const statsAlignment = intro ? `justify-center ${right ? "sm:justify-end" : "sm:justify-start"}` : right ? "justify-end" : "";
   return (
     <div className={`flex min-w-0 items-center ${layout}`}>
-      <Avatar name={player.name} url={player.avatarUrl} size={intro ? 64 : compact ? 32 : 52} ring={`border-2 ${SIDE_BORDER[player.side]}`} />
+      <Avatar name={player.name} url={player.avatarUrl} size={intro ? 64 : compact ? 32 : 52} ring={player.side ? `border-2 ${SIDE_BORDER[player.side]}` : undefined} />
       <div className="min-w-0">
         {!compact && <p className="eyebrow">{player.you ? "You" : "Opponent"}{player.winner && <span className="ml-2 text-gold">Winner</span>}</p>}
         <p className={`font-bold ${intro ? "mt-1 wrap-anywhere text-lg sm:text-xl" : compact ? "truncate text-sm" : "mt-1 truncate text-lg"}`} title={player.name}>{player.name}</p>
         {compact ? <p className="mt-0.5 text-xs text-ink-muted">{player.you ? "You" : "Opponent"}{player.elo !== null && <> · {player.elo} Elo</>}</p> :
         <p className={`mt-1 flex flex-wrap items-baseline gap-x-3 gap-y-1 ${statsAlignment}`}>
-          <span className={`stat rounded-control border px-2 py-0.5 text-sm uppercase tracking-wider ${SIDE_TEXT[player.side]} ${SIDE_BORDER[player.side]}`}>{SIDE_LABEL[player.side]}</span>
+          {player.side && <span className={`stat rounded-control border px-2 py-0.5 text-sm uppercase tracking-wider ${SIDE_TEXT[player.side]} ${SIDE_BORDER[player.side]}`}>{SIDE_LABEL[player.side]}</span>}
           {player.elo !== null && (change === null
             ? <span className="text-sm text-ink-muted"><span className="stat text-xl text-ink">{player.elo}</span> Elo</span>
             : <span className="text-sm text-ink-muted">

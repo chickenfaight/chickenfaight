@@ -5,7 +5,7 @@ import Modal from "./modal";
 const details = {
   "How to play": [
     "Use Quick Queue to find a debate or pick a specific model.",
-    "When you’re matched, read your assigned side and submit one strategy prompt before the timer runs out.",
+    "Choose Pro or Con when the debate opens. The first pick decides both sides. Then write one strategy prompt before the prompt timer runs out.",
     "Watch your AI write one opening argument. The judge compares it with your opponent’s opening argument.",
     "Read the verdict and both arguments. Each model has its own rating.",
   ],

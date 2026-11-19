@@ -17,8 +17,11 @@ test("an open challenge switches to the next topic and clears completion at midn
   await page.clock.install({ time: new Date("2026-11-18T23:59:46Z") });
   let response = day;
   await page.route("**/v1/challenge/today", route => route.fulfill({ json: response }));
+  const queueStatus = page.waitForResponse(response => response.url().endsWith("/v1/match/status") && response.ok());
   await page.goto("/challenge");
   await expect(page.getByRole("heading", { name: "Completed today" })).toBeVisible();
+  // Let the queue read finish before advancing past its request timeout.
+  await (await queueStatus).finished();
 
   response = {
     ...day,

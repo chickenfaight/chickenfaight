@@ -222,8 +222,9 @@ export function parseChallengeToday(data: unknown): ChallengeToday {
 // Current arena wire format in PROTOCOL.md; full reconnect snapshots are planned.
 export type Side = "pro" | "con";
 export type ArenaTopic = { topic: string; pro_position: string; con_position: string };
-// A player as MATCH_STATE introduces them: public profile and Elo on this ladder (null if unknown).
-export type ArenaPlayer = { user_id: string; side: Side; user: UserPublic | null; elo: number | null };
+// A player's public profile and Elo on this ladder, before and after sides are assigned.
+export type ArenaParticipant = { user_id: string; user: UserPublic | null; elo: number | null };
+export type ArenaPlayer = ArenaParticipant & { side: Side };
 // Each side's Elo around the match, from MATCH_RESULT; null when ratings didn't change or aren't saved yet.
 export type ArenaRatingChange = { user_id: string; side: Side; elo_before: number | null; elo_after: number | null };
 export type ArenaResult = {
@@ -235,8 +236,10 @@ export type ArenaResult = {
   participants: ArenaRatingChange[];
 };
 export type MatchState = { model_display_name: string; topic: ArenaTopic; you: Side; deadline: string | null; challenge: MatchChallenge | null; participants: ArenaPlayer[] };
+export type SideSelectionState = { match_id: string; model_display_name: string; topic: ArenaTopic; deadline: string };
 export type MatchMessage =
-  | { type: "MATCH_STATE"; payload: MatchState }
+  | { type: "SIDE_SELECTION_OPEN"; payload: SideSelectionState }
+  | { type: "MATCH_INTRO" | "MATCH_STATE"; payload: MatchState }
   | { type: "TURN_DELTA"; payload: { delta: string } }
   | { type: "TURN_END" | "JUDGING"; payload: Record<string, unknown> }
   | { type: "MATCH_RESULT"; payload: ArenaResult }
@@ -248,28 +251,39 @@ function record(value: unknown): value is Record<string, unknown> {
 }
 function side(value: unknown): value is Side { return value === "pro" || value === "con"; }
 function nullableNumber(value: unknown): value is number | null { return value === null || (typeof value === "number" && Number.isFinite(value)); }
+function arenaTopic(value: unknown): value is ArenaTopic {
+  return record(value) && typeof value.topic === "string" && typeof value.pro_position === "string" && typeof value.con_position === "string";
+}
+function deadline(value: unknown): value is string {
+  return typeof value === "string" && Number.isFinite(Date.parse(value));
+}
 
 // `participants` arrived after the first arena release, so a message without it is still valid.
-function parseList<T>(value: unknown, item: (entry: Record<string, unknown>) => T): T[] {
+function parseList<T>(value: unknown, item: (entry: Record<string, unknown> & { user_id: string }) => T): T[] {
   if (value === undefined) return [];
   if (!Array.isArray(value)) throw new Error("Invalid participants");
   return value.map((entry: unknown) => {
-    if (!record(entry) || typeof entry.user_id !== "string" || !side(entry.side)) throw new Error("Invalid participant");
-    return item(entry);
+    if (!record(entry) || typeof entry.user_id !== "string") throw new Error("Invalid participant");
+    return item({ ...entry, user_id: entry.user_id });
   });
+}
+
+function parseArenaParticipant(entry: Record<string, unknown> & { user_id: string }): ArenaParticipant {
+  if (!(entry.elo === undefined || nullableNumber(entry.elo))) throw new Error("Invalid participant");
+  return { user_id: entry.user_id, user: entry.user == null ? null : parseUserPublic(entry.user), elo: entry.elo ?? null };
 }
 
 function parseArenaPlayers(value: unknown): ArenaPlayer[] {
   return parseList(value, (entry) => {
-    if (!(entry.elo === undefined || nullableNumber(entry.elo))) throw new Error("Invalid participant");
-    return { user_id: entry.user_id as string, side: entry.side as Side, user: entry.user == null ? null : parseUserPublic(entry.user), elo: entry.elo ?? null };
+    if (!side(entry.side)) throw new Error("Invalid participant");
+    return { ...parseArenaParticipant(entry), side: entry.side };
   });
 }
 
 function parseRatingChanges(value: unknown): ArenaRatingChange[] {
   return parseList(value, (entry) => {
-    if (!nullableNumber(entry.elo_before) || !nullableNumber(entry.elo_after)) throw new Error("Invalid participant");
-    return { user_id: entry.user_id as string, side: entry.side as Side, elo_before: entry.elo_before, elo_after: entry.elo_after };
+    if (!side(entry.side) || !nullableNumber(entry.elo_before) || !nullableNumber(entry.elo_after)) throw new Error("Invalid participant");
+    return { user_id: entry.user_id, side: entry.side, elo_before: entry.elo_before, elo_after: entry.elo_after };
   });
 }
 
@@ -278,11 +292,17 @@ export function parseMatchMessage(raw: string): MatchMessage {
   if (!record(data) || !record(data.payload)) throw new Error("Invalid match message");
   const p = data.payload;
   switch (data.type) {
-    case "MATCH_STATE":
-      if (typeof p.model_display_name === "string" && p.model_display_name.trim() && record(p.topic) && typeof p.topic.topic === "string" && typeof p.topic.pro_position === "string"
-        && typeof p.topic.con_position === "string" && side(p.you)
-        && (p.deadline === null || (typeof p.deadline === "string" && Number.isFinite(Date.parse(p.deadline))))) {
-        return { type: data.type, payload: { model_display_name: p.model_display_name, topic: p.topic as ArenaTopic, you: p.you, deadline: p.deadline, challenge: parseChallenge(p.challenge), participants: parseArenaPlayers(p.participants) } };
+    case "SIDE_SELECTION_OPEN":
+      if (typeof p.match_id === "string" && typeof p.model_display_name === "string" && p.model_display_name.trim()
+        && arenaTopic(p.topic) && deadline(p.deadline)) {
+        return { type: data.type, payload: { match_id: p.match_id, model_display_name: p.model_display_name,
+          topic: p.topic, deadline: p.deadline } };
+      }
+      break;
+    case "MATCH_INTRO": case "MATCH_STATE":
+      if (typeof p.model_display_name === "string" && p.model_display_name.trim() && arenaTopic(p.topic) && side(p.you)
+        && (p.deadline === null || (data.type === "MATCH_STATE" && deadline(p.deadline)))) {
+        return { type: data.type, payload: { model_display_name: p.model_display_name, topic: p.topic, you: p.you, deadline: p.deadline, challenge: parseChallenge(p.challenge), participants: parseArenaPlayers(p.participants) } };
       }
       break;
     case "TURN_DELTA":

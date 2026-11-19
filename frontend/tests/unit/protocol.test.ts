@@ -4,13 +4,24 @@ import test from "node:test";
 import { parseMatchMessage, parseQueueStatus, parseArenaStats } from "../../app/lib/protocol.ts";
 
 const state = { type: "MATCH_STATE", payload: { model_display_name: "Test", topic: { category: "T", topic: "Topic", pro_position: "P", con_position: "C" }, you: "pro", deadline: "2026-11-15T12:00:00Z", challenge: null } };
+const selection = { type: "SIDE_SELECTION_OPEN", payload: {
+  match_id: "33333333-3333-4333-8333-333333333333", model_display_name: "Test", topic: state.payload.topic,
+  deadline: "2026-11-15T11:58:00Z",
+} };
+const intro = { type: "MATCH_INTRO", payload: { ...state.payload, deadline: null } };
 test("match parser accepts every implemented message", () => {
-  for (const message of [state, { type: "TURN_DELTA", payload: { delta: "<script>literal</script>" } },
+  for (const message of [state, intro, selection, { type: "TURN_DELTA", payload: { delta: "<script>literal</script>" } },
     ...["TURN_END", "JUDGING", "HEARTBEAT"].map(type => ({ type, payload: {} })),
     { type: "ERROR", payload: { code: "BAD_MESSAGE", message: "Try again" } },
     ...["judged", "no_show", "no_prompt", "resigned", "model_failure", "judge_failure"].map(end_reason => ({ type: "MATCH_RESULT", payload: { winner: null, reason: "Done", status: "voided", end_reason, arguments: { pro: "P", con: "C" } } }))]) {
     assert.equal(parseMatchMessage(JSON.stringify(message)).type, message.type);
   }
+});
+test("selection carries a deadline but exposes no players and the reveal starts no prompt timer", () => {
+  const withPlayers = { ...selection, payload: { ...selection.payload, participants: [{ user_id: "u1" }] } };
+  assert.deepEqual(parseMatchMessage(JSON.stringify(withPlayers)), selection);
+  assert.throws(() => parseMatchMessage(JSON.stringify({ ...selection, payload: { ...selection.payload, deadline: null } })));
+  assert.throws(() => parseMatchMessage(JSON.stringify({ ...intro, payload: state.payload })));
 });
 test("invalid match payloads fail closed", () => {
   for (const message of [null, [], {}, { type: "UNKNOWN", payload: {} },

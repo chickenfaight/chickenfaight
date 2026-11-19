@@ -12,22 +12,25 @@ from app.schemas.schemas import Verdict
 from app.services.arena import BYOM_ARENA_ID
 from app.services.bilc_connections import BilcConnections
 from fake_bilc import FakeBilc
+from test_engine_heartbeat import JOIN, Socket
 
 TOPIC = SimpleNamespace(id=uuid4(), category="Cities", topic="Should transit be free?",
                         pro_position="Transit should be free.", con_position="Transit should not be free.")
 
 
-class Player:
+class Player(Socket):
     """A browser in the match: records everything the engine sends it."""
 
     def __init__(self):
-        self.sent: list[dict] = []
+        super().__init__()
+        self.history: list[dict] = []
 
     async def send_json(self, message):
-        self.sent.append(message)
+        self.history.append(message)
+        await super().send_json(message)
 
     def types(self) -> list[str]:
-        return [message["type"] for message in self.sent]
+        return [message["type"] for message in self.history]
 
 
 class Match:
@@ -49,13 +52,7 @@ class Match:
         with patch("app.engine.game_engine.OpenAIModelClient"):
             self.engine = GameEngine(match_id, self.users, BYOM_ARENA_ID, bilc=self.connections,
                                      devices={user: device.device_id for user, device in self.devices.items()})
-        self.engine.sides = dict(zip(self.users, ("pro", "con")))
         self.engine.judge_clients = SimpleNamespace(judge=self.judge, client=SimpleNamespace(close=AsyncMock()))
-        for user, browser in self.browsers.items():
-            self.engine.connections[user] = browser
-            self.engine.prompts[user] = f"Strategy of {self.engine.sides[user]}"
-            self.engine.prompt_received[user].set()
-        self.engine.both_connected.set()
         return {side: self.device(side).reply_to_turns(script) for side, script in scripts.items()}
 
     def user(self, side: str):
@@ -74,7 +71,24 @@ class Match:
             patch("app.engine.game_engine.TopicRepository") as topics,
         ):
             topics.return_value.get_random_active = AsyncMock(return_value=TOPIC)
-            await asyncio.wait_for(self.engine.run(), 10)
+            async with asyncio.timeout(10), asyncio.TaskGroup() as tasks:
+                tasks.create_task(self.engine.run())
+                for user, browser in self.browsers.items():
+                    tasks.create_task(self.engine.handle_connection(user, browser))
+                    await browser.messages.put(JOIN)
+                for browser in self.browsers.values():
+                    assert (await browser.sent.get())["type"] == "SIDE_SELECTION_OPEN"
+                assert all(
+                    self.connections.assignments[device.device_id].side is None
+                    for device in self.devices.values()
+                )
+                await self.browsers[self.users[1]].messages.put({"type": "CHOOSE_SIDE", "payload": {"side": "con"}})
+                for browser, side in zip(self.browsers.values(), ("pro", "con"), strict=True):
+                    intro = await browser.sent.get()
+                    assert intro["type"] == "MATCH_INTRO" and intro["payload"]["you"] == side
+                    state = await browser.sent.get()
+                    assert state["type"] == "MATCH_STATE" and state["payload"]["you"] == side
+                    await browser.messages.put({"type": "SUBMIT_PROMPT", "payload": {"prompt": f"Strategy of {side}"}})
 
     def received(self, side: str) -> list[dict]:
         """The match messages the side's device got, apart from the handshake and turn requests."""
@@ -106,10 +120,10 @@ async def test_each_turn_goes_to_its_players_device(match):
         assert f"Strategy of {other}" not in content  # never the opponent's prompt
     # Each browser streams its own side, then TURN_END.
     pro_browser = match.browsers[match.user("pro")]
-    deltas = [m["payload"]["delta"] for m in pro_browser.sent if m["type"] == "TURN_DELTA"]
+    deltas = [m["payload"]["delta"] for m in pro_browser.history if m["type"] == "TURN_DELTA"]
     assert deltas == ["Free ", "transit!"]
     assert pro_browser.types().index("TURN_END") > pro_browser.types().index("TURN_DELTA")
-    assert match.browsers[match.user("pro")].sent[0]["payload"]["model_display_name"] == "Your model: llama3.2:3b"
+    assert pro_browser.history[0]["payload"]["model_display_name"] == "Your model: llama3.2:3b"
     match.judge.assert_awaited_once_with(TOPIC, "Free transit!", "Fares fund it.")
     assert match.engine.result["status"] == "completed"
     for side in ("pro", "con"):

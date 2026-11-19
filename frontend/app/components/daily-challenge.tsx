@@ -57,7 +57,7 @@ export default function DailyChallenge() {
         <summary className="w-fit cursor-pointer rounded-control font-semibold text-ink-muted hover:text-ink focus-ring">See both sides</summary>
         <div className="mt-3">{positions}</div>
       </details>
-      <p className="mt-4 text-sm leading-relaxed text-ink-muted">You’ll get a side when you’re matched. Finish the debate to earn today’s bonus.</p>
+      <p className="mt-4 text-sm leading-relaxed text-ink-muted">Choose a side when the debate starts. Finish the debate to earn today’s bonus.</p>
     </section>
     <aside aria-label="Challenge matchmaking" className="min-w-0 animate-rise [animation-delay:80ms]">
       {completed
