@@ -13,27 +13,16 @@ Review files for compliance with Web Interface Guidelines.
 
 ## How It Works
 
-1. Fetch the latest guidelines from the source URL below
-2. Read the specified files (or prompt user for files/pattern)
-3. Check against all rules in the fetched guidelines
-4. Output findings in the terse `file:line` format
+1. Identify the files to review from the request. If the scope is unclear, ask for a file or pattern.
+2. Open the upstream guidelines with Codex's web tool before each review.
+3. Read the specified files, apply the rules from the selected source, and report findings in the format specified by the guidelines.
 
 ## Guidelines Source
 
-Fetch fresh guidelines before each review:
+Open this URL directly with the available web tool:
 
 ```
 https://raw.githubusercontent.com/vercel-labs/web-interface-guidelines/main/command.md
 ```
 
-Use WebFetch to retrieve the latest rules. The fetched content contains all the rules and output format instructions.
-
-## Usage
-
-When a user provides a file or pattern argument:
-1. Fetch guidelines from the source URL above
-2. Read the specified files
-3. Apply all rules from the fetched guidelines
-4. Output findings using the format specified in the guidelines
-
-If no files specified, ask the user which files to review.
+Use the live document for the rules and output format. If the web tool is unavailable or cannot retrieve the complete rules, read [the pinned fallback](references/command.md) in full and mention in the review that you used it. Load the fallback only when needed. If neither source is readable, report that the compliance review is incomplete.

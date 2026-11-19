@@ -13,7 +13,7 @@ from app.engine.game_engine import ConnectionActivity, GameEngine
 from app.services.challenge import today
 from app.services.matchmaking import Matchmaker
 from app.services.rewards import _advance_streak, effective_streak
-from test_engine_heartbeat import Socket
+from test_engine_heartbeat import JOIN, Socket
 
 
 def engine():
@@ -62,6 +62,7 @@ async def test_join_deadline_decides_no_show_without_inference(joined):
     game.JOIN_WINDOW_SECONDS = 0.01
     for player in game.players[:joined]:
         game.connections[player] = SimpleNamespace(send_json=AsyncMock())
+        game.joined.add(player)
     game.generate_arguments = AsyncMock()
     await asyncio.wait_for(game.play(), 1)
     assert game.result["end_reason"] == "no_show"
@@ -75,6 +76,9 @@ async def test_departure_before_other_player_arrives_does_not_count_as_joined():
     game.JOIN_WINDOW_SECONDS = 0.02
     socket = Socket()
     task = asyncio.create_task(game.handle_connection(game.players[0], socket))
+    await socket.messages.put(JOIN)
+    await socket.messages.put({"type": "CHOOSE_SIDE", "payload": {"side": "pro"}})
+    assert (await asyncio.wait_for(socket.sent.get(), 1))["payload"]["code"] == "SIDE_SELECTION_NOT_OPEN"
     await socket.messages.put(WebSocketDisconnect())
     await asyncio.wait_for(task, 1)
     await asyncio.wait_for(game.play(), 1)
@@ -96,6 +100,10 @@ async def test_replaced_socket_cannot_submit_or_resign():
         await asyncio.wait_for(old_task, 1)
         assert game.result is None
         assert game.connections[player] is new
+        await new.messages.put(JOIN)
+        await new.messages.put({"type": "CHOOSE_SIDE", "payload": {"side": "pro"}})
+        assert (await asyncio.wait_for(new.sent.get(), 1))["payload"]["code"] == "SIDE_SELECTION_NOT_OPEN"
+        game.prompt_deadline = datetime.now(UTC) + timedelta(minutes=2)
         await new.messages.put({"type": "SUBMIT_PROMPT", "payload": {"prompt": "accepted"}})
         await asyncio.wait_for(game.prompt_received[player].wait(), 1)
         assert game.prompts[player] == "accepted"
@@ -115,6 +123,9 @@ async def test_replaced_socket_cannot_submit_or_resign():
 async def test_rejected_message_leaves_prompt_editable(message, code):
     game, socket = engine(), Socket()
     player = game.players[0]
+    game.connections[player] = socket
+    game.joined.add(player)
+    game.prompt_deadline = datetime.now(UTC) + timedelta(minutes=2)
     task = asyncio.create_task(game.receive_messages(player, socket, ConnectionActivity()))
     try:
         await socket.messages.put(message)
@@ -206,7 +217,9 @@ async def test_cancelling_real_engine_voids_and_awaits_inflight_work(phase):
 
     game.judge_clients = SimpleNamespace(judge=judge, client=SimpleNamespace(close=AsyncMock()))
     if phase != "joining":
-        game.both_connected.set()
+        game.joined.update(game.players)
+        game.assign_sides(game.players[0])
+        game.connections.update({player: SimpleNamespace(send_json=AsyncMock()) for player in game.players})
         for player in game.players:
             game.prompts[player] = "private"
             game.prompt_received[player].set()
@@ -236,7 +249,7 @@ async def test_cancelling_real_engine_voids_and_awaits_inflight_work(phase):
 @pytest.mark.records_matches
 async def test_failed_recording_can_retry_and_concurrent_calls_commit_once():
     game = engine()
-    game.result = {"status": "voided", "winner": None, "end_reason": "model_failure"}
+    game.decide({"status": "voided", "winner": None, "end_reason": "model_failure"})
     with patch("app.engine.game_engine.SessionFactory", return_value=AsyncMock()), patch(
         "app.engine.game_engine.record_match", new=AsyncMock(side_effect=[RuntimeError("unavailable"), None])
     ) as record:

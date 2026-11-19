@@ -5,7 +5,7 @@ import { createServer } from "node:http";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join as pathJoin, resolve } from "node:path";
-import { cleanupAccounts, account, backend, join, submit } from "./helpers";
+import { cleanupAccounts, account, backend, chooseSide, join, submit } from "./helpers";
 
 test.afterEach(cleanupAccounts);
 
@@ -43,6 +43,7 @@ test("real Go clients play through the Python backend and return idle", async ({
     const other = await otherContext.newPage();
     await join(page, byom);
     await join(other, byom);
+    await chooseSide(page, "Con");
     await Promise.all([submit(page), submit(other)]);
     await expect(page.getByRole("heading", { name: /why the judge/i })).toBeVisible();
     await expect(other.getByRole("heading", { name: /why the judge/i })).toBeVisible();

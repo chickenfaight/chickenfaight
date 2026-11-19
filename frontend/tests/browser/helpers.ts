@@ -66,3 +66,7 @@ export async function submit(page: Page, prompt = "Use concrete evidence.") {
   await page.locator("textarea").fill(prompt);
   await page.getByRole("button", { name: /submit/i }).click();
 }
+
+export async function chooseSide(page: Page, side: "Pro" | "Con") {
+  await page.getByRole("button", { name: new RegExp(`^${side} `, "i") }).click();
+}

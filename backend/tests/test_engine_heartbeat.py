@@ -1,10 +1,13 @@
 import asyncio
 import time
 import unittest
+from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
 from fastapi import WebSocketDisconnect
 from app.engine.game_engine import GameEngine
+
+JOIN = {"type": "JOIN", "payload": {"protocol_version": 1}}
 
 
 class Socket:
@@ -56,6 +59,11 @@ class HeartbeatTests(unittest.IsolatedAsyncioTestCase):
     async def test_replies_after_prompt_keep_only_that_connection_alive(self):
         active, active_task = self.connect(self.players[0])
         silent, silent_task = self.connect(self.players[1])
+        await active.messages.put(JOIN)
+        # This test focuses on heartbeats once the prompt window is open.
+        await active.messages.put({"type": "CHOOSE_SIDE", "payload": {"side": "pro"}})
+        self.assertEqual((await asyncio.wait_for(active.sent.get(), 1))["payload"]["code"], "SIDE_SELECTION_NOT_OPEN")
+        self.engine.prompt_deadline = datetime.now(UTC) + timedelta(seconds=1)
         await active.messages.put({'type': 'SUBMIT_PROMPT', 'payload': {'prompt': 'accepted'}})
         await asyncio.wait_for(self.engine.prompt_received[self.players[0]].wait(), 1)
         until = time.monotonic() + self.engine.HEARTBEAT_TIMEOUT * 2

@@ -12,7 +12,8 @@ class EngineJudgingTests(unittest.IsolatedAsyncioTestCase):
         players = (uuid4(), uuid4())
         with patch("app.engine.game_engine.OpenAIModelClient"):
             engine = GameEngine(uuid4(), players, uuid4())
-        engine.both_connected.set()
+        engine.joined.update(players)
+        engine.assign_sides(players[0])
         generated = set()
         events = []
 
@@ -47,7 +48,7 @@ class EngineJudgingTests(unittest.IsolatedAsyncioTestCase):
             patch("app.engine.game_engine.ArenaService") as arenas,
             patch("app.engine.game_engine.TopicRepository") as repository,
             patch("app.engine.game_engine.OpenAIModelClient", RecordingClient),
-            patch.object(engine, "broadcast_initial_game_state", new=AsyncMock()),
+            patch.object(engine, "send_setup_state", new=AsyncMock()),
             patch.object(engine, "generate_arguments", side_effect=generate),
             patch.object(engine, "broadcast_verdict", new=AsyncMock()) as result,
         ):

@@ -51,18 +51,30 @@ test("lobby and open model picker pass accessibility checks", async ({ page, con
   await expect(picker).toBeFocused();
 });
 
-test("the mobile match editor and verdict pass automated accessibility checks", async ({ page, context }) => {
+test("the mobile side chooser, matchup reveal, match editor, and verdict pass automated accessibility checks", async ({ page, context }) => {
   await account(context);
   await page.setViewportSize({ width: 390, height: 844 });
   let socket: import("@playwright/test").WebSocketRoute;
+  const topic = { category: "Cities", topic: "Should public transit be free?", pro_position: "Transit should be free.", con_position: "Transit should not be free." };
+  const matchId = "33333333-3333-4333-8333-333333333333";
   await page.routeWebSocket("**/v1/game/**", ws => {
     socket = ws;
-    ws.send(JSON.stringify({ type: "MATCH_STATE", payload: {
-      model_display_name: "Test model", topic: { category: "Cities", topic: "Should public transit be free?", pro_position: "Transit should be free.", con_position: "Transit should not be free." },
-      you: "pro", deadline: new Date(Date.now() + 120000).toISOString(), challenge: null,
+    ws.send(JSON.stringify({ type: "SIDE_SELECTION_OPEN", payload: {
+      match_id: matchId, model_display_name: "Test model", topic, deadline: new Date(Date.now() + 15000).toISOString(),
     } }));
   });
-  await page.goto("/match/33333333-3333-4333-8333-333333333333");
+  await page.goto(`/match/${matchId}`);
+  await expect(page.getByRole("heading", { name: "Choose your side" })).toBeVisible();
+  await audit(page);
+  socket!.send(JSON.stringify({ type: "MATCH_INTRO", payload: {
+    match_id: matchId, model_display_name: "Test model", topic, you: "pro", deadline: null, challenge: null,
+  } }));
+  await expect(page.getByRole("heading", { name: "Your side · Pro", level: 1 })).toBeVisible();
+  await audit(page);
+  socket!.send(JSON.stringify({ type: "MATCH_STATE", payload: {
+    match_id: matchId, model_display_name: "Test model", topic,
+    you: "pro", deadline: new Date(Date.now() + 120000).toISOString(), challenge: null,
+  } }));
   await expect(page.getByRole("textbox", { name: "Give your AI a strategy" })).toBeVisible();
   await audit(page);
   socket!.send(JSON.stringify({ type: "MATCH_RESULT", payload: {

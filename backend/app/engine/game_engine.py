@@ -27,6 +27,7 @@ from app.schemas.schemas import TopicRead, PromptSubmission, UserPublic
 from app.services.arena import ArenaService
 
 Side = Literal["pro", "con"]
+MATCH_PROTOCOL_VERSION = 1
 
 logger = logging.getLogger(__name__)
 
@@ -60,7 +61,10 @@ class GameEngine:
     HEARTBEAT_INTERVAL = 15
     HEARTBEAT_TIMEOUT = 45
     JOIN_WINDOW_SECONDS = 30
+    SIDE_SELECTION_SECONDS = 15
+    MATCH_INTRO_SECONDS = 3
     PROMPT_WINDOW_SECONDS = 120
+    SETUP_SEND_TIMEOUT = 3
     MAX_TOKENS = 200
     # What the model is told: it can't count tokens, and running over MAX_TOKENS cuts it off mid-sentence.
     MAX_WORDS = 120
@@ -108,13 +112,16 @@ class GameEngine:
         # Filled once the result is committed; MATCH_RESULT reports them (null while unknown).
         self.rating_changes: RatingChanges = {}
 
-        pro, con = random.sample(players, k=2)
-        self.sides: dict[UUID, Side] = {
-            pro: "pro",
-            con: "con"
-        }
+        self.sides: dict[UUID, Side] = {}
+        self.sides_assigned = asyncio.Event()
+        self.side_selection_deadline: datetime | None = None
+        self.side_selection_ends_at: float | None = None
 
-        self.connections: dict[UUID, WebSocket] = {} # dict[user_id, WebSocket]
+        self.connections: dict[UUID, WebSocket] = {}
+        self.joined: set[UUID] = set()  # Acknowledgments belong to the current sockets.
+        self.both_joined = asyncio.Event()
+        # Keep setup broadcasts and reconnect replays in phase order.
+        self.setup_lock = asyncio.Lock()
         self.model_clients: dict[UUID, ModelClient] = {}
         self.judge_clients: OpenAIModelClient = OpenAIModelClient(model=settings.inference_judge_model)
 
@@ -125,10 +132,10 @@ class GameEngine:
             "pro": "",
             "con": ""
         }
+        self.introducing = False
         self.prompt_deadline: datetime | None = None
         self.verdict: Verdict
 
-        self.both_connected = asyncio.Event()
         self.finished = asyncio.Event()
         # The `MATCH_RESULT` payload, set once when the outcome is decided; later outcomes are ignored.
         self.result: dict | None = None
@@ -151,21 +158,19 @@ class GameEngine:
                     raise RuntimeError("No active topic found")
                 await self.load_players(session)
             self.model_names = {player: self.model_name(player) for player in self.players}
-            for player, device_id in self.devices.items():
-                await self.bilc.assign(device_id, self.match_id, self.sides[player], self.topic.topic)
 
             # A resignation ends the match at any point before a result, so race it against play.
             play = asyncio.create_task(self.play())
             resigned = asyncio.create_task(self.resigned.wait())
             try:
-                done, _ = await asyncio.wait({play, resigned}, return_when=asyncio.FIRST_COMPLETED)
-                if play in done:
-                    play.result()  # re-raise anything play raised
-                else:
+                await asyncio.wait({play, resigned}, return_when=asyncio.FIRST_COMPLETED)
+                if self.resigned.is_set():
                     play.cancel()
                     with suppress(asyncio.CancelledError):
                         await play
                     await self.send_result()
+                else:
+                    play.result()  # re-raise anything play raised
             finally:
                 for task in (play, resigned):
                     task.cancel()
@@ -195,23 +200,66 @@ class GameEngine:
             finally:
                 await self.judge_clients.client.close()
 
-    async def play(self) -> None:
-        """Everything after the topic is loaded: prompts, generation, and judging."""
+    async def wait_for_players(self) -> bool:
         try:
             async with asyncio.timeout(self.JOIN_WINDOW_SECONDS):
-                await self.both_connected.wait()
+                # An acknowledgment can disappear on socket replacement before the wait resumes.
+                while len(self.joined) != len(self.players):
+                    await self.both_joined.wait()
         except TimeoutError:
-            joined = list(self.connections)
+            joined = list(self.joined)
+            self.assign_sides()
             winner = self.sides[joined[0]] if len(joined) == 1 else None
             await self.broadcast_result({
                 "winner": winner, "status": "forfeited" if winner else "voided",
                 "end_reason": "no_show",
                 "reason": "The opponent did not join in time." if winner else "Neither player joined in time.",
             })
-            return
+            return False
+        return self.result is None
 
-        self.prompt_deadline = datetime.now(timezone.utc) + timedelta(seconds=self.PROMPT_WINDOW_SECONDS)
-        await self.broadcast_initial_game_state()
+    def assign_sides(self, player: UUID | None = None, side: Side = "pro") -> None:
+        """Lock both sides in one event-loop step. With no pick, choose who gets Pro at random."""
+        if self.sides:
+            return
+        player = random.choice(self.players) if player is None else player
+        opponent = next(other for other in self.players if other != player)
+        self.sides = {player: side, opponent: "con" if side == "pro" else "pro"}
+        self.sides_assigned.set()
+
+    async def select_sides(self) -> None:
+        async with self.setup_lock:
+            self.side_selection_deadline = datetime.now(timezone.utc) + timedelta(seconds=self.SIDE_SELECTION_SECONDS)
+            self.side_selection_ends_at = asyncio.get_running_loop().time() + self.SIDE_SELECTION_SECONDS
+            await self.broadcast_initial_game_state("SIDE_SELECTION_OPEN")
+
+        try:
+            async with asyncio.timeout_at(self.side_selection_ends_at):
+                await self.sides_assigned.wait()
+        except TimeoutError:
+            self.assign_sides()
+
+    async def play(self) -> None:
+        """Everything after the topic is loaded: side selection, prompts, generation, and judging."""
+        if not await self.wait_for_players():
+            return
+        await self.select_sides()
+        if self.result is not None:
+            return
+        for player, device_id in self.devices.items():
+            await self.bilc.assign(device_id, self.match_id, self.sides[player], self.topic.topic)
+        async with self.setup_lock:
+            if self.result is not None:
+                return
+            self.introducing = True
+            await self.broadcast_initial_game_state("MATCH_INTRO")
+        await asyncio.sleep(self.MATCH_INTRO_SECONDS)
+        async with self.setup_lock:
+            if self.result is not None:
+                return
+            self.introducing = False
+            self.prompt_deadline = datetime.now(timezone.utc) + timedelta(seconds=self.PROMPT_WINDOW_SECONDS)
+            await self.broadcast_initial_game_state()
 
         for player in self.players:
             if player in self.devices:
@@ -338,35 +386,41 @@ class GameEngine:
             return f"Your model: {hello.model.name}" if hello else "Your own model"
         return self.model_display_name
 
-    async def broadcast_initial_game_state(self) -> None:
+    async def send_setup_state(self, player: UUID, socket: WebSocket, kind: str = "MATCH_STATE") -> None:
+        if self.connections.get(player) is not socket or self.result is not None:
+            return
         if self.topic is None or (self.model_display_name is None and not self.devices):
             raise RuntimeError("Topic has not been loaded when broadcasting")
 
-        topic = TopicRead.model_validate(self.topic).model_dump(mode="json")
+        selecting = kind == "SIDE_SELECTION_OPEN"
+        deadline = self.side_selection_deadline if selecting else self.prompt_deadline
+        payload = {
+            "match_id": str(self.match_id),
+            "model_display_name": self.display_name(player),
+            "topic": TopicRead.model_validate(self.topic).model_dump(mode="json"),
+            "deadline": deadline.isoformat() if deadline else None,
+        }
+        if not selecting:
+            payload["participants"] = [
+                {"user_id": str(user_id), "user": self.player_info.get(user_id),
+                 "elo": self.starting_elo.get(user_id), "side": self.sides[user_id]}
+                for user_id in self.players
+            ]
+            payload["you"] = self.sides[player]
+            payload["challenge"] = {
+                "title": self.twist.title,
+                "description": self.twist.description,
+                "max_chars": self.twist.max_chars,
+            } if self.twist else None
+        send_until = asyncio.get_running_loop().time() + self.SETUP_SEND_TIMEOUT
+        if selecting and self.side_selection_ends_at is not None:
+            send_until = min(send_until, self.side_selection_ends_at)
+        with suppress(TimeoutError, WebSocketDisconnect, OSError, RuntimeError):
+            async with asyncio.timeout_at(send_until):
+                await socket.send_json({"type": kind, "payload": payload})
 
-        participants = [
-            {"user_id": str(user_id), "side": side, "user": self.player_info.get(user_id),
-             "elo": self.starting_elo.get(user_id)}
-            for user_id, side in self.sides.items()
-        ]
-
-        for player, socket in self.connections.items():
-            await socket.send_json({
-                "type": "MATCH_STATE",
-                "payload": {
-                    "match_id": str(self.match_id),
-                    "model_display_name": self.display_name(player),
-                    "topic": topic,
-                    "you": self.sides[player],
-                    "participants": participants,
-                    "deadline": self.prompt_deadline.isoformat() if self.prompt_deadline else None,
-                    "challenge": {
-                        "title": self.twist.title,
-                        "description": self.twist.description,
-                        "max_chars": self.twist.max_chars,
-                    } if self.twist else None,
-                }
-            })
+    async def broadcast_initial_game_state(self, kind: str = "MATCH_STATE") -> None:
+        await asyncio.gather(*(self.send_setup_state(player, self.connections[player], kind) for player in self.joined))
 
     async def broadcast_verdict(self):
         await self.broadcast_result({
@@ -400,6 +454,7 @@ class GameEngine:
     def resign(self, player: UUID) -> None:
         """Forfeit `player`'s side, from `RESIGN` or account deletion. Ignored once a result is
         decided, so it cannot overturn a verdict."""
+        self.assign_sides()
         side = self.sides[player]
         if self.decide({
             "winner": "con" if side == "pro" else "pro",
@@ -413,6 +468,8 @@ class GameEngine:
         """Record the match outcome unless one was already decided; returns whether this one was."""
         if self.result is not None:
             return False
+        # An early cancellation still needs both participants' sides in history.
+        self.assign_sides()
         self.result = {**result, "arguments": dict(self.arguments)}
         return True
 
@@ -425,11 +482,10 @@ class GameEngine:
         # Journal first; database outages may delay history until the recovery worker succeeds.
         await self.report_game()
         message = {"type": "MATCH_RESULT", "payload": {**self.result, "participants": self.result_participants()}}
-        for socket in list(self.connections.values()):
-            try:
-                await socket.send_json(message)
-            except (WebSocketDisconnect, OSError, RuntimeError):
-                pass
+        async with self.setup_lock:
+            for socket in list(self.connections.values()):
+                with suppress(WebSocketDisconnect, OSError, RuntimeError):
+                    await socket.send_json(message)
 
 
     def result_participants(self) -> list[dict]:
@@ -554,72 +610,98 @@ class GameEngine:
         if not self.arguments[side].strip():
             raise ValueError("Model returned an empty turn")
 
+    async def acknowledge_join(self, player: UUID, socket: WebSocket) -> None:
+        async with self.setup_lock:
+            if self.connections.get(player) is not socket or player in self.joined or self.result is not None:
+                return
+            self.joined.add(player)
+            if len(self.joined) == len(self.players):
+                self.both_joined.set()
+
+            if (
+                not self.sides and self.side_selection_ends_at is not None
+                and asyncio.get_running_loop().time() < self.side_selection_ends_at
+            ):
+                await self.send_setup_state(player, socket, "SIDE_SELECTION_OPEN")
+            elif self.introducing:
+                await self.send_setup_state(player, socket, "MATCH_INTRO")
+            elif (
+                self.prompt_deadline is not None and player not in self.prompts
+                and datetime.now(timezone.utc) < self.prompt_deadline
+            ):
+                await self.send_setup_state(player, socket)
+
+    async def receive_side_choice(self, player: UUID, socket: WebSocket, payload: object) -> None:
+        side = payload.get("side") if isinstance(payload, dict) else None
+        if side not in ("pro", "con"):
+            await self.send_message_error(socket, "BAD_MESSAGE", "Choose pro or con.")
+        elif self.side_selection_ends_at is None:
+            await self.send_message_error(socket, "SIDE_SELECTION_NOT_OPEN", "Side selection has not started.")
+        elif asyncio.get_running_loop().time() < self.side_selection_ends_at:
+            # No await before both sides are committed. Duplicate or losing picks cannot change them.
+            self.assign_sides(player, side)
+
+    @staticmethod
+    async def send_message_error(socket: WebSocket, code: str, message: str) -> None:
+        await socket.send_json({"type": "ERROR", "payload": {"code": code, "message": message}})
 
     async def receive_messages(self, player: UUID, socket: WebSocket, activity: ConnectionActivity) -> None:
         while True:
             try:
                 message = await socket.receive_json()
-                if self.connections.get(player, socket) is not socket:
+                if self.connections.get(player) is not socket:
                     return
                 activity.last_received = time.monotonic()
             except (JSONDecodeError, KeyError, UnicodeDecodeError):
                 activity.last_received = time.monotonic()
-                await socket.send_json({
-                    "type": "ERROR",
-                    "payload": {
-                        "code": "BAD_MESSAGE",
-                        "message": "Malformed JSON",
-                    },
-                })
+                await self.send_message_error(socket, "BAD_MESSAGE", "Malformed JSON")
                 continue
 
             if not isinstance(message, dict) or not isinstance(message.get("type"), str):
-                await socket.send_json({
-                    "type": "ERROR",
-                    "payload": {
-                        "code": "BAD_MESSAGE",
-                        "message": "Malformed message",
-                    },
-                })
+                await self.send_message_error(socket, "BAD_MESSAGE", "Malformed message")
                 continue
 
-            if message["type"] != "SUBMIT_PROMPT":
-                match message["type"]:
-                    case "HEARTBEAT":
-                        # The browser echoed our heartbeat; activity was updated above.
-                        continue
-                    case "RESIGN":
-                        self.resign(player)
-                        continue
-                    case _:
-                        await socket.send_json({
-                            "type": "ERROR",
-                            "payload": {
-                                "code": "UNKNOWN_TYPE",
-                                "message": "Unknown message type",
-                            },
-                        })
-                        continue
+            kind, payload = message["type"], message.get("payload")
+            if kind == "HEARTBEAT":
+                continue  # The browser echoed our heartbeat; activity was updated above.
+            if kind == "JOIN":
+                version = payload.get("protocol_version") if isinstance(payload, dict) else None
+                if type(version) is not int:
+                    await self.send_message_error(socket, "BAD_MESSAGE", "JOIN requires an integer protocol version.")
+                elif version != MATCH_PROTOCOL_VERSION:
+                    await socket.close(code=4426, reason="Unsupported match protocol version")
+                    return
+                else:
+                    await self.acknowledge_join(player, socket)
+                continue
+            if player not in self.joined:
+                await self.send_message_error(socket, "BAD_MESSAGE", "Acknowledge the match with JOIN first.")
+                continue
+            if self.result is not None:
+                continue
+            if kind == "RESIGN":
+                self.resign(player)
+                continue
+            if kind == "CHOOSE_SIDE":
+                await self.receive_side_choice(player, socket, payload)
+                continue
+            if kind != "SUBMIT_PROMPT":
+                await self.send_message_error(socket, "UNKNOWN_TYPE", "Unknown message type")
+                continue
+            if self.prompt_deadline is None:
+                await self.send_message_error(socket, "PROMPT_WINDOW_NOT_OPEN", "Wait for your side before submitting a prompt.")
+                continue
 
             if player in self.prompts:
-                await socket.send_json({
-                    "type": "ERROR",
-                    "payload": {
-                        "code": "PROMPT_ALREADY_SUBMITTED",
-                        "message": "Prompt already accepted",
-                    },
-                })
+                await self.send_message_error(socket, "PROMPT_ALREADY_SUBMITTED", "Prompt already accepted")
                 continue
 
-            if self.prompt_deadline and datetime.now(timezone.utc) >= self.prompt_deadline:
-                await socket.send_json({
-                    "type": "ERROR",
-                    "payload": {"code": "PROMPT_DEADLINE_PASSED", "message": "The prompt window has closed."},
-                })
+            if datetime.now(timezone.utc) >= self.prompt_deadline:
+                await self.send_message_error(socket, "PROMPT_DEADLINE_PASSED", "The prompt window has closed.")
                 continue
 
             try:
-                submission = PromptSubmission.model_validate(message.get("payload"))
+                submission = PromptSubmission.model_validate(payload)
             except ValidationError:
                 await socket.send_json({
                     "type": "ERROR",
@@ -676,11 +758,11 @@ class GameEngine:
         previous = self.connections.get(user_id)
         self.connections[user_id] = websocket
         if previous is not None and previous is not websocket:
+            self.joined.discard(user_id)
+            self.both_joined.clear()
             with suppress(WebSocketDisconnect, OSError, RuntimeError):
                 await previous.close(code=4409, reason="Replaced by another connection")
         activity = ConnectionActivity()
-        if all(player in self.connections for player in self.players):
-            self.both_connected.set()
 
         reader = asyncio.create_task(self.receive_messages(user_id, websocket, activity))
         heartbeat = asyncio.create_task(self.heartbeat(websocket, activity))
@@ -693,12 +775,12 @@ class GameEngine:
         except (WebSocketDisconnect, OSError):
             pass
         finally:
+            if self.connections.get(user_id) is websocket:
+                del self.connections[user_id]
+                self.joined.discard(user_id)
+                self.both_joined.clear()
             for task in tasks:
                 task.cancel()
             await asyncio.gather(*tasks, return_exceptions=True)
-            if self.connections.get(user_id) is websocket:
-                del self.connections[user_id]
-                if self.prompt_deadline is None:
-                    self.both_connected.clear()
             with suppress(WebSocketDisconnect, OSError, RuntimeError):
                 await websocket.close()

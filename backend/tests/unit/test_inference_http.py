@@ -140,7 +140,10 @@ async def test_incomplete_http_stream_voids_match_without_retry_or_judging(infer
     game.cloud_client = client
     game.api_model_id = "http-test"
     game.topic = SimpleNamespace(topic="T", pro_position="P", con_position="C")
-    game.both_connected.set()
+    game.joined.update(game.players)
+    game.connections.update({player: SimpleNamespace(send_json=AsyncMock()) for player in game.players})
+    game.assign_sides(game.players[0])
+    game.send_setup_state = AsyncMock()
     game.broadcast_initial_game_state = AsyncMock()
     game.broadcast_result = AsyncMock()
     game.judge_clients = SimpleNamespace(judge=AsyncMock())

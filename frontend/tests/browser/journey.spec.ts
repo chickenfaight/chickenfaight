@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { cleanupAccounts, account, accountTag, backend, failedModelId, join, password, submit, selectModel } from "./helpers";
+import { cleanupAccounts, account, accountTag, backend, chooseSide, failedModelId, join, password, submit, selectModel } from "./helpers";
 
 test.afterEach(cleanupAccounts);
 
@@ -46,8 +46,32 @@ test("two browsers complete a real match and immediately see saved results", asy
   try {
     const other = await otherContext.newPage();
     await account(otherContext);
+    let releaseJoin: (() => void) | undefined;
+    await other.routeWebSocket("**/v1/game/**", browserSocket => {
+      const server = browserSocket.connectToServer();
+      browserSocket.onMessage(message => {
+        if (JSON.parse(String(message)).type === "JOIN") releaseJoin = () => server.send(message);
+        else server.send(message);
+      });
+    });
     await join(page);
     await join(other);
+    await expect.poll(() => releaseJoin !== undefined).toBe(true);
+    await expect(page.getByRole("status").filter({ hasText: "Waiting for both players" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Should transit be free?" })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: /^Pro /i })).toHaveCount(0);
+    releaseJoin!();
+    await Promise.all([page, other].map(async player => {
+      await expect(player.getByRole("heading", { name: "Should transit be free?" })).toBeVisible();
+      await expect(player.getByRole("button", { name: /^Con /i })).toBeVisible();
+    }));
+    await chooseSide(page, "Con");
+    await Promise.all([
+      expect(page.getByRole("heading", { name: "Your side · Con", level: 1 })).toHaveAccessibleDescription("Transit should not be free."),
+      expect(other.getByRole("heading", { name: "Your side · Pro", level: 1 })).toHaveAccessibleDescription("Transit should be free."),
+    ]);
+    await expect(page.getByRole("heading", { name: "Your side · Con", level: 2 })).toBeVisible();
+    await expect(other.getByRole("heading", { name: "Your side · Pro", level: 2 })).toBeVisible();
     await Promise.all([submit(page, "PRIVATE-FIRST"), submit(other, "PRIVATE-SECOND")]);
     await expect(page.getByRole("heading", { name: /why the judge/i })).toBeVisible();
     await expect(other.getByRole("heading", { name: /why the judge/i })).toBeVisible();
@@ -64,8 +88,10 @@ test("two browsers complete a real match and immediately see saved results", asy
     expect(ladder).toBeTruthy();
     await page.goto("/matches");
     await expect(page.getByText("Should transit be free?", { exact: true })).toBeVisible();
-    await page.goto("/leaderboards");
-    await expect(page.getByRole("main").getByText(me.tag, { exact: true })).toBeVisible();
+    // Load the rankings independently while keeping the history page open.
+    const leaderboard = await context.newPage();
+    await leaderboard.goto("/leaderboards");
+    await expect(leaderboard.getByRole("main").getByText(me.tag, { exact: true })).toBeVisible();
   } finally {
     await otherContext.close();
   }
@@ -82,7 +108,8 @@ test("queue cancellation and rejoin recover without duplicate registration", asy
   await context.request.delete(`${backend}/v1/match/queue`);
 });
 
-test("failed cloud model voids a match and awards no points", async ({ browser, page, context }) => {
+test("side selection times out, and a failed cloud model then voids the match", async ({ browser, page, context }) => {
+  test.setTimeout(45000);
   await account(context);
   const otherContext = await browser.newContext();
   try {
@@ -90,7 +117,12 @@ test("failed cloud model voids a match and awards no points", async ({ browser, 
     const other = await otherContext.newPage();
     await join(page, failedModelId);
     await join(other, failedModelId);
-    await Promise.all([expect(page.locator("textarea")).toBeVisible(), expect(other.locator("textarea")).toBeVisible()]);
+    await Promise.all([page, other].map(async player => {
+      await expect(player.getByRole("button", { name: /^Pro /i })).toBeVisible();
+      await expect(player.locator("textarea")).toBeVisible({ timeout: 25_000 });
+    }));
+    const sides = await Promise.all([page, other].map(player => player.getByText(/^Your side · (Pro|Con)$/).textContent()));
+    expect(sides.sort()).toEqual(["Your side · Con", "Your side · Pro"]);
     // Each side generates independently. One failed turn ends the match, so a
     // second click can race the result removing the opponent's prompt form.
     await page.locator("textarea").fill("Use evidence");
@@ -121,6 +153,7 @@ test("daily challenge persists completion and prevents a second entry", async ({
       await selectModel(p);
       await p.getByRole("button", { name: "Find match", exact: true }).click();
     }
+    await chooseSide(page, "Pro");
     // Valid for every rotating twist: short, includes chicken, avoids banned words.
     await Promise.all([submit(page, "Use a chicken analogy."), submit(other, "Use a chicken analogy.")]);
     await expect(page.getByRole("heading", { name: /why the judge/i })).toBeVisible();

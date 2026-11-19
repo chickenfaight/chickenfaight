@@ -16,6 +16,7 @@ test("homepage focuses on play with one sidebar entry per destination and the fu
   await account(context);
   await page.route("**/v1/challenge/today", route => route.fulfill({ json: challenge }));
   await page.goto("/");
+  await expect(page).toHaveTitle("Chicken fAIght");
   await expect(page.getByRole("heading", { name: "Find a debate", exact: true })).toBeVisible();
   await expect(page.getByRole("link", { name: "Play", exact: true })).toHaveCount(1);
   await expect(page.getByRole("link", { name: "Leaderboards", exact: true })).toHaveCount(1);

@@ -23,8 +23,9 @@ from database_safety import require_test_database
 
 
 @pytest.fixture(autouse=True)
-def no_retry_delay(monkeypatch):
+def no_match_delays(monkeypatch):
     monkeypatch.setattr(GameEngine, "RETRY_DELAY", 0)
+    monkeypatch.setattr(GameEngine, "MATCH_INTRO_SECONDS", 0)
 
 
 @pytest.fixture(autouse=True)

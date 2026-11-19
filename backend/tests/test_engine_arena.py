@@ -19,7 +19,7 @@ class ArenaEngineTests(unittest.IsolatedAsyncioTestCase):
         with patch("app.engine.game_engine.OpenAIModelClient"):
             self.engine = GameEngine(uuid4(), self.players, uuid4())
         self.engine.model_display_name = "Test model"
-        self.engine.sides = dict(zip(self.players, ("pro", "con")))
+        self.engine.assign_sides(self.players[0])
         self.engine.topic = SimpleNamespace(
             category="Cities", topic="Should transit be free?",
             pro_position="Transit should be free.", con_position="Transit should not be free.",
@@ -29,6 +29,7 @@ class ArenaEngineTests(unittest.IsolatedAsyncioTestCase):
     async def test_initial_state_supplies_same_deadline_and_complete_positions(self):
         for player in self.players:
             self.engine.connections[player] = SimpleNamespace(send_json=AsyncMock())
+        self.engine.joined.update(self.players)
         await self.engine.broadcast_initial_game_state()
         for player, socket in self.engine.connections.items():
             state = socket.send_json.call_args.args[0]["payload"]
@@ -69,6 +70,8 @@ class ArenaEngineTests(unittest.IsolatedAsyncioTestCase):
     async def test_late_submission_is_rejected_by_server(self):
         self.engine.prompt_deadline = datetime.now(timezone.utc) - timedelta(seconds=1)
         socket = Socket()
+        self.engine.connections[self.players[0]] = socket
+        self.engine.joined.add(self.players[0])
         reader = asyncio.create_task(self.engine.receive_messages(self.players[0], socket, ConnectionActivity()))
         try:
             await socket.messages.put({"type": "SUBMIT_PROMPT", "payload": {"prompt": "Too late"}})
@@ -84,7 +87,8 @@ class ArenaEngineTests(unittest.IsolatedAsyncioTestCase):
             with self.subTest(submits=submits):
                 self.setUp()
                 self.engine.PROMPT_WINDOW_SECONDS = 0.01
-                self.engine.both_connected.set()
+                self.engine.joined.update(self.players)
+                self.engine.connections.update({player: SimpleNamespace(send_json=AsyncMock()) for player in self.players})
                 self.engine.judge_clients = SimpleNamespace(judge=AsyncMock(), client=SimpleNamespace(close=AsyncMock()))
                 if submits:
                     player = self.players[0]
@@ -121,7 +125,7 @@ class ArenaEngineTests(unittest.IsolatedAsyncioTestCase):
                 super().__init__(model)
                 clients.append(inner)
 
-        self.engine.both_connected.set()
+        self.engine.joined.update(self.players)
         for player in self.players:
             self.engine.connections[player] = SimpleNamespace(send_json=AsyncMock())
             self.engine.prompts[player] = "A private strategy"
@@ -278,7 +282,7 @@ class ModelFailureTests(unittest.IsolatedAsyncioTestCase):
         self.players = (uuid4(), uuid4())
         with patch("app.engine.game_engine.OpenAIModelClient"):
             self.engine = GameEngine(uuid4(), self.players, uuid4())
-        self.engine.sides = dict(zip(self.players, ("pro", "con")))
+        self.engine.assign_sides(self.players[0])
         self.engine.topic = SimpleNamespace(
             category="Cities", topic="Should transit be free?",
             pro_position="Transit should be free.", con_position="Transit should not be free.",
@@ -328,7 +332,8 @@ class ModelFailureTests(unittest.IsolatedAsyncioTestCase):
             await self.engine.generate_arguments(self.player)
 
     async def run_engine(self, judge):
-        self.engine.both_connected.set()
+        self.engine.joined.update(self.players)
+        self.engine.connections[self.players[1]] = SimpleNamespace(send_json=AsyncMock())
         self.engine.judge_clients = SimpleNamespace(judge=judge, client=SimpleNamespace(close=AsyncMock()))
         with (
             patch("app.engine.game_engine.SessionFactory", return_value=AsyncMock()),
@@ -416,6 +421,7 @@ class ResignTests(unittest.IsolatedAsyncioTestCase):
         """Run the engine with `play` replaced by `during_play`, which runs until resigned or done."""
         for player in self.players:
             self.engine.connections[player] = self.sockets[player]
+        self.engine.joined.update(self.players)
         with (
             patch("app.engine.game_engine.SessionFactory", return_value=AsyncMock()),
             patch("app.engine.game_engine.TopicRepository") as repo,
@@ -494,6 +500,9 @@ class DailyChallengeEngineTests(unittest.IsolatedAsyncioTestCase):
         self.engine.twist = Twist("Short", "10 characters max.", max_chars=10)
         player = self.players[0]
         socket = Socket()
+        self.engine.connections[player] = socket
+        self.engine.joined.add(player)
+        self.engine.prompt_deadline = datetime.now(timezone.utc) + timedelta(seconds=120)
         reader = asyncio.create_task(self.engine.receive_messages(player, socket, ConnectionActivity()))
         await socket.messages.put({"type": "SUBMIT_PROMPT", "payload": {"prompt": "far too long a strategy"}})
         await socket.messages.put({"type": "SUBMIT_PROMPT", "payload": {"prompt": "short"}})
@@ -508,6 +517,7 @@ class DailyChallengeEngineTests(unittest.IsolatedAsyncioTestCase):
         self.engine.model_display_name = "Test model"
         socket = SimpleNamespace(send_json=AsyncMock())
         self.engine.connections[self.players[0]] = socket
+        self.engine.joined.add(self.players[0])
         await self.engine.broadcast_initial_game_state()
         challenge = socket.send_json.call_args.args[0]["payload"]["challenge"]
         assert challenge["title"] == self.engine.twist.title
@@ -532,7 +542,7 @@ class DailyChallengeEngineTests(unittest.IsolatedAsyncioTestCase):
 async def test_report_game_records_once():
     with patch("app.engine.game_engine.OpenAIModelClient"):
         engine = GameEngine(uuid4(), (uuid4(), uuid4()), uuid4())
-    engine.result = {"status": "voided", "winner": None, "end_reason": "model_failure", "reason": "x", "arguments": {}}
+    engine.decide({"status": "voided", "winner": None, "end_reason": "model_failure", "reason": "x"})
     with (
         patch("app.engine.game_engine.SessionFactory", return_value=AsyncMock()),
         patch("app.engine.game_engine.record_match", new=AsyncMock()) as record,
@@ -551,7 +561,7 @@ async def test_report_names_the_model_except_in_byom(byom):
     devices = {player: uuid4() for player in players} if byom else None
     with patch("app.engine.game_engine.OpenAIModelClient"):
         engine = GameEngine(uuid4(), players, uuid4(), devices=devices, bilc=AsyncMock())
-    engine.result = {"status": "voided", "winner": None, "end_reason": "judge_failure", "reason": "x", "arguments": {}}
+    engine.decide({"status": "voided", "winner": None, "end_reason": "judge_failure", "reason": "x"})
     with (
         patch("app.engine.game_engine.SessionFactory", return_value=AsyncMock()),
         patch("app.engine.game_engine.record_match", new=AsyncMock()) as record,

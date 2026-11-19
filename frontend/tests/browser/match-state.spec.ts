@@ -7,30 +7,68 @@ const matchId = "33333333-3333-4333-8333-333333333333";
 const initial = { type: "MATCH_STATE", payload: { model_display_name: "Controlled model", topic: { category: "T", topic: "Controlled topic", pro_position: "P", con_position: "C" }, you: "pro", deadline: new Date(Date.now() + 120000).toISOString(), challenge: null } };
 const result = { type: "MATCH_RESULT", payload: { winner: "pro", reason: "Saved result", status: "completed", end_reason: "judged", arguments: { pro: "literal", con: "other" } } };
 
-test("the match reveal introduces both players and yields to the prompt", async ({ page, context }) => {
-  await account(context);
-  await page.setViewportSize({ width: 390, height: 844 });
-  await page.emulateMedia({ reducedMotion: "no-preference" });
-  await page.routeWebSocket("**/v1/game/**", ws => ws.send(JSON.stringify({ ...initial, payload: {
-    ...initial.payload,
-    participants: [
-      { user_id: "pro-player", side: "pro", user: { id: "pro-player", tag: "rooster", username: "Rooster", avatar_url: null }, elo: 1000 },
-      { user_id: "con-player", side: "con", user: { id: "con-player", tag: "challenger", username: "Challenger", avatar_url: null }, elo: 1100 },
-    ],
-  } })));
+test("the side chooser is keyboard accessible on a phone and reveals the opponent before prompting", async ({ page, context }) => {
+  const me = await account(context);
+  await page.setViewportSize({ width: 320, height: 780 });
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  const now = new Date("2026-11-17T12:00:00Z");
+  await page.clock.setFixedTime(now);
+  const topic = { ...initial.payload.topic, pro_position: "Transit should be free so everyone can get to work, school, and essential services.", con_position: "Fares help keep public transit reliable and sustainable." };
+  const opponent = { id: "other", tag: "challenger", username: "Challenger", avatar_url: null };
+  const participants = [{ user_id: me.id, user: null, elo: 1000 }, { user_id: opponent.id, user: opponent, elo: 1100 }];
+  const selection = { type: "SIDE_SELECTION_OPEN", payload: {
+    match_id: matchId, model_display_name: initial.payload.model_display_name, topic,
+    deadline: new Date(now.getTime() + 15000).toISOString(),
+  } };
+  const received: { type: string; payload: unknown }[] = [];
+  let socket: WebSocketRoute;
+  await page.routeWebSocket("**/v1/game/**", ws => {
+    socket = ws;
+    ws.onMessage(message => received.push(JSON.parse(String(message))));
+  });
   await page.goto(`/match/${matchId}`);
-  const intro = page.locator('[aria-hidden="true"]').filter({ has: page.getByText("Match found", { exact: true }) });
-  await expect(intro.getByText("Rooster", { exact: true })).toBeVisible();
-  await expect(intro.getByText("Challenger", { exact: true })).toBeVisible();
+  const choose = page.getByRole("heading", { name: "Choose your side" });
   const editor = page.getByRole("textbox", { name: "Give your AI a strategy" });
-  await editor.click();
-  await expect(intro).toHaveCount(0);
-  await expect(editor).toBeFocused();
+  await expect.poll(() => received).toEqual([{ type: "JOIN", payload: { protocol_version: 1 } }]);
+  await expect(choose).toHaveCount(0);
+  await expect(editor).toHaveCount(0);
+  socket!.send(JSON.stringify(selection));
+  await expect(choose).toBeVisible();
+  await expect(page.getByText("Challenger", { exact: true })).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: topic.topic })).toBeVisible();
+  await expect(page.getByText(topic.pro_position)).toBeVisible();
+  await expect(page.getByText(topic.con_position)).toBeVisible();
+  await expect(page.getByRole("timer", { name: "Time remaining to choose" })).toHaveText("00:15");
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(320);
+  const pickPro = page.getByRole("button", { name: /^Pro /i });
+  await expect(pickPro).toBeInViewport({ ratio: 1 });
+  await expect(pickPro).toHaveAccessibleName(new RegExp(topic.pro_position));
+  await expect(page.getByRole("button", { name: /^Con /i })).toBeInViewport({ ratio: 1 });
+  await pickPro.press("Enter");
+  await expect(page.getByRole("status").filter({ hasText: "Locking in your side" })).toBeVisible();
+  await pickPro.press("Enter");
+  await expect.poll(() => received.slice(1)).toEqual([{ type: "CHOOSE_SIDE", payload: { side: "pro" } }]);
+  await expect(editor).toHaveCount(0);
 
-  await page.reload();
-  await expect(intro).toBeVisible();
-  await expect(intro).toHaveCount(0);
-  await expect(editor).toBeInViewport({ ratio: 1 });
+  // The other player chose first. Reveal both players before the server opens prompting.
+  const matchup = {
+    ...initial.payload, topic, you: "con",
+    participants: [{ ...participants[0], side: "con" }, { ...participants[1], side: "pro" }],
+  };
+  socket!.send(JSON.stringify({ type: "MATCH_INTRO", payload: { ...matchup, deadline: null } }));
+  const reveal = page.getByRole("heading", { name: "Your side · Con", level: 1 });
+  await expect(reveal).toBeFocused();
+  await expect(reveal).toHaveAccessibleDescription(topic.con_position);
+  await expect(page.getByText(topic.con_position, { exact: true })).toBeVisible();
+  await expect(page.getByText(topic.pro_position, { exact: true })).toHaveCount(0);
+  await expect(page.getByText("Challenger", { exact: true })).toBeVisible();
+  await expect(editor).toHaveCount(0);
+  await expect(page.getByRole("timer")).toHaveCount(0);
+  socket!.send(JSON.stringify({ type: "MATCH_STATE", payload: { ...matchup, deadline: new Date(now.getTime() + 120000).toISOString() } }));
+  await expect(choose).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "Your side · Con", level: 2 })).toBeFocused();
+  await expect(editor).toBeVisible();
+  await expect(page.getByRole("timer", { name: "Time remaining to submit" })).toHaveText("02:00");
 });
 
 test("one socket in Strict Mode, rejected prompts can retry, heartbeat echoes, result survives closure", async ({ page, context }) => {
@@ -98,7 +136,7 @@ test("a phone can reach the timed prompt controls and see judging while reading 
   });
   await page.goto(`/match/${matchId}`);
   const editor = page.getByRole("textbox", { name: "Give your AI a strategy" });
-  await expect(page.getByText("Match found", { exact: true })).toBeHidden();
+  await expect(page.getByRole("heading", { name: /^Your side/, level: 1 })).toHaveCount(0);
   await expect(editor).toBeInViewport({ ratio: 1 });
   await expect(page.getByRole("timer")).toBeInViewport({ ratio: 1 });
   await expect(page.getByRole("button", { name: "Submit prompt" })).toBeInViewport({ ratio: 1 });

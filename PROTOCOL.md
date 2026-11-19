@@ -54,6 +54,7 @@ Everything here is PLANNED unless marked **(implemented)**. Remove a PLANNED sta
 | `UNSUPPORTED_VERSION` | 426 | 4426 | `protocol_version` not supported |
 | `BILC_OUTDATED` | 426 | 4426 | `client_version` < `min_supported_version` (implemented on the socket: close reason `BILC_OUTDATED: run bilc update`) |
 | `PROMPT_ALREADY_SUBMITTED`, `PROMPT_TOO_LONG` | — | — | Prompt rejected (no close) |
+| `SIDE_SELECTION_NOT_OPEN`, `PROMPT_WINDOW_NOT_OPEN` | — | — | Match setup is still waiting for acknowledgments or side assignment (no close) |
 | `MODEL_UNAVAILABLE`, `MODEL_ERROR`, `MODEL_TIMEOUT` | — | — | Sent by BILC about the local model (implemented) |
 | `HEARTBEAT_TIMEOUT` | — | 4408 | No message within the timeout |
 | `REPLACED` | — | 4409 | A newer connection for the same user+match or device |
@@ -72,8 +73,10 @@ Server-side constants; clients read deadlines from messages rather than hard-cod
 |---|---|
 | Player prompt | ≤ 2000 chars |
 | Turn output (implemented) | `max_tokens` 200; server truncates at 2000 chars, which also bounds a BYOM device that ignores `max_tokens` |
-| Join deadline (after the engine loads the match) (implemented) | 30 s |
-| Prompt deadline (after both joined) | 120 s |
+| Join acknowledgment deadline (after the engine loads the match) (implemented) | 30 s |
+| Side selection deadline (after both players acknowledge) (implemented) | 15 s |
+| Matchup reveal (after side assignment) (implemented) | 3 s |
+| Prompt deadline (after the matchup reveal) (implemented) | 120 s |
 | Turn: first token / total | 30 s / 90 s |
 | Judge total | 120 s |
 | Heartbeat interval / timeout | 15 s / 45 s |
@@ -191,7 +194,7 @@ The session-authenticated `POST /v1/match/queue` requires `{ model_id: uuid|null
 - `{ status: "queued", queue: { mode: "quick"|"model"|"daily"|"byom", model_id: uuid|null, model_display_name: str|null, joined_at: datetime, elapsed_seconds: int } }`
 - `{ status: "matched", match_id: uuid }`
 
-`joined_at` is the original UTC enqueue timestamp. `elapsed_seconds` is the server's whole-second measurement at the time of the response. Quick Queue keeps its original mode and timestamp through an internal transfer. Its model fields are null until the arena is assigned in `MATCH_STATE`. Other modes report the chosen arena. Older servers can still send `{ status: "queued" }` without metadata.
+`joined_at` is the original UTC enqueue timestamp. `elapsed_seconds` is the server's whole-second measurement at the time of the response. Quick Queue keeps its original mode and timestamp through an internal transfer. Its queue model fields are null. The match socket introduces the assigned model in `SIDE_SELECTION_OPEN`. Other queue modes report the chosen arena. Older servers can still send `{ status: "queued" }` without metadata.
 
 Cloud matchmaking keeps separate queues per model and challenge day. At rollover, the matchmaker expires waiting daily entries from prior UTC days. Assigned matches continue with the challenge day they started on. The matchmaker uses the player’s Elo on the selected ladder, with 1000 for an unrated player. The first pair in queue order qualifies with an Elo difference under 50 or after the earlier player has waited more than 15 seconds. The engine resolves the assigned model UUID to its inference ID and display name. Provider-specific connection settings remain pending.
 
@@ -229,12 +232,15 @@ Heartbeat (both sockets): the server sends `HEARTBEAT { ts }` every interval; th
 
 ## WebSocket — match (web ↔ engine)
 
-`GET /v1/game/{match_id}/ws` (`{match_id}: uuid`), session cookie (implemented). Server closes 4401 if unauthenticated, 4403 if not a participant. The arena opens the socket after navigation on `matched`; reconnect snapshots remain planned.
+`GET /v1/game/{match_id}/ws` (`{match_id}: uuid`), session cookie (implemented). Server closes 4401 if unauthenticated, 4403 if not a participant. The arena opens the socket after navigation on `matched` and sends `JOIN` on open. The browser handshake uses `protocol_version: 1`; unsupported versions close with 4426. Full reconnect snapshots remain planned.
 
 | Type | Direction | Payload |
 |---|---|---|
-| `JOIN` | client → server | `{ protocol_version: int }` — must be first |
-| `MATCH_STATE` | server → client | `{ match_id: uuid, ladder, topic, status: MatchStatus, you: Side, participants: [Participant], ready: [Side], deadline: str|null, turns: [Turn] }` — sent after every `JOIN` (full snapshot for reconnects) |
+| `JOIN` | client → server | `{ protocol_version: int }` — acknowledges the match and must be the first application message (implemented) |
+| `SIDE_SELECTION_OPEN` | server → client | `{ match_id: uuid, model_display_name, topic, deadline: str }` — sent to both acknowledged browsers when selection opens, and replayed with the same deadline to a browser that rejoins during selection (implemented) |
+| `CHOOSE_SIDE` | client → server | `{ side: Side }` — the first valid choice processed before the deadline locks both sides (implemented) |
+| `MATCH_INTRO` | server → client | The same payload as `MATCH_STATE` with `deadline: null`. Reveals both players and their sides. Replayed to a browser that rejoins during the reveal (implemented) |
+| `MATCH_STATE` | server → client | Sent when the prompt window opens. See the implemented payload below. The full reconnect snapshot with `ladder`, `status`, `ready`, and `turns` remains planned. |
 | `SUBMIT_PROMPT` | client → server | `{ prompt: str }` — once per match |
 | `PLAYER_READY` | server → client | `{ side: Side }` — a player's prompt was accepted (PLANNED; the current engine does not emit a readiness notification) |
 | `TURN_START` | server → client | `{ turn_id: uuid, index, side, phase }` |
@@ -246,19 +252,21 @@ Heartbeat (both sockets): the server sends `HEARTBEAT { ts }` every interval; th
 | `HEARTBEAT` | both | `{ ts }` |
 | `ERROR` | server → client | `{ code, message }` |
 
-Current prompt readiness and generation (implemented): after both player sockets are connected, the engine sends its initial state and runs one generation task per side. Each task waits only for its own player's accepted `SUBMIT_PROMPT`, then immediately generates that side's opening argument without waiting for the opponent's prompt. The two generations can overlap. Judging waits until both arguments finish. The current engine does not require a `JOIN` message; the handshake and full snapshot above remain planned.
+Side selection (implemented): both current player sockets must send a valid `JOIN` before either gets the topic or can choose. A player who rejoins sends `JOIN` again; duplicate acknowledgments on the same socket have no effect. `SIDE_SELECTION_OPEN` carries the same topic shape as `MATCH_STATE` and a shared ISO UTC deadline. It carries no player identities or ratings. The engine accepts the first valid `CHOOSE_SIDE` strictly before that deadline, gives the other player the opposite side, and ignores valid picks after assignment or expiry. It assigns sides uniformly at random if the deadline passes without a pick. Once opened, the deadline continues through disconnects. Malformed acknowledgments or picks get `BAD_MESSAGE`; choosing before the window opens gets `SIDE_SELECTION_NOT_OPEN`, and premature `SUBMIT_PROMPT` gets `PROMPT_WINDOW_NOT_OPEN`.
+
+Current prompt readiness and generation (implemented): after sides are locked, the engine sends `MATCH_INTRO`. After a shared three-second reveal it opens the prompt window, sends `MATCH_STATE`, and runs one generation task per side. Each task waits only for its own player's accepted `SUBMIT_PROMPT`, then immediately generates that side's opening argument without waiting for the opponent's prompt. The two generations can overlap. Judging waits until both arguments finish.
 
 ### Current arena wire format (implemented)
 
 Until the full snapshot/turn contract above ships, the arena uses these payloads:
 
-- `MATCH_STATE`: `{ match_id, model_display_name, topic: { category, topic, pro_position, con_position }, you, participants: [{ user_id, side, user: UserPublic|null, elo: int|null }], deadline }`. Each participant's `user` and `elo` (their rating on this match's ladder when the engine started, 1000 if unrated) introduce both players in the arena; both are null if the engine couldn't load them, which never stops the match (implemented). `model_display_name` is the selected model's database display name. `deadline` is an ISO UTC timestamp, established once both players connect using the server's 120-second prompt window. `challenge` is `{ title, description, max_chars: int|null }` for a daily-challenge match, else null; a prompt breaking it gets `ERROR` `PROMPT_BREAKS_CHALLENGE` and may be resubmitted (implemented).
+- `MATCH_STATE`: `{ match_id, model_display_name, topic: { category, topic, pro_position, con_position }, you, participants: [{ user_id, side, user: UserPublic|null, elo: int|null }], deadline, challenge }`. Each participant's `user` and `elo` (their rating on this match's ladder when the engine started, 1000 if unrated) introduce both players in the arena; both are null if the engine couldn't load them, which never stops the match (implemented). `model_display_name` is the selected model's display name. `deadline` is an ISO UTC timestamp, established after the matchup reveal using the server's 120-second prompt window. `challenge` is `{ title, description, max_chars: int|null }` for a daily-challenge match, else null; a prompt breaking it gets `ERROR` `PROMPT_BREAKS_CHALLENGE` and may be resubmitted (implemented).
 - `TURN_DELTA`: `{ delta }`, sent only to the author of the generating side.
 - `TURN_END`: `{}`, sent to that same player once their opening argument finishes.
-- `MATCH_RESULT`: `{ winner: "pro"|"con"|null, reason, status: "completed"|"forfeited"|"voided", end_reason: "judged"|"no_show"|"no_prompt"|"resigned"|"model_failure"|"judge_failure", arguments: { pro, con }, participants: [{ user_id, side, elo_before: int|null, elo_after: int|null }] }`. `participants` gives each side's Elo on the match's ladder before and after this match, as saved with the result; both are null when the match didn't change ratings, or when the result couldn't be saved before players were told (a database outage), in which case match history shows them later (implemented). Only generated arguments are shared; player prompts remain private. A 30-second join deadline forfeits to the sole connected player (`no_show`) or voids if neither is connected. A missed prompt deadline forfeits to the side that submitted; if neither submitted, the match is void. A cloud turn that errors or times out (30 s to first token, 90 s total) is retried once after 3 s, unless part of it already streamed to the player, since a retry would duplicate that text; if it still fails, the match is void (`model_failure`), even if a prompt deadline also passed. A judge error, timeout (120 s), or unparseable verdict is retried once, then voids the match (`judge_failure`). `RESIGN` before any result stops generation or judging and forfeits to the other side (`resigned`); the first decided result is final. Once a match has a result, `GET /v1/match/status` stops reporting it as `matched`. The decided result is durably journaled before `MATCH_RESULT` is sent, then committed to history/rewards/Elo. During a database outage the verdict may arrive before history; a recovery worker retries pending results after restart. Failure to journal prevents sending the verdict. Completed matches update Elo; forfeits and voids don't.
+- `MATCH_RESULT`: `{ winner: "pro"|"con"|null, reason, status: "completed"|"forfeited"|"voided", end_reason: "judged"|"no_show"|"no_prompt"|"resigned"|"model_failure"|"judge_failure", arguments: { pro, con }, participants: [{ user_id, side, elo_before: int|null, elo_after: int|null }] }`. `participants` gives each side's Elo on the match's ladder before and after this match, as saved with the result; both are null when the match didn't change ratings, or when the result couldn't be saved before players were told (a database outage), in which case match history shows them later (implemented). Only generated arguments are shared; player prompts remain private. A 30-second join deadline forfeits to the sole player whose current socket acknowledged (`no_show`) or voids if neither did. An early no-show or resignation gets a random side mapping for the result if sides have not been locked. A missed prompt deadline forfeits to the side that submitted; if neither submitted, the match is void. A cloud turn that errors or times out (30 s to first token, 90 s total) is retried once after 3 s, unless part of it already streamed to the player, since a retry would duplicate that text; if it still fails, the match is void (`model_failure`), even if a prompt deadline also passed. A judge error, timeout (120 s), or unparseable verdict is retried once, then voids the match (`judge_failure`). `RESIGN` before any result stops generation or judging and forfeits to the other side (`resigned`); the first decided result is final. Once a match has a result, `GET /v1/match/status` stops reporting it as `matched`. The decided result is durably journaled before `MATCH_RESULT` is sent, then committed to history/rewards/Elo. During a database outage the verdict may arrive before history; a recovery worker retries pending results after restart. Failure to journal prevents sending the verdict. Completed matches update Elo; forfeits and voids don't.
 - `ERROR` also includes `PROMPT_DEADLINE_PASSED` when a submission arrives after the server deadline.
 
-The browser retains `model_display_name` from `MATCH_STATE` and displays it throughout composition, generation, judging, and results (implemented). It echoes heartbeats, retains its submitted prompt in page memory, marks its argument complete on `TURN_END`, and changes the waiting message on `JUDGING`. Reload/reconnect recovery remains planned.
+The browser retains `model_display_name` from `MATCH_STATE` and displays it throughout composition, generation, judging, and results (implemented). It echoes heartbeats, retains its submitted prompt in page memory, marks its argument complete on `TURN_END`, and changes the waiting message on `JUDGING`. A player who rejoins while their prompt window is open and has no accepted prompt receives `MATCH_STATE` with the original deadline. Recovery of accepted prompts and live turns remains planned.
 
 Disconnecting after submitting a prompt does not affect the match; turns keep running.
 
@@ -268,7 +276,7 @@ Disconnecting after submitting a prompt does not affect the match; turns keep ru
 
 Implemented: everything in the table below (for the opening phase), plus replacement (4409), revocation and account deletion (4403), `BAD_MESSAGE`, and `UNKNOWN_TYPE`. The server checks the token before accepting: an invalid or expired token or an unknown device is 4401, and a revoked device or one whose `uid` isn't its owner is 4403. Through uvicorn, a rejection before accepting reaches the client as an HTTP 403 handshake failure without the close code, so BILC refreshes its token on any rejection, and a revoked device then gets `TOKEN_INVALID` there. Until a valid `HELLO` arrives, other frames get `ERROR` `BAD_MESSAGE` (except `DISCONNECT`, which closes 1000); a `protocol_version` other than 1 closes 4426 (`UNSUPPORTED_VERSION`), and a `client_version` below `BILC_MIN_SUPPORTED_VERSION` (env, default `0.1.0`) closes 4426 with reason `BILC_OUTDATED: run bilc update`; unversioned `dev` builds pass only when `APP_ENV=development`. 45 s without a `HELLO` closes 4408. `HELLO.model` is capped at 4 KB, and its `client_version`, `platform`, and `model` are stored on the device.
 
-Matches: when the engine starts, each device gets `MATCH_ASSIGN`; a device that reconnects while still reserved gets it again after `HELLO_ACK`. Each turn is one `TURN_REQUEST` (`phase` is `opening` for now; `deadline` is 90 s ahead). `MATCH_RESPONSE`s are validated (a bad one gets `BAD_MESSAGE`), and ones for unknown or abandoned turns are ignored. An `ERROR` with a `turn_id`, or the socket closing, fails that turn. When the match ends for any reason, both devices get `MATCH_END` with the final status and become idle; a device whose side forfeited gets `FORFEIT` first, with the failure code as `reason`.
+Matches: once sides are locked, each device gets `MATCH_ASSIGN`; a device that reconnects while still reserved gets it again after `HELLO_ACK`. Each turn is one `TURN_REQUEST` (`phase` is `opening` for now; `deadline` is 90 s ahead). `MATCH_RESPONSE`s are validated (a bad one gets `BAD_MESSAGE`), and ones for unknown or abandoned turns are ignored. An `ERROR` with a `turn_id`, or the socket closing, fails that turn. When the match ends for any reason, both devices get `MATCH_END` with the final status and become idle; a device whose side forfeited gets `FORFEIT` first, with the failure code as `reason`.
 
 | Type | Direction | Payload |
 |---|---|---|
@@ -318,16 +326,16 @@ Current argument generation uses the engine's `format_game(player)` wrapper (imp
 
 ### Match flow
 
-1. Matchmaking pairs two queued players on the same ladder, creates the match, assigns sides randomly, and starts an engine task.
-2. Both players `JOIN` (and, for BYOM, the server sends `MATCH_ASSIGN` to each device).
-3. Each player `SUBMIT_PROMPT`s independently; their opening generation starts as soon as their own prompt is accepted, without waiting for the other player's submission.
+1. Matchmaking pairs two queued players on the same ladder, creates the match, and starts an engine task.
+2. Both players `JOIN`, see the topic, and have 15 seconds to choose a side. The first valid choice locks both sides, or the engine assigns them randomly at expiry. For BYOM, the server then sends `MATCH_ASSIGN` to each device.
+3. The matchup is revealed for 3 seconds. Then each player `SUBMIT_PROMPT`s independently; their opening generation starts as soon as their own prompt is accepted, without waiting for the other player's submission.
 4. Currently, each side generates one opening argument, potentially concurrently. The planned six-turn flow adds `rebuttal` pro, con → `closing` pro, con after both openings finish. Each turn's `messages` = fixed server system prompt (topic, side, phase, length limit) with the side's player prompt inside delimiters; later phases also include prior turns as the transcript.
 5. Judge: fixed system prompt plus the transcript only (never player prompts). It must return JSON `{ "winner": "pro"|"con", "reasoning": str }`. Anything else is a failure.
 6. `MATCH_RESULT`, Elo update, persist, close sockets.
 
 ### Failure outcomes
 
-A **forfeit** is a loss with a normal Elo update. A **void** changes no Elo.
+A **forfeit** counts as a loss. Only judged matches change Elo.
 
 | Failure | Outcome |
 |---|---|

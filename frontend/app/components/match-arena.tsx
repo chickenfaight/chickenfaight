@@ -2,9 +2,9 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useRef, useState, type CSSProperties, type FormEvent } from "react";
+import { useEffect, useRef, useState, type CSSProperties, type FormEvent, type Ref } from "react";
 import { eloChangeColor, otherSide, SIDE_LABEL, SIDE_TEXT, signed } from "../lib/matches";
-import { displayName, type ArenaResult, type Side } from "../lib/protocol";
+import { displayName, type ArenaResult, type ArenaTopic, type Side } from "../lib/protocol";
 import Button, { buttonClass } from "./button";
 import CountUp from "./count-up";
 import FaceOff, { type FaceOffPlayer } from "./face-off";
@@ -12,6 +12,7 @@ import Modal from "./modal";
 import PageTransition from "./page-transition";
 import { useMatch } from "./providers/match-provider";
 import { useSession } from "./providers/session-provider";
+import Skeleton from "./skeleton";
 import { Wordmark } from "./site-header";
 
 // Ratings follow the result with a short animation. The verdict and its reason are visible at once.
@@ -19,6 +20,8 @@ const at = (ms: number): CSSProperties => ({ animationDelay: `${ms}ms` });
 
 const PHASE_LABEL = {
   connecting: "Waiting for both players…",
+  choosing: "Side selection is open",
+  introducing: "Preparing the debate…",
   prompting: "Write your prompt",
   generating: "Generating your argument…",
   waiting: "Waiting for your opponent…",
@@ -26,35 +29,44 @@ const PHASE_LABEL = {
   completed: "Debate complete",
 };
 
-function MatchIntro({ you, opponent, topic, onDone }: { you: FaceOffPlayer; opponent: FaceOffPlayer; topic: string; onDone: () => void }) {
-  return <div aria-hidden="true" onAnimationEnd={event => { if (event.target === event.currentTarget) onDone(); }}
-    className="pointer-events-none fixed inset-0 z-40 hidden flex-col items-center justify-center gap-5 overflow-hidden bg-canvas px-gutter py-4 motion-safe:flex motion-safe:animate-match-intro sm:gap-8">
-    <p className="headline text-5xl text-accent-ink sm:text-6xl">Match found</p>
-    <div className="panel w-full max-w-4xl px-3 py-5 sm:px-7 sm:py-8">
-      <FaceOff you={you} opponent={opponent} presentation="intro" />
-    </div>
-    <p className="line-clamp-3 max-w-2xl wrap-anywhere text-center text-lg font-semibold text-ink-muted sm:text-xl">{topic}</p>
-  </div>;
-}
-
-function Countdown({ deadline }: { deadline: string | null }) {
+function Countdown({ deadline, action }: { deadline: string | null; action: "choose" | "submit" }) {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     const timer = setInterval(() => setNow(Date.now()), 250);
     return () => clearInterval(timer);
   }, []);
   const seconds = deadline ? Math.max(0, Math.ceil((Date.parse(deadline) - now) / 1000)) : null;
-  const urgent = seconds !== null && seconds <= 15;
   if (seconds === null) return null;
-  return <div className="text-right">
-    <p className="text-xs font-semibold text-ink-muted">Time to submit</p>
-    <p className={`stat mt-1 text-3xl transition-colors duration-(--duration-slow) sm:text-4xl ${urgent ? "text-accent-ink" : ""}`} role="timer" aria-label="Time remaining to submit">
+  const urgent = seconds <= (action === "choose" ? 5 : 15);
+  return <div className="shrink-0 text-right">
+    <p className="text-xs font-semibold text-ink-muted">Time to {action}</p>
+    <p className={`stat mt-1 text-3xl transition-colors duration-(--duration-slow) sm:text-4xl ${urgent ? "text-accent-ink" : ""}`} role="timer" aria-label={`Time remaining to ${action}`}>
       {`${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`}
     </p>
   </div>;
 }
 
-function EloLine({ result, side }: { result: ArenaResult; side: Side }) {
+function SideChooser({ topic, deadline, disabled, chooseSide, headingRef }: {
+  topic: ArenaTopic; deadline: string | null; disabled: boolean; chooseSide: (side: Side) => void; headingRef: Ref<HTMLHeadingElement>;
+}) {
+  return <>
+    <h1 ref={headingRef} tabIndex={-1} aria-describedby="selection-topic" className="headline scroll-mt-28 rounded-control text-center text-5xl text-accent-ink focus-ring sm:text-6xl">Choose your side</h1>
+    <h2 id="selection-topic" className="max-w-2xl wrap-anywhere text-center text-xl font-semibold text-balance sm:text-2xl">{topic.topic}</h2>
+    <div className="w-full max-w-4xl">
+      <div className="mb-3 flex justify-end"><Countdown deadline={deadline} action="choose" /></div>
+      <div className="grid gap-3 sm:grid-cols-2 sm:gap-5">
+        {(["pro", "con"] as const).map(side => <Button key={side} size="lg"
+          className="h-auto! min-h-28 w-full min-w-0 cursor-pointer flex-col items-start! justify-start! gap-2.5 rounded-panel! px-4! py-4 text-left whitespace-normal! touch-manipulation scroll-mt-28 sm:min-h-44 sm:px-6! sm:py-6"
+          aria-disabled={disabled} onClick={() => { if (!disabled) chooseSide(side); }}>
+          <span className={`headline text-3xl ${SIDE_TEXT[side]}`}>{SIDE_LABEL[side]}</span>
+          <span className="whitespace-pre-wrap wrap-anywhere text-base font-medium leading-relaxed text-ink sm:text-lg">{topic[`${side}_position`]}</span>
+        </Button>)}
+      </div>
+    </div>
+  </>;
+}
+
+function EloLine({ result, side }: { result: ArenaResult; side: Side | null }) {
   const mine = result.participants.find((participant) => participant.side === side);
   if (mine?.elo_before != null && mine.elo_after != null) {
     const change = mine.elo_after - mine.elo_before;
@@ -70,25 +82,29 @@ function EloLine({ result, side }: { result: ArenaResult; side: Side }) {
 }
 
 export default function MatchArena() {
-  const { state, submitPrompt, resign } = useMatch();
+  const { state, chooseSide, submitPrompt, resign } = useMatch();
   const { user } = useSession();
   const router = useRouter();
   const [confirmLeave, setConfirmLeave] = useState(false);
   const [leaving, setLeaving] = useState(false);
   const [draft, setDraft] = useState("");
   const [tab, setTab] = useState<"you" | "opponent">("you");
-  const [introDismissed, setIntroDismissed] = useState(false);
+  const chooserTitle = useRef<HTMLHeadingElement>(null);
+  const introTitle = useRef<HTMLHeadingElement>(null);
+  const assignedSideTitle = useRef<HTMLHeadingElement>(null);
   const textarea = useRef<HTMLTextAreaElement>(null);
   const argumentTitle = useRef<HTMLHeadingElement>(null);
   const verdictTitle = useRef<HTMLHeadingElement>(null);
   const { phase, disconnected, error, promptClosed, topic, result } = state;
   const previousPhase = useRef(phase);
+  const choosing = phase === "choosing";
+  const introducing = phase === "introducing";
   const composing = phase === "prompting";
   const completed = phase === "completed";
-  // A result can arrive before the initial match state if the opponent never connects.
-  const ownSide = topic ? state.side : result?.participants.find(participant => participant.user_id === user?.id)?.side;
-  const playerSide = ownSide ?? state.side;
-  const opponentSide = otherSide(playerSide);
+  const playerSide = state.side;
+  const opponentSide = playerSide === null ? null : otherSide(playerSide);
+  // A no-show or resignation can decide the result before the arena has assigned the sides.
+  const ownSide = playerSide ?? result?.participants.find(participant => participant.user_id === user?.id)?.side ?? null;
   const canEdit = !disconnected && !promptClosed;
   // A daily challenge may cap the prompt below the usual 2,000 characters; the server checks every twist.
   const promptLimit = Math.min(2000, state.challenge?.max_chars ?? 2000);
@@ -96,7 +112,7 @@ export default function MatchArena() {
   useEffect(() => {
     const previous = previousPhase.current;
     previousPhase.current = phase;
-    if (phase === "prompting" && error && !disconnected && !leaving) {
+    if (phase === "prompting" && error && !disconnected && !confirmLeave) {
       textarea.current?.focus();
       return;
     }
@@ -106,8 +122,12 @@ export default function MatchArena() {
       const frame = requestAnimationFrame(() => verdictTitle.current?.focus());
       return () => cancelAnimationFrame(frame);
     }
+    if (confirmLeave || disconnected) return;
+    if (phase === "choosing") chooserTitle.current?.focus();
+    if (phase === "introducing") introTitle.current?.focus();
+    if (phase === "prompting" && (previous === "choosing" || previous === "introducing")) assignedSideTitle.current?.focus();
     if (previous === "prompting") argumentTitle.current?.focus();
-  }, [phase, error, disconnected, leaving]);
+  }, [phase, error, disconnected, leaving, confirmLeave]);
 
   function submit(event: FormEvent) {
     event.preventDefault();
@@ -115,18 +135,18 @@ export default function MatchArena() {
   }
 
   // The face-off: the server's players when it sent them, else this session and an unnamed opponent.
-  function player(side: Side): FaceOffPlayer {
-    const entry = state.participants.find((participant) => participant.side === side);
-    const you = side === playerSide;
+  function player(you: boolean): FaceOffPlayer {
+    const side = you ? playerSide : opponentSide;
+    const entry = state.participants.find(participant => participant.side === side);
     const known = entry?.user ?? (you && user?.tag ? { id: user.id, tag: user.tag, username: user.username, avatar_url: user.avatar_url } : null);
     const rating = state.result?.participants.find((participant) => participant.side === side);
     return {
       side, you, name: known ? displayName(known) : you ? "You" : "Opponent", tag: known?.tag ?? null, avatarUrl: known?.avatar_url ?? null,
-      elo: rating?.elo_before ?? entry?.elo ?? null, eloAfter: rating?.elo_after ?? null, winner: state.result?.winner === side,
+      elo: rating?.elo_before ?? entry?.elo ?? null, eloAfter: rating?.elo_after ?? null, winner: side !== null && state.result?.winner === side,
     };
   }
-  const me = player(playerSide);
-  const them = player(opponentSide);
+  const me = player(true);
+  const them = player(false);
 
   const viewedSide = tab === "you" ? playerSide : opponentSide;
   const won = result?.winner != null && (ownSide ? result.winner === ownSide : result.end_reason === "no_show");
@@ -141,13 +161,11 @@ export default function MatchArena() {
   }
 
   const status = disconnected ? topic ? "Connection lost" : "Debate unavailable"
-    : composing && promptClosed ? "Prompt window closed" : PHASE_LABEL[phase];
-  const showIntro = topic && composing && canEdit && !introDismissed;
-  const dismissIntro = showIntro ? () => setIntroDismissed(true) : undefined;
+    : composing && promptClosed ? "Prompt window closed"
+    : choosing && state.pickPending ? "Locking in your side…" : PHASE_LABEL[phase];
 
-  return <PageTransition><div className="min-h-svh bg-canvas font-sans text-ink"
-    onPointerDownCapture={dismissIntro} onKeyDownCapture={dismissIntro} onFocusCapture={dismissIntro}>
-    {showIntro && <MatchIntro you={me} opponent={them} topic={topic.topic} onDone={() => setIntroDismissed(true)} />}
+  return <PageTransition><div className="min-h-svh bg-canvas font-sans text-ink">
+    <a href="#main-content" className="fixed left-4 top-4 z-50 -translate-y-24 rounded-control bg-ink px-5 py-3 text-sm font-semibold text-canvas focus:translate-y-0 focus-ring">Skip to content</a>
     <header className="sticky top-0 z-30 border-b border-line bg-canvas">
       <div className="mx-auto grid min-h-14 max-w-6xl grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1 px-gutter py-2 sm:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)]">
         <div className="justify-self-start"><Wordmark /></div>
@@ -166,10 +184,23 @@ export default function MatchArena() {
       </form>
     </Modal>
 
-    {!topic && !result ? <main className="mx-auto flex min-h-[calc(100svh-6rem)] max-w-xl flex-col items-center justify-center gap-6 px-gutter text-center">
+    {topic && (choosing || introducing) ? <main id="main-content" tabIndex={-1}
+      className="mx-auto flex min-h-[calc(100svh-6rem)] w-full flex-col items-center justify-center gap-4 scroll-mt-28 px-gutter py-5 sm:gap-6 sm:py-8">
+      {choosing ? <SideChooser topic={topic} deadline={state.deadline} disabled={disconnected || state.pickPending} chooseSide={chooseSide} headingRef={chooserTitle} /> : <>
+        <div className="w-full max-w-2xl text-center motion-safe:animate-fade">
+          <h1 ref={introTitle} tabIndex={-1} aria-describedby={playerSide ? "intro-position" : undefined} className="headline mx-auto w-fit max-w-full scroll-mt-28 rounded-control text-5xl focus-ring sm:text-6xl">
+            Your side{playerSide && <> · <span className={SIDE_TEXT[playerSide]}>{SIDE_LABEL[playerSide]}</span></>}
+          </h1>
+          {playerSide && <p id="intro-position" className="mt-2 whitespace-pre-wrap wrap-anywhere text-base leading-relaxed text-ink-muted sm:text-xl">{topic[`${playerSide}_position`]}</p>}
+        </div>
+        <div className="panel w-full max-w-4xl px-3 py-5 sm:px-7 sm:py-8"><FaceOff you={me} opponent={them} presentation="intro" /></div>
+        <p className="max-w-2xl wrap-anywhere text-center text-lg font-semibold text-balance text-ink-muted sm:text-xl">{topic.topic}</p>
+      </>}
+      {error && <p role="alert" className="max-w-xl text-center text-sm text-danger">{error}</p>}
+    </main> : !topic && !result ? <main id="main-content" tabIndex={-1} className="mx-auto w-full max-w-[880px] scroll-mt-28 px-gutter pb-12 pt-4 sm:pt-7">
       {error ? <p role="alert" className="text-sm text-danger">{error}</p>
-        : <span aria-hidden="true" className="h-10 w-10 rounded-full border-[3px] border-accent/20 border-t-accent motion-safe:animate-spin" />}
-    </main> : <main className={`mx-auto w-full min-w-0 px-gutter pb-12 pt-4 sm:pt-7 ${completed ? "max-w-[980px]" : "max-w-[880px]"}`}>
+        : <div aria-hidden="true"><Skeleton label="Waiting for both players…" variant="block" height="h-16" /></div>}
+    </main> : <main id="main-content" tabIndex={-1} className={`mx-auto w-full min-w-0 scroll-mt-28 px-gutter pb-12 pt-4 sm:pt-7 ${completed ? "max-w-[980px]" : "max-w-[880px]"}`}>
       {!completed && <div className="mb-5 rounded-control border border-line bg-surface px-3 py-2 sm:mb-6 sm:px-5 sm:py-3">
         <FaceOff you={me} opponent={them} presentation="compact" />
       </div>}
@@ -177,13 +208,13 @@ export default function MatchArena() {
       {topic && <section aria-labelledby="topic-title" className="sm:text-center">
         <p className="mb-1.5 wrap-anywhere text-sm text-ink-muted">Model · <span className="font-semibold text-ink">{state.model_display_name}</span></p>
         <h1 id="topic-title" className={`wrap-anywhere font-bold tracking-tight sm:mx-auto sm:text-balance ${composing ? "max-w-[700px] text-3xl sm:text-4xl" : "text-2xl sm:text-3xl"}`}>{topic.topic}</h1>
-        {composing ? <div className="mt-4 flex items-start justify-between gap-4 border-y border-line py-3 text-left sm:mt-5 sm:items-center">
+        {composing && playerSide ? <div className="mt-4 flex items-start justify-between gap-4 border-y border-line py-3 text-left sm:mt-5 sm:items-center">
           <div className="min-w-0">
-            <p className={`text-sm font-semibold ${SIDE_TEXT[playerSide]}`}>Your side · {SIDE_LABEL[playerSide]}</p>
+            <h2 ref={assignedSideTitle} tabIndex={-1} aria-describedby="prompt-position" className={`w-fit scroll-mt-28 rounded-control text-sm font-semibold focus-ring ${SIDE_TEXT[playerSide]}`}>Your side · {SIDE_LABEL[playerSide]}</h2>
             <p id="prompt-position" className="mt-1 wrap-anywhere text-base text-ink-muted">{topic[`${playerSide}_position`]}</p>
           </div>
-          {canEdit && <Countdown deadline={state.deadline} />}
-        </div> : <p className="mt-2 flex flex-wrap gap-x-5 gap-y-1 text-sm font-semibold sm:justify-center">
+          {canEdit && <Countdown deadline={state.deadline} action="submit" />}
+        </div> : playerSide && opponentSide && <p className="mt-2 flex flex-wrap gap-x-5 gap-y-1 text-sm font-semibold sm:justify-center">
           <span className={SIDE_TEXT[playerSide]}>{completed ? "You" : "Your side"} · {SIDE_LABEL[playerSide]}</span>
           {completed && <span className={SIDE_TEXT[opponentSide]}>Opponent · {SIDE_LABEL[opponentSide]}</span>}
         </p>}
@@ -212,10 +243,10 @@ export default function MatchArena() {
             <ReasonHeading className="text-lg font-semibold">{result.end_reason !== "judged" ? "Why the debate ended" : won ? "Why the judge chose you" : "Why the judge chose your opponent"}</ReasonHeading>
             <p className="mx-auto mt-1.5 max-w-[72ch] whitespace-pre-wrap wrap-anywhere text-base leading-relaxed text-ink-muted">{result.reason}</p>
           </div>
-          <EloLine result={result} side={playerSide} />
-          {topic && <div className="well mx-auto mt-5 max-w-3xl px-3 py-3 text-left sm:px-5 sm:py-4"><FaceOff you={me} opponent={them} label="Ratings after the debate" /></div>}
+          <EloLine result={result} side={ownSide} />
+          {playerSide && <div className="well mx-auto mt-5 max-w-3xl px-3 py-3 text-left sm:px-5 sm:py-4"><FaceOff you={me} opponent={them} label="Ratings after the debate" /></div>}
         </section>
-        {topic && <section aria-label="Debate arguments" className="panel mt-stack px-panel pb-7">
+        {viewedSide && <section aria-label="Debate arguments" className="panel mt-stack px-panel pb-7">
           <div role="tablist" aria-label="Choose an argument" className="grid grid-cols-2 border-b border-line">
             {(["you", "opponent"] as const).map(value => <button key={value} type="button" id={`${value}-tab`} role="tab" aria-selected={tab === value} aria-controls="argument-panel" tabIndex={tab === value ? 0 : -1} onClick={() => setTab(value)} onKeyDown={event => { if (["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) { event.preventDefault(); const next = event.key === "Home" ? "you" : event.key === "End" ? "opponent" : tab === "you" ? "opponent" : "you"; setTab(next); document.getElementById(`${next}-tab`)?.focus(); } }} className={`min-h-14 border-b-2 text-center text-base font-semibold transition-colors duration-(--duration-fast) focus-ring ${tab === value ? "border-accent text-ink" : "border-transparent text-ink-muted hover:text-ink"}`}>{value === "you" ? "Your argument" : "Opponent’s argument"}</button>)}
           </div>
@@ -227,7 +258,7 @@ export default function MatchArena() {
           </div>
         </section>}
         <div className="mt-8 text-center"><Link href="/" className={buttonClass("primary", "lg", "px-9")}>Find another debate</Link></div>
-      </> : <div className="mt-6">
+      </> : playerSide && <div className="mt-6">
         {state.prompt !== null && <details className="rounded-control border border-line bg-surface px-4 py-3">
           <summary className="cursor-pointer rounded-sm text-sm font-semibold focus-ring">Your submitted prompt</summary>
           <p className="mt-2 whitespace-pre-wrap wrap-anywhere text-base leading-relaxed">{state.prompt}</p>

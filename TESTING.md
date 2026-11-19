@@ -47,7 +47,7 @@ Review uncovered behavior rather than requiring an arbitrary global percentage.
 Every backend feature ships with tests for both behavior and security:
 
 - **Every endpoint:** happy path; unauthenticated → 401; another user's resource → 404/403; invalid input → 422.
-- **WebSockets:** reject unauthenticated (4401), non-participant or revoked (4403); a second connection replaces the first (4409); unknown `type` → `UNKNOWN_TYPE`. BILC rejects wrong `protocol_version` (4426); the browser JOIN/version handshake remains planned.
+- **WebSockets:** reject unauthenticated (4401), non-participant or revoked (4403); a second connection replaces the first (4409); unknown `type` → `UNKNOWN_TYPE`. BILC rejects wrong `protocol_version` (4426); browser JOIN also rejects wrong versions with 4426.
 - **Engine** (with scripted model clients): opening turns; one prompt per player; deadlines → forfeit; both miss → void; implemented rows of the failure table in PROTOCOL.md; judge output parsing (valid, invalid, invalid-then-retry); successful recording runs once. Later phases remain planned.
 - **Prompt safety:** `format_game` strips delimiter strings from player prompts; player prompts never appear in judge messages or in other users' responses; over-length output is truncated at 2000 characters without failing the turn, including from a BYOM device that ignores `max_tokens` (`test_engine_arena.py`, `test_engine_byom.py`).
 - **Ladders** (`test_ladder_seed.py`): provisioning adds a ladder per active model plus one BYOM ladder, repeats safely, skips inactive models, adds a ladder when a model's ID changed, and makes queueing work; a missing ladder is a 404 with a logged warning.
@@ -84,6 +84,10 @@ Every backend feature ships with tests for both behavior and security:
   prompt boundaries and resubmission; cancelling real engines during join,
   generation, or judging awaits workers; matchmaker shutdown; stale engine cleanup
   preserves a newer assignment; failed recording retries and concurrent reporting.
+- `test_engine_side_selection.py`: two browser acknowledgments before the topic,
+  first valid pick across both sockets, a matchup reveal before the prompt timer,
+  expiry and late picks, reconnects with
+  the original deadline, stalled sends, and resignation before assignment.
 - `test_result_atomicity.py`: failures during either rating update roll back history,
   turns, rewards, challenge completions, and both ratings; retry and replay are safe;
   NUL output is sanitized; a deleted participant does not prevent opponent history.
@@ -130,13 +134,15 @@ this test app increases rate-limit bursts; rate-limit behavior has separate test
 Backend dependencies (`uv sync`) and Go (for the Go/Python contract test) are required.
 
 - `journey.spec.ts`: signup/login/logout, authenticated reload (raw signed cookie
-  forwarding), POST password forms, real two-player cloud match, private prompts,
+  forwarding), POST password forms, real two-player cloud match, the two-browser
+  acknowledgment gate, chosen and timed-out side assignment, private prompts,
   literal model output, immediate saved history/stats/leaderboards, cancellation
   and rejoin, model-failure void, daily completion/re-entry rejection, admin denial.
   Auth transitions wait for the signed-in profile control or login form; logout
   uses the UI and awaits its redirect rather than starting a competing navigation.
 - `match-state.spec.ts`: controlled WebSocket messages verify one connection in
-  Strict Mode, the player reveal and reduced-motion behavior, focus after submission and rejection, a copyable expired draft, mobile prompt
+  Strict Mode, keyboard side selection at 320 px with reduced motion, an anonymous chooser, the opponent reveal,
+  and a fresh prompt timer, focus after assignment, submission and rejection, a copyable expired draft, mobile prompt
   controls and sticky judging status, early no-show results, heartbeat echo and cleanup,
   plain-text streaming, verdict retention, and the forfeit confirmation.
 - `homepage.spec.ts`: focused lobby hierarchy, complete challenge text and retry, single navigation entries, model-picker keyboard/dismissal/persistence, Quick Queue payload, daily model restrictions and account-menu Settings.
