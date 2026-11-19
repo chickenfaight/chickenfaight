@@ -115,6 +115,22 @@ Review the source-controlled admin allowlist in `backend/app/auth/admins.py`.
 - Provision ownership for the non-root backend user. The app uses 0700 directories
   and 0600 files and checks directory preparation at startup. Test the real mount,
   permissions, available space, and durability; do not share it between processes.
+
+  With Docker, set `BACKEND_IMAGE` to the release image digest reference and
+  supply the runtime settings in `backend.env`. The image prepares the default
+  journal directory for `appuser`, and Docker initializes a fresh named volume
+  from that directory.
+
+  ```bash
+  docker run --name chickenfaight-backend --env-file backend.env \
+    --env MATCH_RESULT_DIRECTORY=/home/appuser/.local/share/chickenfaight/results \
+    --mount type=volume,source=chickenfaight-results,target=/home/appuser/.local/share/chickenfaight/results \
+    "$BACKEND_IMAGE"
+  ```
+
+  Reuse `chickenfaight-results` when replacing the container. For a bind mount
+  or an existing volume, ensure the mounted directory is owned by the container's
+  `appuser` before starting the backend.
 - Decided results are journaled before acknowledgement, committed atomically to
   PostgreSQL, and removed after commit. A worker retries pending entries every
   5 seconds with a 10-second timeout per DB write. Replay is idempotent; a crash

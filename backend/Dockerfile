@@ -16,7 +16,9 @@ RUN uv sync --locked --no-dev --no-install-project
 
 COPY app ./app
 
-RUN useradd --create-home appuser
+# Docker initializes a fresh named volume with the mount point's ownership.
+RUN useradd --create-home appuser \
+    && install -d -m 0700 -o appuser -g appuser /home/appuser/.local/share/chickenfaight/results
 USER appuser
 
 EXPOSE 8000
