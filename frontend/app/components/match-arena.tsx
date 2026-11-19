@@ -26,6 +26,17 @@ const PHASE_LABEL = {
   completed: "Debate complete",
 };
 
+function MatchIntro({ you, opponent, topic, onDone }: { you: FaceOffPlayer; opponent: FaceOffPlayer; topic: string; onDone: () => void }) {
+  return <div aria-hidden="true" onAnimationEnd={event => { if (event.target === event.currentTarget) onDone(); }}
+    className="pointer-events-none fixed inset-0 z-40 hidden flex-col items-center justify-center gap-5 overflow-hidden bg-canvas px-gutter py-4 motion-safe:flex motion-safe:animate-match-intro sm:gap-8">
+    <p className="headline text-5xl text-accent-ink sm:text-6xl">Match found</p>
+    <div className="panel w-full max-w-4xl px-3 py-5 sm:px-7 sm:py-8">
+      <FaceOff you={you} opponent={opponent} presentation="intro" />
+    </div>
+    <p className="line-clamp-3 max-w-2xl wrap-anywhere text-center text-lg font-semibold text-ink-muted sm:text-xl">{topic}</p>
+  </div>;
+}
+
 function Countdown({ deadline }: { deadline: string | null }) {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
@@ -66,6 +77,7 @@ export default function MatchArena() {
   const [leaving, setLeaving] = useState(false);
   const [draft, setDraft] = useState("");
   const [tab, setTab] = useState<"you" | "opponent">("you");
+  const [introDismissed, setIntroDismissed] = useState(false);
   const textarea = useRef<HTMLTextAreaElement>(null);
   const argumentTitle = useRef<HTMLHeadingElement>(null);
   const verdictTitle = useRef<HTMLHeadingElement>(null);
@@ -130,8 +142,12 @@ export default function MatchArena() {
 
   const status = disconnected ? topic ? "Connection lost" : "Debate unavailable"
     : composing && promptClosed ? "Prompt window closed" : PHASE_LABEL[phase];
+  const showIntro = topic && composing && canEdit && !introDismissed;
+  const dismissIntro = showIntro ? () => setIntroDismissed(true) : undefined;
 
-  return <PageTransition><div className="min-h-svh bg-canvas font-sans text-ink">
+  return <PageTransition><div className="min-h-svh bg-canvas font-sans text-ink"
+    onPointerDownCapture={dismissIntro} onKeyDownCapture={dismissIntro} onFocusCapture={dismissIntro}>
+    {showIntro && <MatchIntro you={me} opponent={them} topic={topic.topic} onDone={() => setIntroDismissed(true)} />}
     <header className="sticky top-0 z-30 border-b border-line bg-canvas">
       <div className="mx-auto grid min-h-14 max-w-6xl grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1 px-gutter py-2 sm:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)]">
         <div className="justify-self-start"><Wordmark /></div>
@@ -155,7 +171,7 @@ export default function MatchArena() {
         : <span aria-hidden="true" className="h-10 w-10 rounded-full border-[3px] border-accent/20 border-t-accent motion-safe:animate-spin" />}
     </main> : <main className={`mx-auto w-full min-w-0 px-gutter pb-12 pt-4 sm:pt-7 ${completed ? "max-w-[980px]" : "max-w-[880px]"}`}>
       {!completed && <div className="mb-5 rounded-control border border-line bg-surface px-3 py-2 sm:mb-6 sm:px-5 sm:py-3">
-        <FaceOff you={me} opponent={them} compact />
+        <FaceOff you={me} opponent={them} presentation="compact" />
       </div>}
 
       {topic && <section aria-labelledby="topic-title" className="sm:text-center">

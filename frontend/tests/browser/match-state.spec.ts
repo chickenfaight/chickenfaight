@@ -7,6 +7,32 @@ const matchId = "33333333-3333-4333-8333-333333333333";
 const initial = { type: "MATCH_STATE", payload: { model_display_name: "Controlled model", topic: { category: "T", topic: "Controlled topic", pro_position: "P", con_position: "C" }, you: "pro", deadline: new Date(Date.now() + 120000).toISOString(), challenge: null } };
 const result = { type: "MATCH_RESULT", payload: { winner: "pro", reason: "Saved result", status: "completed", end_reason: "judged", arguments: { pro: "literal", con: "other" } } };
 
+test("the match reveal introduces both players and yields to the prompt", async ({ page, context }) => {
+  await account(context);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.emulateMedia({ reducedMotion: "no-preference" });
+  await page.routeWebSocket("**/v1/game/**", ws => ws.send(JSON.stringify({ ...initial, payload: {
+    ...initial.payload,
+    participants: [
+      { user_id: "pro-player", side: "pro", user: { id: "pro-player", tag: "rooster", username: "Rooster", avatar_url: null }, elo: 1000 },
+      { user_id: "con-player", side: "con", user: { id: "con-player", tag: "challenger", username: "Challenger", avatar_url: null }, elo: 1100 },
+    ],
+  } })));
+  await page.goto(`/match/${matchId}`);
+  const intro = page.locator('[aria-hidden="true"]').filter({ has: page.getByText("Match found", { exact: true }) });
+  await expect(intro.getByText("Rooster", { exact: true })).toBeVisible();
+  await expect(intro.getByText("Challenger", { exact: true })).toBeVisible();
+  const editor = page.getByRole("textbox", { name: "Give your AI a strategy" });
+  await editor.click();
+  await expect(intro).toHaveCount(0);
+  await expect(editor).toBeFocused();
+
+  await page.reload();
+  await expect(intro).toBeVisible();
+  await expect(intro).toHaveCount(0);
+  await expect(editor).toBeInViewport({ ratio: 1 });
+});
+
 test("one socket in Strict Mode, rejected prompts can retry, heartbeat echoes, result survives closure", async ({ page, context }) => {
   await account(context);
   let socket: WebSocketRoute;
@@ -72,6 +98,7 @@ test("a phone can reach the timed prompt controls and see judging while reading 
   });
   await page.goto(`/match/${matchId}`);
   const editor = page.getByRole("textbox", { name: "Give your AI a strategy" });
+  await expect(page.getByText("Match found", { exact: true })).toBeHidden();
   await expect(editor).toBeInViewport({ ratio: 1 });
   await expect(page.getByRole("timer")).toBeInViewport({ ratio: 1 });
   await expect(page.getByRole("button", { name: "Submit prompt" })).toBeInViewport({ ratio: 1 });
@@ -138,6 +165,8 @@ test("leaving resigns once and navigates after the result", async ({ page, conte
   await leave.press("Enter");
   await expect(page.getByRole("dialog", { name: "Leave and forfeit?" })).toBeVisible();
   await page.keyboard.press("Escape");
+  // The native dialog restores focus before React handles its close event.
+  await expect(page.locator("dialog form")).toHaveCount(0);
   await expect(leave).toBeFocused();
   await leave.press("Enter");
   await page.getByRole("button", { name: "Forfeit and leave", exact: true }).click();

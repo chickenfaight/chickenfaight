@@ -136,7 +136,7 @@ Backend dependencies (`uv sync`) and Go (for the Go/Python contract test) are re
   Auth transitions wait for the signed-in profile control or login form; logout
   uses the UI and awaits its redirect rather than starting a competing navigation.
 - `match-state.spec.ts`: controlled WebSocket messages verify one connection in
-  Strict Mode, focus after submission and rejection, a copyable expired draft, mobile prompt
+  Strict Mode, the player reveal and reduced-motion behavior, focus after submission and rejection, a copyable expired draft, mobile prompt
   controls and sticky judging status, early no-show results, heartbeat echo and cleanup,
   plain-text streaming, verdict retention, and the forfeit confirmation.
 - `homepage.spec.ts`: focused lobby hierarchy, complete challenge text and retry, single navigation entries, model-picker keyboard/dismissal/persistence, Quick Queue payload, daily model restrictions and account-menu Settings.

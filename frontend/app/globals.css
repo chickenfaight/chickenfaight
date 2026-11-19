@@ -135,11 +135,15 @@
   --animate-fade: fade var(--duration-base) var(--ease-out-expo) both;
   --animate-pop: pop var(--duration-slow) var(--ease-overshoot) both;
   --animate-shimmer: shimmer 1.4s var(--ease-in-out-soft) infinite;
+  --animate-match-intro: match-intro 2.1s linear both;
+  --animate-match-corner: match-corner var(--duration-slow) var(--ease-out-expo) both;
 
   @keyframes rise { from { opacity: 0; transform: translateY(10px); } }
   @keyframes fade { from { opacity: 0; } }
   @keyframes pop { from { opacity: 0; transform: scale(0.92); } }
   @keyframes shimmer { 50% { opacity: 0.45; } }
+  @keyframes match-intro { 0% { opacity: 0; } 8%, 82% { opacity: 1; } 100% { opacity: 0; } }
+  @keyframes match-corner { from { opacity: 0; transform: translateX(var(--match-entry-offset)); } }
 }
 
 /* Every interactive element: a visible keyboard focus ring. */
