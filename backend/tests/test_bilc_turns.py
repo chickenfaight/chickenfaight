@@ -16,7 +16,7 @@ MESSAGES = [{"role": "system", "content": "Argue the pro side."}]
 
 @pytest.fixture
 async def connections():
-    return BilcConnections(record_hello=AsyncMock(), min_version="0.1.0", allow_dev=False)
+    return BilcConnections(record_hello=AsyncMock(return_value=True), min_version="0.1.0", allow_dev=False)
 
 
 @pytest.fixture
@@ -75,6 +75,54 @@ async def test_reconnecting_mid_match_resends_the_assignment(connections, device
     assert (await again.connect(connections))["type"] == "HELLO_ACK"
     assert (await again.next("MATCH_ASSIGN"))["payload"]["side"] == "con"
     await again.stop()
+
+
+@pytest.mark.parametrize("account_deleted", [False, True], ids=["device-revoked", "account-deleted"])
+async def test_revocation_closes_active_and_pending_sockets(connections, device, account_deleted):
+    match_id = uuid4()
+    assert connections.reserve(device.device_id, match_id)
+    await connections.assign(device.device_id, match_id, "con", "Topic")
+    if account_deleted:
+        # The account-wide lookup must find devices with only pending sockets.
+        device.hang_up()
+        await asyncio.wait_for(device.task, 1)
+
+    recording, resume = asyncio.Event(), asyncio.Event()
+
+    async def record_hello(identity, hello):
+        recording.set()
+        await resume.wait()
+        return True  # Authorization was valid when the HELLO transaction completed.
+
+    connections.record_hello = record_hello
+    waiting_for_hello, recording_hello = FakeBilc(), FakeBilc()
+    pending = (waiting_for_hello, recording_hello)
+    try:
+        for socket in pending:
+            socket.task = asyncio.create_task(connections.serve(device.identity, socket))
+            socket.say("HEARTBEAT", {"ts": 1})
+            assert (await socket.next("ERROR"))["payload"]["code"] == "BAD_MESSAGE"
+
+        recording_hello.say("HELLO", HELLO)
+        await asyncio.wait_for(recording.wait(), 1)
+        if account_deleted:
+            await connections.close_user(device.identity.user_id)
+        else:
+            await connections.close(device.device_id, 4403, "Device revoked")
+            assert device.close_code == 4403
+        assert all(socket.close_code == 4403 for socket in pending)
+
+        resume.set()
+        await asyncio.wait_for(asyncio.gather(*(socket.task for socket in pending)), 1)
+        assert not connections.online(device.identity.user_id)
+        assert not connections.pending
+        assert all([message["type"] for message in socket.seen] == ["ERROR"] for socket in pending)
+        with pytest.raises(DeviceTurnError) as failed:
+            await collect(connections.turn(device.device_id, match_id, MESSAGES, 400))
+        assert failed.value.code == "BILC_OFFLINE"
+    finally:
+        resume.set()
+        await asyncio.gather(*(socket.stop() for socket in pending))
 
 
 # Turns

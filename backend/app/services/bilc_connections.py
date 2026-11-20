@@ -34,12 +34,12 @@ MAX_TURN_BUFFER_BYTES = 32 * 1024
 MAX_TURN_BUFFER_FRAMES = 512
 
 DeviceStatus = Literal["offline", "idle", "busy"]
-RecordHello = Callable[[UUID, Hello], Awaitable[None]]
+RecordHello = Callable[[BilcIdentity, Hello], Awaitable[bool]]
 
 
-async def save_hello(device_id: UUID, hello: Hello) -> None:
+async def save_hello(identity: BilcIdentity, hello: Hello) -> bool:
     async with SessionFactory() as session:
-        await BilcService(session).record_hello(device_id, hello)
+        return await BilcService(session).record_hello(identity, hello)
 
 
 class BadFrame(Exception):
@@ -116,6 +116,8 @@ class DeviceConnection:
 
     async def send(self, type_: str, payload: dict[str, Any]) -> None:
         async with self.send_lock:
+            if self.closed.is_set():
+                raise WebSocketDisconnect()
             await self.socket.send_json({"type": type_, "payload": payload})
 
     async def error(self, code: str, message: str) -> None:
@@ -138,14 +140,23 @@ class DeviceConnection:
             raise BadFrame("Payload must be an object")
         return frame["type"], payload
 
-    async def close(self, code: int, reason: str) -> None:
+    def mark_closed(self) -> bool:
+        if self.closed.is_set():
+            return False
         self.closed.set()
         # Turns still waiting on this socket fail now rather than at their deadline.
         for turn in self.turns.values():
             turn.queue.put_nowait(DeviceTurnError("BILC_DISCONNECTED", "The device disconnected"))
         self.turns.clear()
+        return True
+
+    async def send_close(self, code: int, reason: str) -> None:
         with suppress(WebSocketDisconnect, OSError, RuntimeError):
             await self.socket.close(code=code, reason=reason)
+
+    async def close(self, code: int, reason: str) -> None:
+        if self.mark_closed():
+            await self.send_close(code, reason)
 
 
 class BilcConnections:
@@ -165,6 +176,7 @@ class BilcConnections:
         self.min_version = min_version or settings.bilc_min_supported_version
         self.allow_dev = settings.app_env == "development" if allow_dev is None else allow_dev
         self.connections: dict[UUID, DeviceConnection] = {}
+        self.pending: dict[UUID, set[DeviceConnection]] = {}
         self.assignments: dict[UUID, Assignment] = {}  # dict[device_id, its match]
 
     # Status
@@ -265,35 +277,54 @@ class BilcConnections:
     # Sockets
 
     async def close(self, device_id: UUID, code: int, reason: str) -> None:
+        sockets = self.pending.pop(device_id, set())
         connection = self.connections.pop(device_id, None)
         if connection is not None:
-            await connection.close(code, reason)
+            sockets.add(connection)
+        # Invalidate every socket before sending any close frame can yield.
+        await asyncio.gather(*(socket.send_close(code, reason) for socket in sockets if socket.mark_closed()))
 
     async def close_user(self, user_id: UUID) -> None:
-        for device_id in self.online(user_id):
+        pending_ids = {
+            device_id for device_id, sockets in self.pending.items()
+            if any(socket.identity.user_id == user_id for socket in sockets)
+        }
+        for device_id in self.online(user_id) | pending_ids:
             await self.close(device_id, 4403, "Account deleted")
 
     async def serve(self, identity: BilcIdentity, socket: WebSocket) -> None:
         """Run an accepted, authenticated socket until it closes."""
+        device_id = identity.device_id
         connection = DeviceConnection(identity, socket)
+        pending = self.pending.setdefault(device_id, set())
+        pending.add(connection)
         tasks: list[asyncio.Task] = []
         try:
-            hello = await self.handshake(connection)
-            if hello is None:
-                return
+            try:
+                hello = await self.handshake(connection)
+                if hello is None or connection.closed.is_set():
+                    return
+                if not await self.record_hello(identity, hello):
+                    await connection.close(4403, "Device revoked")
+                    return
+                if connection.closed.is_set():
+                    return
+            finally:
+                pending.discard(connection)
+                if not pending and self.pending.get(device_id) is pending:
+                    del self.pending[device_id]
             connection.hello = hello
-            await self.record_hello(identity.device_id, hello)
-            previous = self.connections.get(identity.device_id)
-            self.connections[identity.device_id] = connection
+            previous = self.connections.get(device_id)
+            self.connections[device_id] = connection
             if previous is not None:
                 await previous.close(4409, "Replaced by a newer connection")
             await connection.send("HELLO_ACK", {
                 "protocol_version": PROTOCOL_VERSION,
                 "heartbeat_interval_s": self.HEARTBEAT_INTERVAL,
             })
-            logger.info("BILC %s connected (client %s)", identity.device_id, hello.client_version)
+            logger.info("BILC %s connected (client %s)", device_id, hello.client_version)
             # Reconnected mid-match: the device needs its assignment again.
-            assignment = self.assignments.get(identity.device_id)
+            assignment = self.assignments.get(device_id)
             if assignment is not None and assignment.side is not None:
                 await connection.send("MATCH_ASSIGN", self.assign_payload(assignment))
 
@@ -311,15 +342,15 @@ class BilcConnections:
             for task in tasks:
                 task.cancel()
             await asyncio.gather(*tasks, return_exceptions=True)
-            if self.connections.get(identity.device_id) is connection:
-                del self.connections[identity.device_id]
+            if self.connections.get(device_id) is connection:
+                del self.connections[device_id]
             await connection.close(1000, "")
 
     async def handshake(self, connection: DeviceConnection) -> Hello | None:
         """Wait for a valid `HELLO`, which must come first. None if the socket was closed instead."""
         try:
             async with asyncio.timeout(self.HEARTBEAT_TIMEOUT):
-                while True:
+                while not connection.closed.is_set():
                     try:
                         type_, payload = await connection.receive()
                     except BadFrame as problem:
@@ -345,7 +376,7 @@ class BilcConnections:
                     return hello
         except TimeoutError:
             await connection.close(4408, "Heartbeat timeout")
-            return None
+        return None
 
     async def read(self, connection: DeviceConnection) -> None:
         while not connection.closed.is_set():

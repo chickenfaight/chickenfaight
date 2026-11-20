@@ -164,12 +164,14 @@ class BilcService:
         device.refresh_token_expires_at = None
         await self.devices.delete_spent_tokens(device.id)
 
-    async def record_hello(self, device_id: UUID, hello: Hello) -> None:
+    async def record_hello(self, identity: BilcIdentity, hello: Hello) -> bool:
+        """Record HELLO only while the device is still active and owned by this identity."""
         async with self.session.begin():
-            device = await self.devices.get(device_id)
-            if device is None:
-                return
+            device = await self.devices.get_for_update(identity.device_id)
+            if device is None or device.revoked_at is not None or device.user_id != identity.user_id:
+                return False
             device.client_version = hello.client_version
             device.platform = hello.platform
             device.model_metadata = hello.model.model_dump()
             device.last_seen_at = datetime.now(timezone.utc)
+        return True
