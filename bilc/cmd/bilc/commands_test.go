@@ -159,6 +159,22 @@ func TestPairRefusesWhenAlreadyPaired(t *testing.T) {
 	}
 }
 
+func TestPairRequiresExplicitCustomServer(t *testing.T) {
+	server := newFakeServer(t)
+	h := newHarness(t)
+	path := filepath.Join(h.cli.configDir, "config.json")
+	if err := config.Save(path, config.Config{ServerURL: server.URL}); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.cli.run([]string{"pair", "ABCD2345"}); err == nil || !strings.Contains(err.Error(), "pass --server") {
+		t.Fatalf("error = %v, want an explicit server requirement", err)
+	}
+	// The explicit retry with the same code succeeds because the first command never sent it.
+	if err := h.cli.run([]string{"pair", "ABCD2345", "--server", server.URL}); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestPairWarnsAboutPlainHTTPOverTheNetwork(t *testing.T) {
 	h := newHarness(t)
 	// .invalid never resolves, so pairing fails quickly after the warning.

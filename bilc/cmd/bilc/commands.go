@@ -47,7 +47,7 @@ Pair this machine with your account. Get the code from the BILC page in the
 web app; it works once, for 10 minutes.
 
 Flags:
-  --server URL  Server to pair with (default: the saved one, or `+defaultServerURL+`)
+  --server URL  Server to pair with (default: `+defaultServerURL+`; required for a custom server)
   --name NAME   Device name shown on the BILC page (default: this computer's name)
   -h, --help    Show this help`)
 	if done || err != nil {
@@ -72,6 +72,8 @@ Flags:
 	}
 	if *server != "" {
 		cfg.ServerURL = *server
+	} else if cfg.ServerURL != defaultServerURL {
+		return errors.New("this device has a saved custom server; pass --server with the URL you intend to pair with")
 	}
 	serverURL, err := config.ParseHTTPURL(cfg.ServerURL)
 	if err != nil {

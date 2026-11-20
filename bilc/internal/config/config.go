@@ -52,10 +52,21 @@ func Dir() (string, error) {
 // serverURL as the server.
 func Load(path, serverURL string) (Config, error) {
 	cfg := Config{ServerURL: serverURL, Model: Model{BaseURL: DefaultModelURL}}
-	data, err := os.ReadFile(path)
+	// Establish a trusted directory before using either config or fallback credentials.
+	if err := prepareDirectory(filepath.Dir(path)); err != nil {
+		return Config{}, err
+	}
+	info, err := os.Lstat(path)
 	if errors.Is(err, fs.ErrNotExist) {
 		return cfg, nil
 	}
+	if err != nil {
+		return Config{}, fmt.Errorf("inspect config: %w", err)
+	}
+	if !info.Mode().IsRegular() || !trustedConfigFile(info) {
+		return Config{}, fmt.Errorf("unsafe config file %q: use a regular file owned by you and writable only by you", path)
+	}
+	data, err := os.ReadFile(path)
 	if err != nil {
 		return Config{}, fmt.Errorf("read config: %w", err)
 	}
@@ -67,8 +78,8 @@ func Load(path, serverURL string) (Config, error) {
 
 // Save writes the config atomically, readable only by this user.
 func Save(path string, cfg Config) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		return fmt.Errorf("create config directory: %w", err)
+	if err := prepareDirectory(filepath.Dir(path)); err != nil {
+		return err
 	}
 	data, err := json.MarshalIndent(cfg, "", "  ")
 	if err != nil {
