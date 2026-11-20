@@ -43,6 +43,7 @@ Everything here is PLANNED unless marked **(implemented)**. Remove a PLANNED sta
 | `TAG_ALREADY_SET` | 409 | — | Caller already has a tag; tags never change (implemented) |
 | `TAG_REQUIRED` | 403 | — | Caller must set a tag first (implemented) |
 | `AVATAR_INVALID` | 422 | — | Upload isn't a PNG, JPEG, or WebP image, is over 2 MB or 25 megapixels, or is corrupt (implemented) |
+| `AVATAR_UPLOAD_TIMEOUT` | 408 | — | The profile picture body did not arrive within 20 seconds (implemented) |
 | `CHALLENGE_ALREADY_COMPLETED` | 409 | — | Caller already completed today's daily challenge (implemented) |
 | `CONVERSATION_INVALID` | 422 | — | Tips chat turns don't alternate starting and ending with the player (implemented) |
 | `CONVERSATION_TOO_LONG` | 422 | — | Tips chat over 8,000 characters in total (implemented) |
@@ -138,7 +139,7 @@ Player prompts are never returned by any endpoint or message except to their aut
 | POST | `/auth/login` | public | `{ tag: str (≤ 64, ignoring case), password: str (1–128) }`. Sign-in uses the tag, never the username, since usernames change and repeat | 204 and sets the session cookie; 401 `INVALID_CREDENTIALS` (implemented) |
 | POST | `/auth/logout` | public | — | 204; deletes the session server-side, so a copy of the old cookie stops working, and clears the cookie (implemented) |
 | PUT | `/v1/users/me/tag` | session | `{ tag: str }` (3–24 chars, `[a-zA-Z0-9_]`, unique ignoring case) | `UserRead`; sets the tag once, then `TAG_ALREADY_SET` (implemented) |
-| PUT | `/v1/users/me/avatar` | session | Raw image body (PNG, JPEG, or WebP, ≤ 2 MB) | `UserRead`; re-encoded to a 256×256 WebP with metadata removed; `avatar_url` becomes `/v1/users/{id}/avatar?v=…`, relative to the backend, with a new `v` on every upload; 422 `AVATAR_INVALID` (implemented) |
+| PUT | `/v1/users/me/avatar` | session | Raw image body (PNG, JPEG, or WebP, ≤ 2 MB, received within 20 s) | `UserRead`; re-encoded to a 256×256 WebP with metadata removed; `avatar_url` becomes `/v1/users/{id}/avatar?v=…`, relative to the backend, with a new `v` on every upload; 422 `AVATAR_INVALID` or 408 `AVATAR_UPLOAD_TIMEOUT` (implemented) |
 | DELETE | `/v1/users/me/avatar` | session | — | `UserRead` with `avatar_url: null`; the Google picture returns at the next Google sign-in (implemented) |
 | GET | `/v1/users/{id}/avatar` | session | `{id}: uuid` | The WebP image, `Cache-Control: private, max-age=31536000, immutable`; 404 `NOT_FOUND` without an upload (implemented) |
 | DELETE | `/v1/users/me` | session | — | 204; permanently deletes the caller: leaves any queue, forfeits a live match (`resigned`), deletes the user with their sessions, friendships, friend requests, and blocks (both directions), and clears the cookie. Signing in with Google again creates a new account (implemented) |

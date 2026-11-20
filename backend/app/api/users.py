@@ -1,3 +1,4 @@
+import asyncio
 from typing import Annotated
 from uuid import UUID
 
@@ -6,17 +7,18 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.concurrency import run_in_threadpool
 
 from app.api.rate_limit import rate_limit
-from app.auth.dependencies import CurrentUserDependency
+from app.auth.dependencies import CurrentUserDependency, get_current_user
 from app.db.session import get_session
 from app.schemas import AccountUpdate, ArenaStats, UserProfile, UserRead, TagAvailability, TagUpdate, UserSearchPage
 from app.services.arena_stats import arena_stats
 from app.services.avatars import MAX_UPLOAD_BYTES, process_avatar
-from app.services.exceptions import AvatarInvalidError
+from app.services.exceptions import AvatarInvalidError, AvatarUploadTimeoutError
 from app.services.user import UserService
 
 
 router = APIRouter(prefix="/users", tags=["users"])
 SessionDependency = Annotated[AsyncSession, Depends(get_session)]
+AVATAR_UPLOAD_TIMEOUT = 20
 
 
 @router.get("/me/arena-stats", response_model=ArenaStats)
@@ -48,14 +50,22 @@ async def set_tag(
 
 
 @router.put("/me/avatar", response_model=UserRead, dependencies=[rate_limit(burst=5, per_minute=10)])
-async def upload_avatar(request: Request, user: CurrentUserDependency, session: SessionDependency) -> UserRead:
+async def upload_avatar(request: Request, _user: CurrentUserDependency, session: SessionDependency) -> UserRead:
     """Replace the caller's picture with the raw image in the request body (PNG, JPEG, or WebP)."""
+    # Authentication checked out a connection. Return it before reading or decoding the image.
+    await session.rollback()
     body = bytearray()
-    async for chunk in request.stream():
-        body.extend(chunk)
-        if len(body) > MAX_UPLOAD_BYTES:  # stop reading instead of buffering an oversized upload
-            raise AvatarInvalidError()
+    try:
+        async with asyncio.timeout(AVATAR_UPLOAD_TIMEOUT):
+            async for chunk in request.stream():
+                if len(body) + len(chunk) > MAX_UPLOAD_BYTES:
+                    raise AvatarInvalidError()
+                body.extend(chunk)
+    except TimeoutError:
+        raise AvatarUploadTimeoutError() from None
     image = await run_in_threadpool(process_avatar, bytes(body))  # CPU-bound; keep the event loop free
+    # Resolve the cookie again in a fresh transaction in case the session ended during the upload.
+    user = await get_current_user(request, session)
     return UserRead.model_validate(await UserService(session).set_avatar(user, image))
 
 
