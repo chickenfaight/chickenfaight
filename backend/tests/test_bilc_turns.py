@@ -7,6 +7,7 @@ from uuid import uuid4
 import pytest
 
 from app.inference.model_client import BilcModelClient, DeviceTurnError
+from app.services import bilc_connections
 from app.services.bilc_connections import BilcConnections
 from fake_bilc import HELLO, FakeBilc
 
@@ -96,6 +97,83 @@ async def test_device_error_fails_the_turn(connections, device):
     with pytest.raises(DeviceTurnError) as failed:
         await collect(connections.turn(device.device_id, uuid4(), MESSAGES, 400))
     assert failed.value.code == "MODEL_UNAVAILABLE"
+
+
+@pytest.mark.parametrize("deltas", [
+    pytest.param(["é" * 5], id="delta-bytes"),
+    pytest.param(["é" * 4, "é" * 3], id="buffered-bytes"),
+    pytest.param([""] * 4, id="buffered-frames"),
+])
+async def test_over_budget_response_fails_a_paused_turn(connections, device, monkeypatch, deltas):
+    monkeypatch.setattr(bilc_connections, "MAX_TURN_DELTA_BYTES", 8)
+    monkeypatch.setattr(bilc_connections, "MAX_TURN_BUFFER_BYTES", 12)
+    monkeypatch.setattr(bilc_connections, "MAX_TURN_BUFFER_FRAMES", 3)
+    stream = connections.turn(device.device_id, uuid4(), MESSAGES, 200)
+    first = asyncio.create_task(anext(stream))
+    turn_id = (await device.next("TURN_REQUEST"))["payload"]["turn_id"]
+    device.say("MATCH_RESPONSE", {"turn_id": turn_id, "delta": "start"})
+    assert await asyncio.wait_for(first, 1) == "start"
+
+    # Hold the consumer at its first yield until the socket reader processes this batch.
+    for delta in deltas:
+        device.say("MATCH_RESPONSE", {"turn_id": turn_id, "delta": delta})
+    device.say("MATCH_RESPONSE", {"turn_id": turn_id, "delta": "late", "done": True})
+    device.say("BARRIER", {})
+    assert (await device.next("ERROR"))["payload"]["code"] == "UNKNOWN_TYPE"
+
+    assert not connections.connections[device.device_id].turns
+    with pytest.raises(DeviceTurnError, match="over-budget") as failed:
+        await asyncio.wait_for(anext(stream), 1)
+    assert failed.value.code == "MODEL_ERROR"
+
+    # The device can still complete another turn on the same connection.
+    device.reply_to_turns([["okay"]])
+    assert await asyncio.wait_for(collect(connections.turn(device.device_id, uuid4(), MESSAGES, 200)), 1) == ["okay"]
+
+
+async def test_consumed_deltas_free_buffer_budget(connections, device, monkeypatch):
+    monkeypatch.setattr(bilc_connections, "MAX_TURN_DELTA_BYTES", 8)
+    monkeypatch.setattr(bilc_connections, "MAX_TURN_BUFFER_BYTES", 8)
+    monkeypatch.setattr(bilc_connections, "MAX_TURN_BUFFER_FRAMES", 1)
+    stream = connections.turn(device.device_id, uuid4(), MESSAGES, 200)
+    first = asyncio.create_task(anext(stream))
+    turn_id = (await device.next("TURN_REQUEST"))["payload"]["turn_id"]
+    delta = "🦆" * 2
+    device.say("MATCH_RESPONSE", {"turn_id": turn_id, "delta": delta})
+    assert await asyncio.wait_for(first, 1) == delta
+
+    # Exactly one full-size response fits again, including text in the terminal frame.
+    device.say("MATCH_RESPONSE", {"turn_id": turn_id, "delta": delta, "done": True})
+    device.say("MATCH_RESPONSE", {"turn_id": turn_id, "delta": "ignored"})
+    device.say("BARRIER", {})
+    assert (await device.next("ERROR"))["payload"]["code"] == "UNKNOWN_TYPE"
+    assert await asyncio.wait_for(collect(stream), 1) == [delta]
+
+
+@pytest.mark.parametrize("disconnect", [False, True])
+async def test_a_full_buffer_can_deliver_a_terminal_error(connections, device, monkeypatch, disconnect):
+    monkeypatch.setattr(bilc_connections, "MAX_TURN_BUFFER_FRAMES", 1)
+    stream = connections.turn(device.device_id, uuid4(), MESSAGES, 200)
+    first = asyncio.create_task(anext(stream))
+    turn_id = (await device.next("TURN_REQUEST"))["payload"]["turn_id"]
+    device.say("MATCH_RESPONSE", {"turn_id": turn_id, "delta": "start"})
+    assert await asyncio.wait_for(first, 1) == "start"
+
+    device.say("MATCH_RESPONSE", {"turn_id": turn_id, "delta": "queued"})
+    if disconnect:
+        device.hang_up()
+        await asyncio.wait_for(device.task, 1)
+        code = "BILC_DISCONNECTED"
+    else:
+        device.say("ERROR", {"turn_id": turn_id, "code": "MODEL_UNAVAILABLE"})
+        device.say("BARRIER", {})
+        assert (await device.next("ERROR"))["payload"]["code"] == "UNKNOWN_TYPE"
+        code = "MODEL_UNAVAILABLE"
+
+    assert await asyncio.wait_for(anext(stream), 1) == "queued"
+    with pytest.raises(DeviceTurnError) as failed:
+        await asyncio.wait_for(anext(stream), 1)
+    assert failed.value.code == code
 
 
 async def test_disconnect_mid_turn_fails_the_turn(connections, device):

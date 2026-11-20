@@ -155,6 +155,17 @@ async def test_a_device_ignoring_the_limits_is_cut_off_without_forfeiting(match)
     assert match.connections.status(match.device("pro").device_id) == "idle"
 
 
+async def test_over_budget_device_response_forfeits_the_turn(match, monkeypatch):
+    monkeypatch.setattr("app.services.bilc_connections.MAX_TURN_DELTA_BYTES", 8)
+    await match.start({"pro": [["Too much text"]], "con": [["Fares", " fund", " it."]]})
+    await match.run()
+    result = match.engine.result
+    assert (result["status"], result["winner"], result["end_reason"]) == ("forfeited", "con", "model_failure")
+    match.judge.assert_not_awaited()
+    _, forfeit, end = match.received("pro")
+    assert forfeit["payload"]["reason"] == "MODEL_ERROR" and end["type"] == "MATCH_END"
+
+
 async def test_each_players_model_is_kept_even_if_their_device_later_drops(match):
     await match.start({"pro": [["Free ", "transit!"]]})
     con = match.device("con")

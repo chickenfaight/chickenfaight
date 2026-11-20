@@ -29,6 +29,9 @@ from app.services.bilc_rules import SizeClass, is_outdated, size_class
 logger = logging.getLogger(__name__)
 
 PROTOCOL_VERSION = 1
+MAX_TURN_DELTA_BYTES = 8 * 1024
+MAX_TURN_BUFFER_BYTES = 32 * 1024
+MAX_TURN_BUFFER_FRAMES = 512
 
 DeviceStatus = Literal["offline", "idle", "busy"]
 RecordHello = Callable[[UUID, Hello], Awaitable[None]]
@@ -64,8 +67,41 @@ class Assignment:
     topic: str | None = None
 
 
-# What a turn's queue carries: (delta, done), or the error that ends the turn.
-TurnEvent = tuple[str, bool] | DeviceTurnError
+@dataclass
+class TurnBuffer:
+    # Reserve one slot for a terminal error even when the response buffer is full.
+    queue: asyncio.Queue[tuple[str, bool, int] | DeviceTurnError] = field(
+        default_factory=lambda: asyncio.Queue(MAX_TURN_BUFFER_FRAMES + 1)
+    )
+    queued_bytes: int = 0
+
+    def append(self, response: MatchResponse) -> bool:
+        delta = response.delta
+        if self.queue.qsize() >= MAX_TURN_BUFFER_FRAMES or len(delta) > MAX_TURN_DELTA_BYTES:
+            return False
+        try:
+            size = len(delta.encode("utf-8"))
+        except UnicodeEncodeError:
+            return False
+        if size > MAX_TURN_DELTA_BYTES or self.queued_bytes + size > MAX_TURN_BUFFER_BYTES:
+            return False
+        self.queue.put_nowait((delta, response.done, size))
+        self.queued_bytes += size
+        return True
+
+    def reject_response(self) -> None:
+        while not self.queue.empty():
+            self.queue.get_nowait()
+        self.queued_bytes = 0
+        self.queue.put_nowait(DeviceTurnError("MODEL_ERROR", "Invalid or over-budget device response"))
+
+    async def next_response(self) -> tuple[str, bool]:
+        event = await self.queue.get()
+        if isinstance(event, DeviceTurnError):
+            raise event
+        delta, done, size = event
+        self.queued_bytes -= size
+        return delta, done
 
 
 @dataclass(eq=False)
@@ -76,7 +112,7 @@ class DeviceConnection:
     last_received: float = field(default_factory=time.monotonic)
     closed: asyncio.Event = field(default_factory=asyncio.Event)
     send_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
-    turns: dict[UUID, asyncio.Queue[TurnEvent]] = field(default_factory=dict)
+    turns: dict[UUID, TurnBuffer] = field(default_factory=dict)
 
     async def send(self, type_: str, payload: dict[str, Any]) -> None:
         async with self.send_lock:
@@ -105,8 +141,8 @@ class DeviceConnection:
     async def close(self, code: int, reason: str) -> None:
         self.closed.set()
         # Turns still waiting on this socket fail now rather than at their deadline.
-        for queue in self.turns.values():
-            queue.put_nowait(DeviceTurnError("BILC_DISCONNECTED", "The device disconnected"))
+        for turn in self.turns.values():
+            turn.queue.put_nowait(DeviceTurnError("BILC_DISCONNECTED", "The device disconnected"))
         self.turns.clear()
         with suppress(WebSocketDisconnect, OSError, RuntimeError):
             await self.socket.close(code=code, reason=reason)
@@ -184,15 +220,17 @@ class BilcConnections:
         await self.send(device_id, "FORFEIT", {"match_id": str(match_id), "reason": reason})
 
     async def turn(self, device_id: UUID, match_id: UUID, messages: list[Message], max_tokens: int) -> AsyncIterator[str]:
-        """Send one `TURN_REQUEST` and yield its deltas. Raises `DeviceTurnError` if the device is
-        offline, reports an error, or disconnects. Closing the generator abandons the turn; the
-        device stops it on `MATCH_END`, and any late responses are ignored as unknown turns."""
+        """Send one `TURN_REQUEST` and yield its deltas, or raise `DeviceTurnError` on failure.
+
+        Closing the generator abandons the turn. The device stops it on `MATCH_END`, and any
+        late responses are ignored as unknown turns.
+        """
         connection = self.connections.get(device_id)
         if connection is None:
             raise DeviceTurnError("BILC_OFFLINE", "The device is offline")
         turn_id = uuid4()
-        queue: asyncio.Queue[TurnEvent] = asyncio.Queue()
-        connection.turns[turn_id] = queue
+        turn = TurnBuffer()
+        connection.turns[turn_id] = turn
         try:
             await connection.send("TURN_REQUEST", {
                 "turn_id": str(turn_id),
@@ -203,10 +241,7 @@ class BilcConnections:
                 "deadline": (datetime.now(timezone.utc) + timedelta(seconds=self.TURN_TIMEOUT)).isoformat(),
             })
             while True:
-                event = await queue.get()
-                if isinstance(event, DeviceTurnError):
-                    raise event
-                delta, done = event
+                delta, done = await turn.next_response()
                 if delta:
                     yield delta
                 if done:
@@ -313,41 +348,48 @@ class BilcConnections:
             return None
 
     async def read(self, connection: DeviceConnection) -> None:
-        while True:
+        while not connection.closed.is_set():
             try:
-                type_, payload = await connection.receive()
+                await self.handle_message(connection, *await connection.receive())
             except BadFrame as problem:
                 await connection.error("BAD_MESSAGE", str(problem))
-                continue
-            match type_:
-                case "HEARTBEAT":
-                    # The device echoed our heartbeat; `last_received` was updated above.
-                    continue
-                case "DISCONNECT":
-                    await connection.close(1000, "Disconnected")
+
+    async def handle_message(self, connection: DeviceConnection, type_: str, payload: dict[str, Any]) -> None:
+        # Keep each payload scoped to its dispatch so rejected text is released before the next read.
+        match type_:
+            case "HEARTBEAT":
+                # receive() already updated last_received.
+                return
+            case "DISCONNECT":
+                await connection.close(1000, "Disconnected")
+            case "MATCH_RESPONSE":
+                try:
+                    response = MatchResponse.model_validate(payload)
+                except ValidationError:
+                    await connection.error("BAD_MESSAGE", "Invalid MATCH_RESPONSE")
                     return
-                case "MATCH_RESPONSE":
-                    try:
-                        response = MatchResponse.model_validate(payload)
-                    except ValidationError:
-                        await connection.error("BAD_MESSAGE", "Invalid MATCH_RESPONSE")
-                        continue
-                    # Unknown or abandoned turns are ignored.
-                    if (queue := connection.turns.get(response.turn_id)) is not None:
-                        queue.put_nowait((response.delta, response.done))
-                case "ERROR":
-                    try:
-                        error = DeviceError.model_validate(payload)
-                    except ValidationError:
-                        continue
-                    if error.turn_id is not None and (queue := connection.turns.get(error.turn_id)) is not None:
-                        queue.put_nowait(DeviceTurnError(error.code, error.message))
-                    else:
-                        logger.info("BILC %s reported %s", connection.identity.device_id, error.code)
-                case "HELLO":
-                    await connection.error("BAD_MESSAGE", "Already connected")
-                case _:
-                    await connection.error("UNKNOWN_TYPE", "Unknown message type")
+                turn = connection.turns.get(response.turn_id)
+                if turn is None:
+                    return
+                if not turn.append(response):
+                    del connection.turns[response.turn_id]
+                    turn.reject_response()
+                elif response.done:
+                    del connection.turns[response.turn_id]
+            case "ERROR":
+                try:
+                    error = DeviceError.model_validate(payload)
+                except ValidationError:
+                    return
+                turn = connection.turns.pop(error.turn_id, None) if error.turn_id is not None else None
+                if turn is not None:
+                    turn.queue.put_nowait(DeviceTurnError(error.code, error.message))
+                else:
+                    logger.info("BILC %s reported %s", connection.identity.device_id, error.code)
+            case "HELLO":
+                await connection.error("BAD_MESSAGE", "Already connected")
+            case _:
+                await connection.error("UNKNOWN_TYPE", "Unknown message type")
 
     async def heartbeat(self, connection: DeviceConnection) -> None:
         next_heartbeat = time.monotonic() + self.HEARTBEAT_INTERVAL
