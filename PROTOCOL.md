@@ -33,6 +33,7 @@ Everything here is PLANNED unless marked **(implemented)**. Remove a PLANNED sta
 | `FORBIDDEN` | 403 | 4403 | Authenticated but not allowed (not a participant, revoked device) |
 | `NOT_FOUND` | 404 | — | Missing, or hidden from this user |
 | `VALIDATION_ERROR` | 422 | — | Bad request body/params |
+| `BODY_TOO_LARGE` | 413 | — | Request body exceeds the route's byte limit (implemented) |
 | `BAD_MESSAGE` | — | — | WS message failed validation (no close) |
 | `UNKNOWN_TYPE` | — | — | Unrecognized WS `type` (no close) |
 | `ALREADY_QUEUED`, `IN_MATCH` | 409 | — | Matchmaking conflicts |
@@ -92,6 +93,7 @@ Server-side constants; clients read deadlines from messages rather than hard-cod
 | Match history rate limit (implemented) | A burst of 20 and 60/min per user, on each of the two routes |
 | Profile picture rate limits (implemented) | Upload: a burst of 5 and 10/min per user. Viewing pictures: a burst of 100 and 300/min per user, since one page can show 20 |
 | Sign-in and signup rate limits (implemented) | `POST /auth/login`: a burst of 10 and 10/min per client IP, plus a burst of 5 and 1/min per tag (ignoring case), so many IPs can't share the guessing. `POST /auth/signup`: a burst of 5 and 1/min per client IP |
+| HTTP request body limits (implemented) | 8 KiB by default, 512 KiB for `POST /v1/tips/chat`, and 2.5 MiB for `POST /v1/admin/topics`. The server enforces the byte limit before JSON parsing, including for requests without `Content-Length`. The avatar upload has its own limit and error. |
 
 Rate limits apply per signed-in user on routes that read other users' data or change the friends list, and per IP or tag on sign-in and signup. They're held in server memory, so they reset when the server restarts.
 
@@ -202,7 +204,7 @@ Cloud matchmaking keeps separate queues per model and challenge day. At rollover
 
 ## REST — admin (implemented)
 
-Only users whose tag is in `ADMIN_TAGS` (`backend/app/auth/admins.py`, compared ignoring case) may call these. The list is fixed in code, so granting admin takes a reviewed commit. Without a session: 401; signed in but not an admin: 403 `FORBIDDEN`, checked before the body is read.
+Only users whose tag is in `ADMIN_TAGS` (`backend/app/auth/admins.py`, compared ignoring case) may call these. The list is fixed in code, so granting admin takes a reviewed commit. Requests that reach the authorization check receive 401 without a session or 403 `FORBIDDEN` if the signed-in user lacks admin access.
 
 | Method | Path | Auth | Request | Response |
 |---|---|---|---|---|

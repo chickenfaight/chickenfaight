@@ -54,6 +54,7 @@ async def test_oversized_upload_is_rejected(client, log_in, make_user):
     log_in(await make_user("Rooster_42"))
     response = await client.put(UPLOAD, content=b"\0" * (2 * 1024 * 1024 + 1))
     assert response.status_code == 422
+    assert response.json()["code"] == "AVATAR_INVALID"
 
 
 async def test_remove_picture(client, log_in, make_user, db_session):

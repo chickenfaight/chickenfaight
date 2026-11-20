@@ -23,7 +23,7 @@ async def test_admin_uploads_topics_and_duplicates_are_skipped(client, log_in, m
     log_in(await make_user(ADMIN))
     before = await topic_count(db_session)
     text = (
-        "# a comment\n"
+        f"# {'a' * 9000}\n"
         "\n"
         "Food | Is soup a drink? | Soup is a drink. | Soup is food.\n"
         " Food |Is soup a drink?| Soup is a drink. | Soup is food. \n"  # same after trimming

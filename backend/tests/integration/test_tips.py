@@ -1,3 +1,4 @@
+import json
 from unittest.mock import patch
 from uuid import uuid4
 
@@ -46,7 +47,8 @@ def ask(*texts):
 async def test_reply_streams_from_the_selected_model(client, log_in, make_user, make_model, fake_model):
     log_in(await make_user("Rooster_42"))
     model = await make_model()
-    response = await client.post(CHAT, json={"model_id": str(model.id), "messages": ask("How do I open strong?")})
+    payload = json.dumps({"model_id": str(model.id), "messages": ask("🐓" * 2000)})
+    response = await client.post(CHAT, content=payload, headers={"Content-Type": "application/json"})
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("text/plain")
     assert response.text == "Lead with your strongest point."
