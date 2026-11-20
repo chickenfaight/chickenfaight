@@ -1,7 +1,9 @@
 import pytest
+from httpx import ASGITransport, AsyncClient
 from sqlalchemy import select
 
 from app.auth.passwords import hash_password, verify_password
+from app.main import app
 from app.models import User
 
 SIGNUP = "/auth/signup"
@@ -95,13 +97,31 @@ async def test_failed_logins_look_identical(client, make_user, tag, password):
     assert (await client.get(ME)).status_code == 401
 
 
-async def test_login_is_rate_limited_per_tag(client):
+async def test_login_tag_limit_leaves_capacity_for_another_ip(client):
     await sign_up(client)
+    await client.post("/auth/logout")
     statuses = [
-        (await client.post(LOGIN, json={"tag": "Rooster_42", "password": "guess"})).status_code
-        for _ in range(6)
+        (await client.post(LOGIN, json={"tag": tag, "password": "guess"})).status_code
+        for tag in ["Rooster_42", "rooster_42"] * 3
     ]
-    assert statuses == [401] * 5 + [429]
+    transport = ASGITransport(app=app, client=("192.0.2.10", 12345))
+    async with AsyncClient(transport=transport, base_url=client.base_url) as other:
+        response = await other.post(LOGIN, json={"tag": "ROOSTER_42", "password": "correct horse"})
+        assert response.status_code == 204
+        assert (await other.get(ME)).json()["tag"] == "Rooster_42"
+    assert statuses == [401] * 4 + [429] * 2
+
+
+async def test_login_is_rate_limited_per_tag_across_ips(client):
+    for _ in range(4):
+        assert (await client.post(LOGIN, json={"tag": "Rooster_42", "password": "guess"})).status_code == 401
+
+    transport = ASGITransport(app=app, client=("192.0.2.10", 12345))
+    async with AsyncClient(transport=transport, base_url=client.base_url) as other:
+        assert (await other.post(LOGIN, json={"tag": "rooster_42", "password": "guess"})).status_code == 401
+        response = await other.post(LOGIN, json={"tag": "rooster_42", "password": "guess"})
+        assert response.status_code == 429
+        assert int(response.headers["Retry-After"]) > 0
 
 
 async def test_login_is_rate_limited_per_ip(client):

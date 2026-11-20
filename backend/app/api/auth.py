@@ -6,7 +6,7 @@ from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.responses import RedirectResponse
 
-from app.api.rate_limit import TokenBucket, rate_limit_by_ip
+from app.api.rate_limit import TokenBucket, client_ip, rate_limit_by_ip
 from app.auth.dependencies import CurrentUserDependency
 from app.auth.google import oauth
 from app.config import settings
@@ -22,6 +22,8 @@ SessionDependency = Annotated[AsyncSession, Depends(get_session)]
 # Password guessing is limited per IP and, so many IPs can't share the work, per tag.
 login_ip_limit = rate_limit_by_ip(burst=10, per_minute=10)
 login_tag_limit = TokenBucket(burst=5, per_minute=1)
+# Give any one IP less capacity and a slower refill than the shared tag bucket.
+login_ip_tag_limit = TokenBucket(burst=4, per_minute=0.5)
 signup_ip_limit = rate_limit_by_ip(burst=5, per_minute=1)
 
 
@@ -81,7 +83,9 @@ async def create_account(data: SignupData, request: Request, session: SessionDep
 @router.post("/login", status_code=status.HTTP_204_NO_CONTENT, dependencies=[login_ip_limit])
 async def password_login(data: LoginData, request: Request, session: SessionDependency) -> Response:
     """Sign in with a tag and password. Google-only accounts have no password and always fail."""
-    login_tag_limit.check(data.tag.lower())
+    tag = data.tag.lower()
+    login_ip_tag_limit.check((client_ip(request), tag))
+    login_tag_limit.check(tag)
     user = await UserService(session).sign_in_with_password(data)
     start_cookie_session(request, await SessionService(session).start(user))
     return Response(status_code=status.HTTP_204_NO_CONTENT)

@@ -93,7 +93,7 @@ Server-side constants; clients read deadlines from messages rather than hard-cod
 | Leaderboard rate limit (implemented) | A burst of 20 and 60/min per user |
 | Match history rate limit (implemented) | A burst of 20 and 60/min per user, on each of the two routes |
 | Profile picture rate limits (implemented) | Upload: a burst of 5 and 10/min per user. Viewing pictures: a burst of 100 and 300/min per user, since one page can show 20 |
-| Sign-in and signup rate limits (implemented) | `POST /auth/login`: a burst of 10 and 10/min per client IP, plus a burst of 5 and 1/min per tag (ignoring case), so many IPs can't share the guessing. `POST /auth/signup`: a burst of 5 and 1/min per client IP |
+| Sign-in and signup rate limits (implemented) | `POST /auth/login`: a burst of 10 and 10/min per client IP, then a burst of 4 and 1 per 2 min per IP and tag pair, then a shared burst of 5 and 1/min per tag. Both tag checks ignore case. `POST /auth/signup`: a burst of 5 and 1/min per client IP |
 | HTTP request body limits (implemented) | 8 KiB by default, 512 KiB for `POST /v1/tips/chat`, and 2.5 MiB for `POST /v1/admin/topics`. The server enforces the byte limit before JSON parsing, including for requests without `Content-Length`. The avatar upload has its own limit and error. |
 
 Rate limits apply per signed-in user on routes that read other users' data or change the friends list, and per IP or tag on sign-in and signup. They're held in server memory, so they reset when the server restarts.
