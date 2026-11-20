@@ -1,4 +1,5 @@
 """BILC pairing and auth: pairing codes, registration, refresh-token rotation, devices, and the socket's token check."""
+import asyncio
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
@@ -13,9 +14,11 @@ from sqlalchemy import select
 from app.auth.bilc import BilcIdentity, decode_access_token, get_bilc_identity, issue_access_token
 from app.config import settings
 from app.main import app
-from app.models import BilcDevice, BilcPairingCode
+from app.models import BilcDevice, BilcPairingCode, BilcSpentRefreshToken
 from app.services.auth_session import hash_token
 from app.services.bilc import PAIRING_CODE_ALPHABET
+from app.services.bilc_connections import BilcConnections, DeviceConnection
+from fake_bilc import HELLO, FakeBilc
 
 CODES = "/v1/bilc/pairing-codes"
 REGISTER = "/v1/bilc/register"
@@ -176,22 +179,33 @@ async def test_rotated_tokens_keep_working_in_order(client, log_in, make_user):
         paired["refresh_token"] = response.json()["refresh_token"]
 
 
-async def test_reusing_a_rotated_token_revokes_the_device(client, log_in, make_user, db_session):
-    paired = await pair(client, log_in, await make_user("owner"))
-    newer = (await refresh(client, paired)).json()["refresh_token"]
+@pytest.mark.parametrize("rotations", [1, 3])
+async def test_reusing_a_rotated_token_revokes_the_device(client, log_in, make_user, db_session, use_test_db, rotations):
+    owner = await make_user("owner")
+    paired = await pair(client, log_in, owner)
+    device_id = UUID(paired["bilc_id"])
+    current = paired.copy()
+    for _ in range(rotations):
+        response = await refresh(client, current)
+        assert response.status_code == 200
+        tokens = response.json()
+        current["refresh_token"] = tokens["refresh_token"]
     # The device is connected; reuse must cut it off too.
-    socket = SimpleNamespace(identity=None, close=AsyncMock(), hello=None)
-    app.state.bilc_connections.connections[UUID(paired["bilc_id"])] = socket
+    socket = AsyncMock()
+    identity = BilcIdentity(device_id=device_id, user_id=owner.id)
+    app.state.bilc_connections.connections[device_id] = DeviceConnection(identity, socket)
 
     reused = await refresh(client, paired)
     assert reused.status_code == 401
     assert reused.json()["code"] == "TOKEN_INVALID"
-    socket.close.assert_awaited_once_with(4403, "Device revoked")
-    # Even the newest token is dead now.
-    assert (await refresh(client, {**paired, "refresh_token": newer})).status_code == 401
-    device = await db_session.get(BilcDevice, paired["bilc_id"])
-    await db_session.refresh(device)
+    socket.close.assert_awaited_once_with(code=4403, reason="Device revoked")
+    assert (await refresh(client, current)).status_code == 401
+    assert await close_code(f"Bearer {tokens['access_token']}") == 4403
+    device = await db_session.get(BilcDevice, device_id)
     assert device.revoked_at is not None and device.refresh_token_hash is None
+    assert not (await db_session.scalars(select(BilcSpentRefreshToken).where(
+        BilcSpentRefreshToken.device_id == device_id,
+    ))).all()
 
 
 async def test_wrong_token_is_rejected_without_revoking(client, log_in, make_user):
@@ -200,6 +214,36 @@ async def test_wrong_token_is_rejected_without_revoking(client, log_in, make_use
     assert response.status_code == 401
     assert response.json()["code"] == "TOKEN_INVALID"
     assert (await refresh(client, paired)).status_code == 200
+
+
+async def test_spent_token_is_scoped_to_its_device(client, log_in, make_user):
+    owner = await make_user("owner")
+    first = await pair(client, log_in, owner)
+    second = await pair(client, log_in, owner)
+    assert (await refresh(client, first)).status_code == 200
+    wrong_device = {**second, "refresh_token": first["refresh_token"]}
+    assert (await refresh(client, wrong_device)).status_code == 401
+    assert (await refresh(client, second)).status_code == 200
+
+
+async def test_expired_spent_token_does_not_revoke_and_is_pruned(client, log_in, make_user, db_session):
+    paired = await pair(client, log_in, await make_user("owner"))
+    device_id = UUID(paired["bilc_id"])
+    device = await db_session.get(BilcDevice, device_id)
+    original_expiry = device.refresh_token_expires_at
+    await db_session.commit()
+    response = await refresh(client, paired)
+    assert response.status_code == 200
+    current = {**paired, "refresh_token": response.json()["refresh_token"]}
+
+    spent_key = (device_id, hash_token(paired["refresh_token"]))
+    spent = await db_session.get(BilcSpentRefreshToken, spent_key)
+    assert spent.expires_at == original_expiry
+    spent.expires_at = datetime.now(timezone.utc) - timedelta(seconds=1)
+    await db_session.commit()
+    assert (await refresh(client, paired)).status_code == 401
+    assert (await refresh(client, current)).status_code == 200
+    assert await db_session.get(BilcSpentRefreshToken, spent_key) is None
 
 
 async def test_refresh_token_expires_after_30_days_unused(client, log_in, make_user, db_session):
@@ -268,10 +312,11 @@ async def test_devices_show_online_and_model(client, log_in, make_user, db_sessi
 async def test_revoke_disconnects_and_blocks_refresh(client, log_in, make_user):
     owner = await make_user("owner")
     paired = await pair(client, log_in, owner)
-    socket = SimpleNamespace(identity=None, close=AsyncMock(), hello=None)
-    app.state.bilc_connections.connections[UUID(paired["bilc_id"])] = socket
+    socket = AsyncMock()
+    identity = BilcIdentity(device_id=UUID(paired["bilc_id"]), user_id=owner.id)
+    app.state.bilc_connections.connections[identity.device_id] = DeviceConnection(identity, socket)
     assert (await client.delete(f"{DEVICES}/{paired['bilc_id']}")).status_code == 204
-    socket.close.assert_awaited_once_with(4403, "Device revoked")
+    socket.close.assert_awaited_once_with(code=4403, reason="Device revoked")
     response = await refresh(client, paired)
     assert response.status_code == 401
     assert response.json()["code"] == "TOKEN_INVALID"
@@ -309,7 +354,7 @@ def use_test_db(db_session):
     async def factory():
         yield db_session
 
-    with patch("app.auth.bilc.SessionFactory", factory):
+    with patch("app.auth.bilc.SessionFactory", factory), patch("app.services.bilc_connections.SessionFactory", factory):
         yield
 
 
@@ -338,6 +383,46 @@ async def test_socket_accepts_a_valid_token(client, log_in, make_user, use_test_
     paired = await pair(client, log_in, owner)
     identity = await get_bilc_identity(handshake(f"Bearer {await access_token(client, paired)}"))
     assert identity == BilcIdentity(device_id=UUID(paired["bilc_id"]), user_id=owner.id)
+
+
+@pytest.mark.parametrize("device_state", ["active", "revoked", "deleted", "wrong-owner"])
+async def test_hello_requires_current_device_ownership(client, log_in, make_user, db_session, use_test_db, device_state):
+    owner = await make_user("owner")
+    paired = await pair(client, log_in, owner)
+    identity = await get_bilc_identity(handshake(f"Bearer {await access_token(client, paired)}"))
+    await db_session.commit()
+
+    if device_state == "revoked":
+        assert (await client.delete(f"{DEVICES}/{identity.device_id}")).status_code == 204
+    elif device_state == "deleted":
+        assert (await client.delete("/v1/users/me")).status_code == 204
+    elif device_state == "wrong-owner":
+        identity = BilcIdentity(device_id=identity.device_id, user_id=uuid4())
+
+    # Validate again at HELLO, including if authorization became stale before socket tracking began.
+    connections = BilcConnections(min_version="0.1.0")
+    socket = FakeBilc()
+    socket.task = asyncio.create_task(connections.serve(identity, socket))
+    socket.say("HELLO", HELLO)
+    try:
+        if device_state == "active":
+            await socket.next("HELLO_ACK")
+            assert connections.online(owner.id) == {identity.device_id}
+        else:
+            await asyncio.wait_for(socket.task, 1)
+            assert socket.close_code == 4403
+            assert socket.seen == []
+            assert identity.device_id not in connections.connections
+        db_session.expunge_all()
+        device = await db_session.get(BilcDevice, identity.device_id)
+        if device_state == "deleted":
+            assert device is None
+        elif device_state == "active":
+            assert device.model_metadata["name"] == HELLO["model"]["name"]
+        else:
+            assert device.model_metadata is None
+    finally:
+        await socket.stop()
 
 
 @pytest.mark.parametrize("authorization", [

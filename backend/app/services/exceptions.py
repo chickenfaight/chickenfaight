@@ -63,6 +63,12 @@ class AvatarInvalidError(TagError):
     detail = "Use a PNG, JPEG, or WebP image up to 2 MB."
 
 
+class AvatarUploadTimeoutError(TagError):
+    code = "AVATAR_UPLOAD_TIMEOUT"
+    status_code = 408
+    detail = "The profile picture upload took too long. Try again."
+
+
 class ConversationTooLongError(TagError):
     code = "CONVERSATION_TOO_LONG"
     status_code = 422

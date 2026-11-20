@@ -70,6 +70,10 @@ def rate_limit(burst: int, per_minute: float) -> Any:
     return Depends(check)
 
 
+def client_ip(request: Request) -> str | None:
+    return request.client.host if request.client else None
+
+
 def rate_limit_by_ip(burst: int, per_minute: float) -> Any:
     """Like `rate_limit`, keyed by client IP, for routes used before signing in.
 
@@ -79,7 +83,7 @@ def rate_limit_by_ip(burst: int, per_minute: float) -> Any:
     bucket = TokenBucket(burst, per_minute)
 
     async def check(request: Request) -> None:
-        bucket.check(request.client.host if request.client else None)
+        bucket.check(client_ip(request))
 
     return Depends(check)
 

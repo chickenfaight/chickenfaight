@@ -29,6 +29,11 @@ test("real Go clients play through the Python backend and return idle", async ({
   try {
     await account(context);
     await account(otherContext);
+    await page.goto("/bilc");
+    await page.getByText("Run two devices on one computer", { exact: true }).click();
+    await expect(page.locator("details[open] pre").filter({
+      hasText: 'export BILC_CONFIG_DIR="$HOME/.bilc-b"',
+    })).toHaveCount(2);
     for (const browserContext of [context, otherContext]) {
       const code = (await (await browserContext.request.post(`${backend}/v1/bilc/pairing-codes`)).json()).code;
       const child = spawn(executable, [backend, code, modelUrl], { stdio: ["ignore", "ignore", "pipe"] });

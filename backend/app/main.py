@@ -7,6 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 
 from app.api.auth import router as auth_router
+from app.api.body_limit import RequestBodyLimitMiddleware
 from app.api.exception_handlers import register_exception_handlers
 from app.api.matchmaking import router as matchmaking_router
 from app.api.game import router as game_router
@@ -80,6 +81,9 @@ app = FastAPI(
 )
 
 register_exception_handlers(app)
+
+# Bound request reads before FastAPI can buffer and parse JSON for route dependencies.
+app.add_middleware(RequestBodyLimitMiddleware)
 
 # This signed cookie temporarily carries OAuth state during the redirect and
 # later carries our local `user_id`. It restores sessions for HTTP and WebSocket

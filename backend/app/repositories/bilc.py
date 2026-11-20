@@ -4,23 +4,37 @@ from uuid import UUID
 from sqlalchemy import delete, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.bilc import BilcDevice, BilcPairingCode
+from app.models.bilc import BilcDevice, BilcPairingCode, BilcSpentRefreshToken
 
 
 class BilcRepository:
     def __init__(self, session: AsyncSession):
         self.session = session
 
-    def add(self, row: BilcDevice | BilcPairingCode) -> None:
+    def add(self, row: BilcDevice | BilcPairingCode | BilcSpentRefreshToken) -> None:
         self.session.add(row)
 
     async def get(self, device_id: UUID) -> BilcDevice | None:
         return await self.session.get(BilcDevice, device_id)
 
     async def get_for_update(self, device_id: UUID) -> BilcDevice | None:
-        """Lock the row, so two refreshes with the same token can't both rotate it."""
+        """Serialize rotation and revocation, including changes to the device's spent tokens."""
         statement = select(BilcDevice).where(BilcDevice.id == device_id).with_for_update()
         return await self.session.scalar(statement)
+
+    async def is_spent_token(self, device_id: UUID, token_hash: str, now: datetime) -> bool:
+        statement = select(BilcSpentRefreshToken.token_hash).where(
+            BilcSpentRefreshToken.device_id == device_id,
+            BilcSpentRefreshToken.token_hash == token_hash,
+            BilcSpentRefreshToken.expires_at > now,
+        )
+        return await self.session.scalar(statement) is not None
+
+    async def delete_spent_tokens(self, device_id: UUID, *, expired_by: datetime | None = None) -> None:
+        statement = delete(BilcSpentRefreshToken).where(BilcSpentRefreshToken.device_id == device_id)
+        if expired_by is not None:
+            statement = statement.where(BilcSpentRefreshToken.expires_at <= expired_by)
+        await self.session.execute(statement)
 
     async def list_active(self, user_id: UUID) -> list[BilcDevice]:
         statement = (

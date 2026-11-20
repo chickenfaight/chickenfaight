@@ -33,6 +33,7 @@ Everything here is PLANNED unless marked **(implemented)**. Remove a PLANNED sta
 | `FORBIDDEN` | 403 | 4403 | Authenticated but not allowed (not a participant, revoked device) |
 | `NOT_FOUND` | 404 | — | Missing, or hidden from this user |
 | `VALIDATION_ERROR` | 422 | — | Bad request body/params |
+| `BODY_TOO_LARGE` | 413 | — | Request body exceeds the route's byte limit (implemented) |
 | `BAD_MESSAGE` | — | — | WS message failed validation (no close) |
 | `UNKNOWN_TYPE` | — | — | Unrecognized WS `type` (no close) |
 | `ALREADY_QUEUED`, `IN_MATCH` | 409 | — | Matchmaking conflicts |
@@ -42,6 +43,7 @@ Everything here is PLANNED unless marked **(implemented)**. Remove a PLANNED sta
 | `TAG_ALREADY_SET` | 409 | — | Caller already has a tag; tags never change (implemented) |
 | `TAG_REQUIRED` | 403 | — | Caller must set a tag first (implemented) |
 | `AVATAR_INVALID` | 422 | — | Upload isn't a PNG, JPEG, or WebP image, is over 2 MB or 25 megapixels, or is corrupt (implemented) |
+| `AVATAR_UPLOAD_TIMEOUT` | 408 | — | The profile picture body did not arrive within 20 seconds (implemented) |
 | `CHALLENGE_ALREADY_COMPLETED` | 409 | — | Caller already completed today's daily challenge (implemented) |
 | `CONVERSATION_INVALID` | 422 | — | Tips chat turns don't alternate starting and ending with the player (implemented) |
 | `CONVERSATION_TOO_LONG` | 422 | — | Tips chat over 8,000 characters in total (implemented) |
@@ -91,7 +93,8 @@ Server-side constants; clients read deadlines from messages rather than hard-cod
 | Leaderboard rate limit (implemented) | A burst of 20 and 60/min per user |
 | Match history rate limit (implemented) | A burst of 20 and 60/min per user, on each of the two routes |
 | Profile picture rate limits (implemented) | Upload: a burst of 5 and 10/min per user. Viewing pictures: a burst of 100 and 300/min per user, since one page can show 20 |
-| Sign-in and signup rate limits (implemented) | `POST /auth/login`: a burst of 10 and 10/min per client IP, plus a burst of 5 and 1/min per tag (ignoring case), so many IPs can't share the guessing. `POST /auth/signup`: a burst of 5 and 1/min per client IP |
+| Sign-in and signup rate limits (implemented) | `POST /auth/login`: a burst of 10 and 10/min per client IP, then a burst of 4 and 1 per 2 min per IP and tag pair, then a shared burst of 5 and 1/min per tag. Both tag checks ignore case. `POST /auth/signup`: a burst of 5 and 1/min per client IP |
+| HTTP request body limits (implemented) | 8 KiB by default, 512 KiB for `POST /v1/tips/chat`, and 2.5 MiB for `POST /v1/admin/topics`. The server enforces the byte limit before JSON parsing, including for requests without `Content-Length`. The avatar upload has its own limit and error. |
 
 Rate limits apply per signed-in user on routes that read other users' data or change the friends list, and per IP or tag on sign-in and signup. They're held in server memory, so they reset when the server restarts.
 
@@ -136,7 +139,7 @@ Player prompts are never returned by any endpoint or message except to their aut
 | POST | `/auth/login` | public | `{ tag: str (≤ 64, ignoring case), password: str (1–128) }`. Sign-in uses the tag, never the username, since usernames change and repeat | 204 and sets the session cookie; 401 `INVALID_CREDENTIALS` (implemented) |
 | POST | `/auth/logout` | public | — | 204; deletes the session server-side, so a copy of the old cookie stops working, and clears the cookie (implemented) |
 | PUT | `/v1/users/me/tag` | session | `{ tag: str }` (3–24 chars, `[a-zA-Z0-9_]`, unique ignoring case) | `UserRead`; sets the tag once, then `TAG_ALREADY_SET` (implemented) |
-| PUT | `/v1/users/me/avatar` | session | Raw image body (PNG, JPEG, or WebP, ≤ 2 MB) | `UserRead`; re-encoded to a 256×256 WebP with metadata removed; `avatar_url` becomes `/v1/users/{id}/avatar?v=…`, relative to the backend, with a new `v` on every upload; 422 `AVATAR_INVALID` (implemented) |
+| PUT | `/v1/users/me/avatar` | session | Raw image body (PNG, JPEG, or WebP, ≤ 2 MB, received within 20 s) | `UserRead`; re-encoded to a 256×256 WebP with metadata removed; `avatar_url` becomes `/v1/users/{id}/avatar?v=…`, relative to the backend, with a new `v` on every upload; 422 `AVATAR_INVALID` or 408 `AVATAR_UPLOAD_TIMEOUT` (implemented) |
 | DELETE | `/v1/users/me/avatar` | session | — | `UserRead` with `avatar_url: null`; the Google picture returns at the next Google sign-in (implemented) |
 | GET | `/v1/users/{id}/avatar` | session | `{id}: uuid` | The WebP image, `Cache-Control: private, max-age=31536000, immutable`; 404 `NOT_FOUND` without an upload (implemented) |
 | DELETE | `/v1/users/me` | session | — | 204; permanently deletes the caller: leaves any queue, forfeits a live match (`resigned`), deletes the user with their sessions, friendships, friend requests, and blocks (both directions), and clears the cookie. Signing in with Google again creates a new account (implemented) |
@@ -202,7 +205,7 @@ Cloud matchmaking keeps separate queues per model and challenge day. At rollover
 
 ## REST — admin (implemented)
 
-Only users whose tag is in `ADMIN_TAGS` (`backend/app/auth/admins.py`, compared ignoring case) may call these. The list is fixed in code, so granting admin takes a reviewed commit. Without a session: 401; signed in but not an admin: 403 `FORBIDDEN`, checked before the body is read.
+Only users whose tag is in `ADMIN_TAGS` (`backend/app/auth/admins.py`, compared ignoring case) may call these. The list is fixed in code, so granting admin takes a reviewed commit. Requests that reach the authorization check receive 401 without a session or 403 `FORBIDDEN` if the signed-in user lacks admin access.
 
 | Method | Path | Auth | Request | Response |
 |---|---|---|---|---|
@@ -218,7 +221,7 @@ Only users whose tag is in `ADMIN_TAGS` (`backend/app/auth/admins.py`, compared 
 | GET | `/v1/bilc/releases/latest` | public | — | `{ version: str\|null, min_supported_version, protocol_version, assets: [{ platform, arch, url, sha256 }] }`. Read from GitHub Releases (`BILC_RELEASES_URL`) and cached for 10 min; `version` is null until a release is published, or until GitHub first answers; `bilc run` checks it on start; `install.sh` still reads GitHub Releases directly (implemented) |
 | GET | `/v1/bilc/download` | public | `?platform=mac|win|linux&arch=amd64|arm64` | 302 to the release asset |
 
-Access JWT: HS256 with `BILC_JWT_SECRET`, claims `sub` = `bilc_id` (uuid), `uid` = user id (uuid), `aud` = `"bilc"`, `iat`, `exp` (implemented). Each refresh token works once. Presenting the one just replaced revokes the device and closes its socket 4403; any other wrong token gets `TOKEN_INVALID` without revoking.
+Access JWT: HS256 with `BILC_JWT_SECRET`, claims `sub` = `bilc_id` (uuid), `uid` = user id (uuid), `aud` = `"bilc"`, `iat`, `exp` (implemented). Each refresh token works once. Reusing any spent token for that device before its original expiry revokes the device and closes its socket with 4403. Unknown and expired tokens get `TOKEN_INVALID` without revoking.
 
 ## WebSocket envelope
 
@@ -276,7 +279,9 @@ Disconnecting after submitting a prompt does not affect the match; turns keep ru
 
 Implemented: everything in the table below (for the opening phase), plus replacement (4409), revocation and account deletion (4403), `BAD_MESSAGE`, and `UNKNOWN_TYPE`. The server checks the token before accepting: an invalid or expired token or an unknown device is 4401, and a revoked device or one whose `uid` isn't its owner is 4403. Through uvicorn, a rejection before accepting reaches the client as an HTTP 403 handshake failure without the close code, so BILC refreshes its token on any rejection, and a revoked device then gets `TOKEN_INVALID` there. Until a valid `HELLO` arrives, other frames get `ERROR` `BAD_MESSAGE` (except `DISCONNECT`, which closes 1000); a `protocol_version` other than 1 closes 4426 (`UNSUPPORTED_VERSION`), and a `client_version` below `BILC_MIN_SUPPORTED_VERSION` (env, default `0.1.0`) closes 4426 with reason `BILC_OUTDATED: run bilc update`; unversioned `dev` builds pass only when `APP_ENV=development`. 45 s without a `HELLO` closes 4408. `HELLO.model` is capped at 4 KB, and its `client_version`, `platform`, and `model` are stored on the device.
 
-Matches: once sides are locked, each device gets `MATCH_ASSIGN`; a device that reconnects while still reserved gets it again after `HELLO_ACK`. Each turn is one `TURN_REQUEST` (`phase` is `opening` for now; `deadline` is 90 s ahead). `MATCH_RESPONSE`s are validated (a bad one gets `BAD_MESSAGE`), and ones for unknown or abandoned turns are ignored. An `ERROR` with a `turn_id`, or the socket closing, fails that turn. When the match ends for any reason, both devices get `MATCH_END` with the final status and become idle; a device whose side forfeited gets `FORFEIT` first, with the failure code as `reason`.
+Revocation and account deletion close sockets with 4403 even while they are completing `HELLO`. The server rechecks device ownership and revocation before recording `HELLO` and admitting the socket to match traffic.
+
+Matches: once sides are locked, each device gets `MATCH_ASSIGN`; a device that reconnects while still reserved gets it again after `HELLO_ACK`. Each turn is one `TURN_REQUEST` (`phase` is `opening` for now; `deadline` is 90 s ahead). `MATCH_RESPONSE`s are validated (a bad one gets `BAD_MESSAGE`), and ones for unknown, abandoned, or finished turns are ignored. Each delta can contain up to 8 KiB of UTF-8 text. A turn can have up to 512 responses and 32 KiB of delta text waiting to be consumed. An invalid UTF-8 delta or a response that exceeds any of these limits discards the backlog and ends the device stream with `MODEL_ERROR`. An `ERROR` with a `turn_id`, or the socket closing before a terminal response, also fails the device stream. When the match ends for any reason, both devices get `MATCH_END` with the final status and become idle; a device whose side forfeited gets `FORFEIT` first, with the failure code as `reason`.
 
 | Type | Direction | Payload |
 |---|---|---|
@@ -290,6 +295,8 @@ Matches: once sides are locked, each device gets `MATCH_ASSIGN`; a device that r
 | `ERROR` | both | `{ code, message, turn_id?: uuid }` |
 | `HEARTBEAT` | both | `{ ts }` |
 | `DISCONNECT` | both | `{ reason: str }` — graceful teardown, then close 1000 |
+
+Device `ERROR` codes are `BAD_MESSAGE`, `BILC_BUSY`, `MODEL_ERROR`, `MODEL_TIMEOUT`, `MODEL_UNAVAILABLE`, and `UNKNOWN_TYPE`. The server treats other well-formed codes as `MODEL_ERROR`. BILC sends fixed descriptions for model errors, and the server discards incoming device error messages after validating the frame.
 
 `messages` are fully built by the server; BILC forwards them to the local model unchanged. BILC handles one match at a time.
 

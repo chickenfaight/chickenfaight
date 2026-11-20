@@ -1,6 +1,7 @@
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
+from app.api.body_limit import RequestBodyTooLarge
 from app.services.exceptions import (
     AlreadyMatchedError,
     AlreadyQueuedError,
@@ -110,6 +111,13 @@ async def handle_rate_limited(
     )
 
 
+async def handle_body_too_large(request: Request, error: RequestBodyTooLarge) -> JSONResponse:
+    return JSONResponse(
+        status_code=error.status_code,
+        content={"code": "BODY_TOO_LARGE", "detail": error.detail},
+    )
+
+
 EXCEPTION_HANDLERS = {
     AlreadyQueuedError: handle_already_queued,
     AlreadyMatchedError: handle_already_matched,
@@ -120,6 +128,7 @@ EXCEPTION_HANDLERS = {
     BlockSelfError: handle_block_self,
     InvalidCredentialsError: handle_invalid_credentials,
     RateLimitedError: handle_rate_limited,
+    RequestBodyTooLarge: handle_body_too_large,
 }
 
 def register_exception_handlers(app: FastAPI) -> None:

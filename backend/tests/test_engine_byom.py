@@ -134,12 +134,14 @@ async def test_each_turn_goes_to_its_players_device(match):
         assert match.connections.status(match.device(side).device_id) == "idle"
 
 
-async def test_device_error_forfeits_that_side_only(match):
+async def test_device_error_forfeits_that_side_only(match, caplog):
     await match.start({"pro": [("ERROR", "MODEL_UNAVAILABLE")], "con": [["Fares ", "fund it."]]})
     await match.run()
     result = match.engine.result
     assert (result["status"], result["winner"], result["end_reason"]) == ("forfeited", "con", "model_failure")
     match.judge.assert_not_awaited()
+    assert "local model failed" not in caplog.text  # the fake device's diagnostic
+    assert "device turn failed: MODEL_UNAVAILABLE" in caplog.text
     assert match.received_types("pro") == ["MATCH_ASSIGN", "FORFEIT", "MATCH_END"]
     assert match.received_types("con") == ["MATCH_ASSIGN", "MATCH_END"]
     for browser in match.browsers.values():
@@ -153,6 +155,17 @@ async def test_a_device_ignoring_the_limits_is_cut_off_without_forfeiting(match)
     assert len(match.engine.arguments["pro"]) == 2000
     assert match.engine.result["status"] == "completed"
     assert match.connections.status(match.device("pro").device_id) == "idle"
+
+
+async def test_over_budget_device_response_forfeits_the_turn(match, monkeypatch):
+    monkeypatch.setattr("app.services.bilc_connections.MAX_TURN_DELTA_BYTES", 8)
+    await match.start({"pro": [["Too much text"]], "con": [["Fares", " fund", " it."]]})
+    await match.run()
+    result = match.engine.result
+    assert (result["status"], result["winner"], result["end_reason"]) == ("forfeited", "con", "model_failure")
+    match.judge.assert_not_awaited()
+    _, forfeit, end = match.received("pro")
+    assert forfeit["payload"]["reason"] == "MODEL_ERROR" and end["type"] == "MATCH_END"
 
 
 async def test_each_players_model_is_kept_even_if_their_device_later_drops(match):

@@ -28,7 +28,7 @@ def identity() -> BilcIdentity:
 
 @pytest.fixture
 def connections() -> BilcConnections:
-    return BilcConnections(record_hello=AsyncMock())
+    return BilcConnections(record_hello=AsyncMock(return_value=True))
 
 
 @pytest.fixture
@@ -61,8 +61,8 @@ def test_hello_is_acknowledged_and_recorded(socket_client, identity, connections
         assert connections.online(identity.user_id) == {identity.device_id}
         assert connections.online(uuid4()) == set()
         hang_up(socket)
-    device_id, hello = connections.record_hello.await_args.args
-    assert device_id == identity.device_id
+    recorded_identity, hello = connections.record_hello.await_args.args
+    assert recorded_identity == identity
     assert hello == Hello.model_validate(HELLO["payload"])
 
 

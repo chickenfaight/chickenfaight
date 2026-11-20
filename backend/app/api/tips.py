@@ -48,7 +48,7 @@ async def chat(body: TipsChatRequest, _user: CurrentUserDependency, session: Ses
         async with asyncio.timeout(FIRST_TOKEN_TIMEOUT):
             first = await anext(stream)
     except (StopAsyncIteration, *MODEL_ERRORS) as exc:
-        logger.warning("Tips chat on %s failed: %r", model.api_model_id, exc)
+        logger.warning("Tips chat on %s failed: %s", model.api_model_id, type(exc).__name__)
         await stream.aclose()
         await client.client.close()
         raise ModelUnavailableError() from None
@@ -60,7 +60,7 @@ async def chat(body: TipsChatRequest, _user: CurrentUserDependency, session: Ses
                 async for delta in stream:
                     yield delta
         except MODEL_ERRORS as exc:
-            logger.warning("Tips chat on %s stopped: %r", model.api_model_id, exc)
+            logger.warning("Tips chat on %s stopped: %s", model.api_model_id, type(exc).__name__)
             yield "\n\n[The model stopped responding.]"
         finally:
             await stream.aclose()

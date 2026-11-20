@@ -299,9 +299,14 @@ class ModelFailureTests(unittest.IsolatedAsyncioTestCase):
         return [call.args[0]["type"] for call in self.socket.send_json.call_args_list]
 
     async def test_failed_turn_is_retried_once(self):
-        client = ScriptedClient([TimeoutError()], ["Retried ", "argument."])
+        diagnostic = "test-only turn diagnostic"
+        client = ScriptedClient([TimeoutError(diagnostic)], ["Retried ", "argument."])
         self.engine.model_clients[self.player] = client
-        await self.engine.generate_arguments(self.player)
+        with self.assertLogs("app.engine.game_engine", "WARNING") as captured:
+            await self.engine.generate_arguments(self.player)
+        [warning] = captured.output
+        self.assertNotIn(diagnostic, warning)
+        self.assertIn("TimeoutError", warning)
         self.assertEqual(client.calls, 2)
         self.assertEqual(self.engine.arguments["pro"], "Retried argument.")
         self.assertEqual(self.sent_types(), ["TURN_DELTA", "TURN_DELTA", "TURN_END"])
@@ -364,9 +369,16 @@ class ModelFailureTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_judge_is_retried_once(self):
         verdict = Verdict(winner="pro", reason="Clearer.")
-        judge = AsyncMock(side_effect=[ValueError("unparseable"), verdict])
-        with patch.object(self.engine, "generate_arguments", new=AsyncMock()):
+        diagnostic = "test-only judge diagnostic"
+        judge = AsyncMock(side_effect=[ValueError(diagnostic), verdict])
+        with (
+            patch.object(self.engine, "generate_arguments", new=AsyncMock()),
+            self.assertLogs("app.engine.game_engine", "WARNING") as captured,
+        ):
             result = await self.run_engine(judge)
+        [warning] = captured.output
+        self.assertNotIn(diagnostic, warning)
+        self.assertIn("ValueError", warning)
         self.assertEqual(judge.await_count, 2)
         payload = result.call_args.args[0]
         self.assertEqual((payload["winner"], payload["end_reason"]), ("pro", "judged"))

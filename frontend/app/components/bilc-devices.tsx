@@ -96,7 +96,7 @@ function PairPanel({ code, error, creating, onCreate }: { code: PairingCode | nu
     <details className="mt-6 text-sm">
       <summary className="w-fit cursor-pointer rounded-control font-semibold text-ink-muted transition-colors duration-(--duration-fast) hover:text-ink focus-ring">Run two devices on one computer</summary>
       <p className="mb-2 mt-3 max-w-2xl leading-relaxed text-ink-muted">To play a debate against yourself, sign in to a second account in a private window and get a code there. Keep your first <span className="font-mono">bilc run</span> going. In a second terminal, give that device its own config folder, then pair it.</p>
-      <BilcCommands setup="export BILC_CONFIG_DIR=/tmp/bilc-b" args={["pair <code> --name device-b", `model set --model ${MODEL}`, "run"]} />
+      <BilcCommands setup={'export BILC_CONFIG_DIR="$HOME/.bilc-b"'} args={["pair <code> --name device-b", `model set --model ${MODEL}`, "run"]} />
       <p className="mt-2 max-w-2xl leading-relaxed text-ink-muted">Then choose Bring your own model in both windows and join.</p>
     </details>
   </section>;

@@ -13,7 +13,7 @@ from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.bilc import BilcIdentity, issue_access_token
-from app.models.bilc import BilcDevice, BilcPairingCode
+from app.models.bilc import BilcDevice, BilcPairingCode, BilcSpentRefreshToken
 from app.models.user import User
 from app.repositories.bilc import BilcRepository
 from app.schemas import BilcDeviceRead, BilcRegister, BilcRegistered, BilcTokens, Hello, PairingCodeRead
@@ -80,29 +80,33 @@ class BilcService:
     async def refresh(self, device_id: UUID, refresh_token: str) -> BilcTokens:
         """Exchange a refresh token for an access token and a new refresh token.
 
-        Each refresh token works once. Presenting the one just replaced means two copies exist,
-        so the device is revoked (`TokenReusedError`) and must be paired again.
+        Each refresh token works once. Reuse before its original expiry revokes the device,
+        which must be paired again.
         """
-        now = datetime.now(timezone.utc)
         presented = hash_token(refresh_token)
         new_token = new_refresh_token()
         async with self.session.begin():
             device = await self.devices.get_for_update(device_id)
             if device is None or device.revoked_at is not None or device.refresh_token_hash is None:
                 raise TokenInvalidError()
+            now = datetime.now(timezone.utc)
             if hmac.compare_digest(presented, device.refresh_token_hash):
-                if device.refresh_token_expires_at is None or device.refresh_token_expires_at <= now:
+                expires_at = device.refresh_token_expires_at
+                if expires_at is None or expires_at <= now:
                     # Unused for 30 days: pair again.
                     raise TokenInvalidError()
-                device.previous_refresh_token_hash = device.refresh_token_hash
+                await self.devices.delete_spent_tokens(device.id, expired_by=now)
+                self.devices.add(BilcSpentRefreshToken(
+                    device_id=device.id,
+                    token_hash=device.refresh_token_hash,
+                    expires_at=expires_at,
+                ))
                 device.refresh_token_hash = hash_token(new_token)
                 device.refresh_token_expires_at = now + REFRESH_TOKEN_LIFETIME
                 device.last_seen_at = now
                 identity = BilcIdentity(device_id=device.id, user_id=device.user_id)
-            elif device.previous_refresh_token_hash and hmac.compare_digest(
-                presented, device.previous_refresh_token_hash,
-            ):
-                revoke(device, now)
+            elif await self.devices.is_spent_token(device.id, presented, now):
+                await self._revoke(device, now)
                 identity = None
             else:
                 raise TokenInvalidError()
@@ -146,27 +150,28 @@ class BilcService:
         return device
 
     async def revoke(self, user: User, device_id: UUID) -> None:
-        device = await self.devices.get(device_id)
+        device = await self.devices.get_for_update(device_id)
         # Someone else's device looks the same as a missing one.
         if device is None or device.user_id != user.id or device.revoked_at is not None:
             await self.session.rollback()
             raise BilcDeviceNotFoundError()
-        revoke(device, datetime.now(timezone.utc))
+        await self._revoke(device, datetime.now(timezone.utc))
         await self.session.commit()
 
-    async def record_hello(self, device_id: UUID, hello: Hello) -> None:
+    async def _revoke(self, device: BilcDevice, now: datetime) -> None:
+        device.revoked_at = now
+        device.refresh_token_hash = None
+        device.refresh_token_expires_at = None
+        await self.devices.delete_spent_tokens(device.id)
+
+    async def record_hello(self, identity: BilcIdentity, hello: Hello) -> bool:
+        """Record HELLO only while the device is still active and owned by this identity."""
         async with self.session.begin():
-            device = await self.devices.get(device_id)
-            if device is None:
-                return
+            device = await self.devices.get_for_update(identity.device_id)
+            if device is None or device.revoked_at is not None or device.user_id != identity.user_id:
+                return False
             device.client_version = hello.client_version
             device.platform = hello.platform
             device.model_metadata = hello.model.model_dump()
             device.last_seen_at = datetime.now(timezone.utc)
-
-
-def revoke(device: BilcDevice, now: datetime) -> None:
-    device.revoked_at = now
-    device.refresh_token_hash = None
-    device.previous_refresh_token_hash = None
-    device.refresh_token_expires_at = None
+        return True

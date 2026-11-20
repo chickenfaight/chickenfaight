@@ -40,8 +40,8 @@ State the auth of every endpoint explicitly; PROTOCOL.md lists which are public.
 - **WebSockets:** authenticate and authorize *before* `accept()`.
 - **Ownership** (own device, participant in match) is checked in services, not routers. Return 404 for other users' private resources.
 - **Rate limits:** routes that read other users' data or change the friends list add `dependencies=[rate_limit(burst=..., per_minute=...)]` (`app/api/rate_limit.py`), an in-memory token bucket per signed-in user that raises `RateLimitedError` (429 `RATE_LIMITED` with `Retry-After`). Each `rate_limit(...)` call is its own bucket; reuse the returned dependency to share one across routes. Values are listed in PROTOCOL.md.
-- **Passwords** (`app/auth/passwords.py`): scrypt (N=2^14, r=8, p=1) with a random 16-byte salt per user, compared with `hmac.compare_digest`. Sign-in does the same hashing work for unknown tags and Google-only accounts, and raises one `InvalidCredentialsError` for every failure, so it reveals neither which tags exist nor which accounts have passwords. Signed-out routes use `rate_limit_by_ip`; login also uses a per-tag `TokenBucket`.
-- Pairing codes and refresh tokens: generate with `secrets`, store only SHA-256 hashes, compare with `hmac.compare_digest`.
+- **Passwords** (`app/auth/passwords.py`): scrypt (N=2^14, r=8, p=1) with a random 16-byte salt per user, compared with `hmac.compare_digest`. Sign-in does the same hashing work for unknown tags and Google-only accounts, and raises one `InvalidCredentialsError` for every failure, so it reveals neither which tags exist nor which accounts have passwords. Signed-out routes use `rate_limit_by_ip`. Password sign-in also checks an IP and tag pair before charging the shared tag bucket. The pair has a smaller burst and slower refill so one IP alone cannot exhaust the shared budget.
+- Pairing codes and refresh tokens: generate with `secrets` and store only SHA-256 hashes. The current refresh token is compared with `hmac.compare_digest`. Reuse is checked by indexed lookup of the device's unexpired spent hashes.
 
 ## Game engine (partially built)
 
@@ -159,7 +159,8 @@ Postgres. Constraint and index names come from the naming convention in `app/db/
 | `challenge_completions` (implemented) | PK(`user_id`, `day`), `match_id?` | Its primary key is what limits the challenge bonus to once per day, even when matches finish at the same moment |
 | `turns` (implemented, without `usage`) | `id` UUID, `match_id` (`CASCADE`), `index` (unique with `match_id`), `side`, `phase`, `content`, `truncated` | Written with the match result, in play order. `usage` JSONB remains PLANNED |
 | `votes` | PK(`match_id`, `user_id`), `side` | Community opinion; never affects Elo |
-| `bilc_devices` (implemented) | `id` UUID, `user_id` (`CASCADE`), `name`, `platform`, `client_version`, `model_metadata?` JSONB, `refresh_token_hash?`, `previous_refresh_token_hash?`, `refresh_token_expires_at?`, `last_seen_at?`, `revoked_at?` | Token hashes are SHA-256 hex. The previous hash detects reuse of a rotated token, which revokes the device. Revoking keeps the row (for match history) and clears all three token columns |
+| `bilc_devices` (implemented) | `id` UUID, `user_id` (`CASCADE`), `name`, `platform`, `client_version`, `model_metadata?` JSONB, `refresh_token_hash?`, `refresh_token_expires_at?`, `last_seen_at?`, `revoked_at?` | Revoking keeps the device row and clears its current refresh credential |
+| `bilc_spent_refresh_tokens` (implemented) | PK(`device_id`, `token_hash`), `device_id` FK (`CASCADE`), `expires_at` | Tracks consumed SHA-256 hashes until their original expiry. Rotation prunes expired hashes for the device and revocation clears all its hashes. The migration keeps the previously stored hash through the current token's expiry |
 | `bilc_pairing_codes` (implemented) | `code_hash` PK, `user_id` (`CASCADE`), `expires_at`, `used_at?` | Used with one `UPDATE … WHERE used_at IS NULL AND expires_at > now() RETURNING`, so a code works once even under concurrent requests |
 
 `?` = nullable. All FKs are indexed.

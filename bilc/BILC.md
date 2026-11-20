@@ -81,7 +81,7 @@ Initial scope is local Ollama only, accessed through OpenAI Chat Completions (`P
 
 Implemented lifecycle: check `http://127.0.0.1:11434/api/version` with a 500 ms request timeout; otherwise start `ollama serve` from PATH. The child inherits local settings such as `OLLAMA_MODELS`, with `OLLAMA_HOST` pinned to `127.0.0.1:11434`; custom hosts are deferred. Startup has a 15 s deadline. Invalid HTTP responses fail explicitly. BILC detects an owned process exiting, and always waits for it during cleanup. Cancellation sends an interrupt where supported, falling back to a kill on unsupported platforms or after 3 s. Existing services are never stopped. These readiness checks do not load a model or run inference.
 
-Error mapping (implemented): model unreachable → `MODEL_UNAVAILABLE`; non-2xx or malformed stream → `MODEL_ERROR`; deadline passed → `MODEL_TIMEOUT`. `MATCH_ASSIGN` while busy → `BILC_BUSY`. A turn cancelled by `MATCH_END`, `FORFEIT`, a lost connection, or Ctrl-C sends nothing more.
+Error mapping (implemented): model unreachable → `MODEL_UNAVAILABLE`; non-2xx or malformed stream → `MODEL_ERROR`; deadline passed → `MODEL_TIMEOUT`. BILC sends the code with a fixed description because inference diagnostics may contain private text. `MATCH_ASSIGN` while busy → `BILC_BUSY`. A turn cancelled by `MATCH_END`, `FORFEIT`, a lost connection, or Ctrl-C sends nothing more.
 
 ## Commands
 
@@ -117,9 +117,13 @@ Help and version go to stdout; progress and errors go to stderr. Invalid command
 - **macOS:** `~/Library/Application Support/chickenfaight/bilc`. `XDG_CONFIG_HOME` is ignored.
 - **Linux:** `$XDG_CONFIG_HOME/chickenfaight/bilc`, or `~/.config/chickenfaight/bilc` when that variable is unset or empty.
 
+On macOS and Linux, BILC creates missing directories as needed and checks the path before loading settings. The config directory and regular `config.json` must belong to the current user and disallow writes by other users. BILC rejects untrusted parent directories and suggests using a directory under your home folder.
+
 For a second device on either OS, export `BILC_CONFIG_DIR="$HOME/.bilc-b"` in a separate terminal and keep it set for all that device's commands (`pair`, `model set`, `run`, `status`, and `unpair`). Leave it unset for the first device. Pair each directory separately instead of copying an existing config: the stored `bilc_id` identifies the device, and keychain entries are keyed by that ID. See [CONTRIBUTING.md](../CONTRIBUTING.md#bilc) for the two-account walkthrough and rebuilding older binaries.
 
 The config holds `server_url`, `model.base_url`, `model.name`, and `bilc_id`. It never holds secrets. `server_url` defaults to `main.defaultServerURL`: `http://localhost:8000`, or the `BILC_SERVER_URL` repository variable in release builds. If `model.base_url` is not a loopback address, warn on every start: prompts leave the machine. If `server_url` is plain `http://` to another machine, warn that credentials travel unencrypted.
+
+Every pairing with a custom server requires `bilc pair <code> --server URL`, including when re-pairing a device that already has that server saved. The saved URL is used for the paired device's subsequent commands.
 
 ## Updates
 
