@@ -220,7 +220,7 @@ Only users whose tag is in `ADMIN_TAGS` (`backend/app/auth/admins.py`, compared 
 | GET | `/v1/bilc/releases/latest` | public | — | `{ version: str\|null, min_supported_version, protocol_version, assets: [{ platform, arch, url, sha256 }] }`. Read from GitHub Releases (`BILC_RELEASES_URL`) and cached for 10 min; `version` is null until a release is published, or until GitHub first answers; `bilc run` checks it on start; `install.sh` still reads GitHub Releases directly (implemented) |
 | GET | `/v1/bilc/download` | public | `?platform=mac|win|linux&arch=amd64|arm64` | 302 to the release asset |
 
-Access JWT: HS256 with `BILC_JWT_SECRET`, claims `sub` = `bilc_id` (uuid), `uid` = user id (uuid), `aud` = `"bilc"`, `iat`, `exp` (implemented). Each refresh token works once. Presenting the one just replaced revokes the device and closes its socket 4403; any other wrong token gets `TOKEN_INVALID` without revoking.
+Access JWT: HS256 with `BILC_JWT_SECRET`, claims `sub` = `bilc_id` (uuid), `uid` = user id (uuid), `aud` = `"bilc"`, `iat`, `exp` (implemented). Each refresh token works once. Reusing any spent token for that device before its original expiry revokes the device and closes its socket with 4403. Unknown and expired tokens get `TOKEN_INVALID` without revoking.
 
 ## WebSocket envelope
 

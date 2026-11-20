@@ -13,7 +13,7 @@ from sqlalchemy import select
 from app.auth.bilc import BilcIdentity, decode_access_token, get_bilc_identity, issue_access_token
 from app.config import settings
 from app.main import app
-from app.models import BilcDevice, BilcPairingCode
+from app.models import BilcDevice, BilcPairingCode, BilcSpentRefreshToken
 from app.services.auth_session import hash_token
 from app.services.bilc import PAIRING_CODE_ALPHABET
 
@@ -176,22 +176,31 @@ async def test_rotated_tokens_keep_working_in_order(client, log_in, make_user):
         paired["refresh_token"] = response.json()["refresh_token"]
 
 
-async def test_reusing_a_rotated_token_revokes_the_device(client, log_in, make_user, db_session):
+@pytest.mark.parametrize("rotations", [1, 3])
+async def test_reusing_a_rotated_token_revokes_the_device(client, log_in, make_user, db_session, use_test_db, rotations):
     paired = await pair(client, log_in, await make_user("owner"))
-    newer = (await refresh(client, paired)).json()["refresh_token"]
+    device_id = UUID(paired["bilc_id"])
+    current = paired.copy()
+    for _ in range(rotations):
+        response = await refresh(client, current)
+        assert response.status_code == 200
+        tokens = response.json()
+        current["refresh_token"] = tokens["refresh_token"]
     # The device is connected; reuse must cut it off too.
     socket = SimpleNamespace(identity=None, close=AsyncMock(), hello=None)
-    app.state.bilc_connections.connections[UUID(paired["bilc_id"])] = socket
+    app.state.bilc_connections.connections[device_id] = socket
 
     reused = await refresh(client, paired)
     assert reused.status_code == 401
     assert reused.json()["code"] == "TOKEN_INVALID"
     socket.close.assert_awaited_once_with(4403, "Device revoked")
-    # Even the newest token is dead now.
-    assert (await refresh(client, {**paired, "refresh_token": newer})).status_code == 401
-    device = await db_session.get(BilcDevice, paired["bilc_id"])
-    await db_session.refresh(device)
+    assert (await refresh(client, current)).status_code == 401
+    assert await close_code(f"Bearer {tokens['access_token']}") == 4403
+    device = await db_session.get(BilcDevice, device_id)
     assert device.revoked_at is not None and device.refresh_token_hash is None
+    assert not (await db_session.scalars(select(BilcSpentRefreshToken).where(
+        BilcSpentRefreshToken.device_id == device_id,
+    ))).all()
 
 
 async def test_wrong_token_is_rejected_without_revoking(client, log_in, make_user):
@@ -200,6 +209,36 @@ async def test_wrong_token_is_rejected_without_revoking(client, log_in, make_use
     assert response.status_code == 401
     assert response.json()["code"] == "TOKEN_INVALID"
     assert (await refresh(client, paired)).status_code == 200
+
+
+async def test_spent_token_is_scoped_to_its_device(client, log_in, make_user):
+    owner = await make_user("owner")
+    first = await pair(client, log_in, owner)
+    second = await pair(client, log_in, owner)
+    assert (await refresh(client, first)).status_code == 200
+    wrong_device = {**second, "refresh_token": first["refresh_token"]}
+    assert (await refresh(client, wrong_device)).status_code == 401
+    assert (await refresh(client, second)).status_code == 200
+
+
+async def test_expired_spent_token_does_not_revoke_and_is_pruned(client, log_in, make_user, db_session):
+    paired = await pair(client, log_in, await make_user("owner"))
+    device_id = UUID(paired["bilc_id"])
+    device = await db_session.get(BilcDevice, device_id)
+    original_expiry = device.refresh_token_expires_at
+    await db_session.commit()
+    response = await refresh(client, paired)
+    assert response.status_code == 200
+    current = {**paired, "refresh_token": response.json()["refresh_token"]}
+
+    spent_key = (device_id, hash_token(paired["refresh_token"]))
+    spent = await db_session.get(BilcSpentRefreshToken, spent_key)
+    assert spent.expires_at == original_expiry
+    spent.expires_at = datetime.now(timezone.utc) - timedelta(seconds=1)
+    await db_session.commit()
+    assert (await refresh(client, paired)).status_code == 401
+    assert (await refresh(client, current)).status_code == 200
+    assert await db_session.get(BilcSpentRefreshToken, spent_key) is None
 
 
 async def test_refresh_token_expires_after_30_days_unused(client, log_in, make_user, db_session):

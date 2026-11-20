@@ -101,6 +101,38 @@ def test_match_history_backfills_cloud_models_and_leaves_byom_blank(engine):
         command.upgrade(config, "heads")
 
 
+def test_bilc_migration_preserves_existing_refresh_hashes(engine):
+    with engine.begin() as connection:
+        config = alembic_config(connection)
+        previous_revision = "b7f2a91c4e60"
+        command.downgrade(config, previous_revision)
+        user_id = connection.scalar(text("INSERT INTO users (id, google_sub) "
+                                         "VALUES (gen_random_uuid(), 'bilc-migration') RETURNING id"))
+        device_id, expires_at = connection.execute(text("""
+            INSERT INTO bilc_devices (
+                id, user_id, name, platform, client_version,
+                refresh_token_hash, previous_refresh_token_hash, refresh_token_expires_at
+            )
+            VALUES (gen_random_uuid(), :user_id, 'Device', 'linux/amd64', '0.1.0',
+                    :current, :previous, now() + interval '1 day')
+            RETURNING id, refresh_token_expires_at
+        """), {"user_id": user_id, "current": "a" * 64, "previous": "b" * 64}).one()
+
+        command.upgrade(config, "heads")
+        assert connection.execute(text("""
+            SELECT refresh_token_hash, refresh_token_expires_at FROM bilc_devices WHERE id = :id
+        """), {"id": device_id}).one() == ("a" * 64, expires_at)
+        assert connection.execute(text("""
+            SELECT device_id, token_hash, expires_at FROM bilc_spent_refresh_tokens
+        """)).one() == (device_id, "b" * 64, expires_at)
+
+        command.downgrade(config, previous_revision)
+        assert connection.scalar(text("""
+            SELECT previous_refresh_token_hash FROM bilc_devices WHERE id = :id
+        """), {"id": device_id}) == "b" * 64
+        command.upgrade(config, "heads")
+
+
 def test_migrating_a_current_database_keeps_data(engine, test_database_url):
     execute(engine, "INSERT INTO users (id, google_sub) VALUES (gen_random_uuid(), 'keep-me')")
     migrate(test_database_url, allow_reset=True)
