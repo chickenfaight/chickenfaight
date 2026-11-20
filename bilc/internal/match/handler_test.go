@@ -188,8 +188,8 @@ func TestModelFailuresMapToErrorCodes(t *testing.T) {
 		m    *fakeModel
 		code string
 	}{
-		"bad response":      {&fakeModel{deltas: []string{"half"}, err: fmt.Errorf("%w: boom", model.ErrBadResponse)}, protocol.CodeModelError},
-		"unreachable":       {&fakeModel{setupErr: fmt.Errorf("%w: refused", model.ErrUnavailable)}, protocol.CodeModelUnavailable},
+		"bad response":      {&fakeModel{deltas: []string{"half"}, err: fmt.Errorf("%w: test-only response diagnostic", model.ErrBadResponse)}, protocol.CodeModelError},
+		"unreachable":       {&fakeModel{setupErr: fmt.Errorf("%w: test-only connection diagnostic", model.ErrUnavailable)}, protocol.CodeModelUnavailable},
 		"closed early":      {&fakeModel{deltas: []string{"half"}, closeNow: true}, protocol.CodeModelError},
 		"deadline passed":   {&fakeModel{hang: true}, protocol.CodeModelTimeout},
 		"setup bad request": {&fakeModel{setupErr: fmt.Errorf("%w: HTTP 400", model.ErrBadResponse)}, protocol.CodeModelError},
@@ -202,8 +202,8 @@ func TestModelFailuresMapToErrorCodes(t *testing.T) {
 			}
 			h.Handle(ctx, turnRequest("t1", "m1", deadline), w.send)
 			e := errorCode(t, w.waitFor(t, protocol.TypeError))
-			if e.Code != tc.code || e.TurnID != "t1" {
-				t.Fatalf("error = %+v, want %s", e, tc.code)
+			if e != (protocol.Error{Code: tc.code, Message: "Local model turn failed", TurnID: "t1"}) {
+				t.Fatalf("error = %+v, want %s with a fixed description for turn t1", e, tc.code)
 			}
 			h.Wait()
 			for _, r := range w.responses() {

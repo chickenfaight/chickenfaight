@@ -149,6 +149,7 @@ async def test_device_error_fails_the_turn(connections, device, code, expected):
     with pytest.raises(DeviceTurnError) as failed:
         await collect(connections.turn(device.device_id, uuid4(), MESSAGES, 400))
     assert failed.value.code == expected
+    assert "local model failed" not in str(failed.value)  # the fake device's diagnostic
 
 
 @pytest.mark.parametrize(("code", "expected"), [

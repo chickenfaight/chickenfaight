@@ -117,22 +117,28 @@ async def test_unknown_or_inactive_model_is_rejected(client, log_in, make_user, 
         assert response.status_code == 404
 
 
-async def test_model_failing_before_replying_is_a_502(client, log_in, make_user, make_model, fake_model):
+async def test_model_failing_before_replying_is_a_502(client, log_in, make_user, make_model, fake_model, caplog):
     log_in(await make_user("Rooster_42"))
     model = await make_model()
-    fake_model.script = [TimeoutError()]
+    diagnostic = "test-only coach setup diagnostic"
+    fake_model.script = [TimeoutError(diagnostic)]
     response = await client.post(CHAT, json={"model_id": str(model.id), "messages": ask("Hi")})
     assert response.status_code == 502
     assert response.json()["code"] == "MODEL_UNAVAILABLE"
+    assert diagnostic not in caplog.text
+    assert "failed: TimeoutError" in caplog.text
 
 
-async def test_model_failing_mid_reply_ends_with_a_note(client, log_in, make_user, make_model, fake_model):
+async def test_model_failing_mid_reply_ends_with_a_note(client, log_in, make_user, make_model, fake_model, caplog):
     log_in(await make_user("Rooster_42"))
     model = await make_model()
-    fake_model.script = ["Start strong", ValueError("boom")]
+    diagnostic = "test-only coach stream diagnostic"
+    fake_model.script = ["Start strong", ValueError(diagnostic)]
     response = await client.post(CHAT, json={"model_id": str(model.id), "messages": ask("Hi")})
     assert response.status_code == 200
     assert response.text == "Start strong\n\n[The model stopped responding.]"
+    assert diagnostic not in caplog.text
+    assert "stopped: ValueError" in caplog.text
 
 
 async def test_chat_is_rate_limited(client, log_in, make_user, make_model, fake_model):

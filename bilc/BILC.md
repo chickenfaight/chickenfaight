@@ -81,7 +81,7 @@ Initial scope is local Ollama only, accessed through OpenAI Chat Completions (`P
 
 Implemented lifecycle: check `http://127.0.0.1:11434/api/version` with a 500 ms request timeout; otherwise start `ollama serve` from PATH. The child inherits local settings such as `OLLAMA_MODELS`, with `OLLAMA_HOST` pinned to `127.0.0.1:11434`; custom hosts are deferred. Startup has a 15 s deadline. Invalid HTTP responses fail explicitly. BILC detects an owned process exiting, and always waits for it during cleanup. Cancellation sends an interrupt where supported, falling back to a kill on unsupported platforms or after 3 s. Existing services are never stopped. These readiness checks do not load a model or run inference.
 
-Error mapping (implemented): model unreachable → `MODEL_UNAVAILABLE`; non-2xx or malformed stream → `MODEL_ERROR`; deadline passed → `MODEL_TIMEOUT`. `MATCH_ASSIGN` while busy → `BILC_BUSY`. A turn cancelled by `MATCH_END`, `FORFEIT`, a lost connection, or Ctrl-C sends nothing more.
+Error mapping (implemented): model unreachable → `MODEL_UNAVAILABLE`; non-2xx or malformed stream → `MODEL_ERROR`; deadline passed → `MODEL_TIMEOUT`. BILC sends the code with a fixed description because inference diagnostics may contain private text. `MATCH_ASSIGN` while busy → `BILC_BUSY`. A turn cancelled by `MATCH_END`, `FORFEIT`, a lost connection, or Ctrl-C sends nothing more.
 
 ## Commands
 

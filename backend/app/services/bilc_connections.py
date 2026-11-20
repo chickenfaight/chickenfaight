@@ -58,7 +58,7 @@ class MatchResponse(BaseModel):
 
 class DeviceError(BaseModel):
     code: str = Field(max_length=64)
-    message: str = Field(default="", max_length=500)
+    message: str = Field(default="", max_length=500)  # Validated for wire compatibility, then discarded.
     turn_id: UUID | None = None
 
 
@@ -418,7 +418,7 @@ class BilcConnections:
                 code = error.code if error.code in DEVICE_ERROR_CODES else "MODEL_ERROR"
                 turn = connection.turns.pop(error.turn_id, None) if error.turn_id is not None else None
                 if turn is not None:
-                    turn.queue.put_nowait(DeviceTurnError(code, error.message))
+                    turn.queue.put_nowait(DeviceTurnError(code, "Device reported a turn error"))
                 else:
                     logger.info("BILC %s reported %s", connection.identity.device_id, code)
             case "HELLO":

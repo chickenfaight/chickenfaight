@@ -322,7 +322,7 @@ class GameEngine:
                     )
                 break
             except MODEL_ERRORS as exc:
-                logger.warning("Match %s: judge attempt %d failed: %r", self.match_id, attempt, exc)
+                logger.warning("Match %s: judge attempt %d failed: %s", self.match_id, attempt, type(exc).__name__)
         else:
             await self.broadcast_result({
                 "winner": None,
@@ -556,9 +556,9 @@ class GameEngine:
             try:
                 await self.stream_turn(player)
             except (*MODEL_ERRORS, DeviceTurnError) as exc:
-                logger.warning("Match %s: %s device turn failed: %r", self.match_id, side, exc)
                 reason = exc.code if isinstance(exc, DeviceTurnError) else (
                     "MODEL_TIMEOUT" if isinstance(exc, TimeoutError) else "MODEL_ERROR")
+                logger.warning("Match %s: %s device turn failed: %s", self.match_id, side, reason)
                 raise DeviceFailure(side, reason) from exc
         else:
             await self.generate_cloud_argument(player)
@@ -577,7 +577,10 @@ class GameEngine:
                 await self.stream_turn(player)
                 break
             except MODEL_ERRORS as exc:
-                logger.warning("Match %s: %s turn attempt %d on %s failed: %r", self.match_id, side, attempt, self.api_model_id, exc)
+                logger.warning(
+                    "Match %s: %s turn attempt %d on %s failed: %s",
+                    self.match_id, side, attempt, self.api_model_id, type(exc).__name__,
+                )
                 # Deltas already sent can't be taken back, so a retry would show the player duplicate text.
                 if self.arguments[side].strip() or attempt == self.MODEL_ATTEMPTS:
                     raise ModelFailure(side) from exc

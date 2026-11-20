@@ -134,12 +134,14 @@ async def test_each_turn_goes_to_its_players_device(match):
         assert match.connections.status(match.device(side).device_id) == "idle"
 
 
-async def test_device_error_forfeits_that_side_only(match):
+async def test_device_error_forfeits_that_side_only(match, caplog):
     await match.start({"pro": [("ERROR", "MODEL_UNAVAILABLE")], "con": [["Fares ", "fund it."]]})
     await match.run()
     result = match.engine.result
     assert (result["status"], result["winner"], result["end_reason"]) == ("forfeited", "con", "model_failure")
     match.judge.assert_not_awaited()
+    assert "local model failed" not in caplog.text  # the fake device's diagnostic
+    assert "device turn failed: MODEL_UNAVAILABLE" in caplog.text
     assert match.received_types("pro") == ["MATCH_ASSIGN", "FORFEIT", "MATCH_END"]
     assert match.received_types("con") == ["MATCH_ASSIGN", "MATCH_END"]
     for browser in match.browsers.values():

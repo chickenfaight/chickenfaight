@@ -167,7 +167,7 @@ func (h *Handler) play(turnCtx, connCtx context.Context, turnID string, request 
 			code = protocol.CodeModelUnavailable
 		}
 		h.logf("Turn failed: %s.\n", code)
-		send(protocol.TypeError, protocol.Error{Code: code, Message: errMessage(err), TurnID: turnID})
+		send(protocol.TypeError, protocol.Error{Code: code, Message: "Local model turn failed", TurnID: turnID})
 	}
 	chunks, err := h.Model.Stream(turnCtx, request)
 	if err != nil {
@@ -231,13 +231,4 @@ func (h *Handler) logf(format string, args ...any) {
 	if h.Log != nil {
 		fmt.Fprintf(h.Log, format, args...)
 	}
-}
-
-// errMessage is a short description for the server, never prompt content.
-func errMessage(err error) string {
-	message := err.Error()
-	if len(message) > 200 {
-		message = message[:200]
-	}
-	return message
 }
