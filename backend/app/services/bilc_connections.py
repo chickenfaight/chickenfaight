@@ -32,6 +32,9 @@ PROTOCOL_VERSION = 1
 MAX_TURN_DELTA_BYTES = 8 * 1024
 MAX_TURN_BUFFER_BYTES = 32 * 1024
 MAX_TURN_BUFFER_FRAMES = 512
+DEVICE_ERROR_CODES = frozenset({
+    "BAD_MESSAGE", "BILC_BUSY", "MODEL_ERROR", "MODEL_TIMEOUT", "MODEL_UNAVAILABLE", "UNKNOWN_TYPE",
+})
 
 DeviceStatus = Literal["offline", "idle", "busy"]
 RecordHello = Callable[[BilcIdentity, Hello], Awaitable[bool]]
@@ -412,11 +415,12 @@ class BilcConnections:
                     error = DeviceError.model_validate(payload)
                 except ValidationError:
                     return
+                code = error.code if error.code in DEVICE_ERROR_CODES else "MODEL_ERROR"
                 turn = connection.turns.pop(error.turn_id, None) if error.turn_id is not None else None
                 if turn is not None:
-                    turn.queue.put_nowait(DeviceTurnError(error.code, error.message))
+                    turn.queue.put_nowait(DeviceTurnError(code, error.message))
                 else:
-                    logger.info("BILC %s reported %s", connection.identity.device_id, error.code)
+                    logger.info("BILC %s reported %s", connection.identity.device_id, code)
             case "HELLO":
                 await connection.error("BAD_MESSAGE", "Already connected")
             case _:

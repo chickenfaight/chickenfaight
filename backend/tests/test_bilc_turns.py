@@ -140,11 +140,29 @@ async def test_turn_streams_the_devices_response(connections, device):
     assert not connections.connections[device.device_id].turns
 
 
-async def test_device_error_fails_the_turn(connections, device):
-    device.reply_to_turns([("ERROR", "MODEL_UNAVAILABLE")])
+@pytest.mark.parametrize(("code", "expected"), [
+    ("MODEL_UNAVAILABLE", "MODEL_UNAVAILABLE"),
+    ("FUTURE_ERROR", "MODEL_ERROR"),
+])
+async def test_device_error_fails_the_turn(connections, device, code, expected):
+    device.reply_to_turns([("ERROR", code)])
     with pytest.raises(DeviceTurnError) as failed:
         await collect(connections.turn(device.device_id, uuid4(), MESSAGES, 400))
-    assert failed.value.code == "MODEL_UNAVAILABLE"
+    assert failed.value.code == expected
+
+
+@pytest.mark.parametrize(("code", "expected"), [
+    ("BILC_BUSY", "BILC_BUSY"),
+    ("Unexpected\ncode", "MODEL_ERROR"),
+    ("Unexpected\x1bcode", "MODEL_ERROR"),
+])
+async def test_unsolicited_device_errors_log_only_known_codes(device, caplog, code, expected):
+    with caplog.at_level("INFO", logger=bilc_connections.__name__):
+        device.say("ERROR", {"code": code})
+        device.say("HELLO", HELLO)
+        assert (await device.next("ERROR"))["payload"]["code"] == "BAD_MESSAGE"
+
+    assert caplog.messages == [f"BILC {device.device_id} reported {expected}"]
 
 
 @pytest.mark.parametrize("deltas", [

@@ -296,6 +296,8 @@ Matches: once sides are locked, each device gets `MATCH_ASSIGN`; a device that r
 | `HEARTBEAT` | both | `{ ts }` |
 | `DISCONNECT` | both | `{ reason: str }` — graceful teardown, then close 1000 |
 
+Device `ERROR` codes are `BAD_MESSAGE`, `BILC_BUSY`, `MODEL_ERROR`, `MODEL_TIMEOUT`, `MODEL_UNAVAILABLE`, and `UNKNOWN_TYPE`. The server treats other well-formed codes as `MODEL_ERROR`.
+
 `messages` are fully built by the server; BILC forwards them to the local model unchanged. BILC handles one match at a time.
 
 ## Inference
