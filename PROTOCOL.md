@@ -330,7 +330,7 @@ are in [BILC.md](bilc/BILC.md); model inference and server integration remain pl
 
 Server config (env): `INFERENCE_BASE_URL`, `INFERENCE_API_KEY`, `INFERENCE_JUDGE_MODEL`. Argument models use the selected row's `api_model_id` in the `models` table; there is no global player-model override.
 
-Current judge client: `judge(topic, pro, con)` accepts a topic and the two sides' generated transcripts (never player prompts). It sends a fixed system instruction and a JSON user message containing `topic`, `pro_position`, `con_position`, `pro`, and `con`. This non-streaming call requests structured output using the `Verdict` schema (`scorecard`, `winner`, `reason`).
+The judge client sends a fixed system instruction and a JSON user message containing `topic`, `pro_position`, `con_position`, `pro`, and `con`. A single non-streaming request returns `scorecard`, `winner`, and `highlights`. Each of the one or two highlights has a distinct scorecard `category` and a short `explanation` grounded in the openings. The server formats the highlights into the plain-text verdict `reason`.
 
 Player turns use the lobby-selected model: the engine resolves its database UUID to the exact `api_model_id` and display name before play. The configured `INFERENCE_BASE_URL` and API key are shared by the argument and judge clients; provider-specific connection settings remain pending. The judge uses the independent `INFERENCE_JUDGE_MODEL` setting.
 
@@ -347,7 +347,7 @@ The judge scores both openings on four equally weighted categories. Each score i
 - **Weighing and persuasiveness** considers how each opening compares benefits, harms, and tradeoffs by scale, likelihood, and who is affected.
 - **Clarity and structure** considers whether the position, main points, and connections are easy to follow. Length, polish, and confidence alone earn no credit.
 
-The system totals each side’s scores out of 20. The higher total wins. With equal totals, the judge chooses a side and explains the deciding difference. The player-facing explanation follows the scores and refers to the openings.
+The system verifies the winner against the total out of 20 for each side. The higher total wins. With equal totals, the judge chooses a side and explains the deciding difference. The player-facing explanation names the noteworthy categories and connects their scores to specific strengths or weaknesses in the openings.
 
 `MATCH_RESULT` includes `scorecard: Scorecard` for scored verdicts. A missing or null value represents a result without scores. Match detail returns null for older matches, forfeits, and voids. A profile’s averages count only completed, judged matches with a scorecard, using that player’s assigned side across all arenas. The category averages are out of five and the average total is out of 20.
 
@@ -357,7 +357,7 @@ The system totals each side’s scores out of 20. The higher total wins. With eq
 2. Both players `JOIN`, see the topic, and have 15 seconds to choose a side. The first valid choice locks both sides, or the engine assigns them randomly at expiry. For BYOM, the server then sends `MATCH_ASSIGN` to each device.
 3. The matchup is revealed for 3 seconds. Then each player `SUBMIT_PROMPT`s independently; their opening generation starts as soon as their own prompt is accepted, without waiting for the other player's submission.
 4. Currently, each side generates one opening argument, potentially concurrently. The planned six-turn flow adds `rebuttal` pro, con → `closing` pro, con after both openings finish. Each turn's `messages` = fixed server system prompt (topic, side, phase, length limit) with the side's player prompt inside delimiters; later phases also include prior turns as the transcript.
-5. Judge: fixed system prompt plus the topic, assigned positions, and generated openings. It must return a structured verdict with `scorecard`, `winner` (`pro` or `con`), and a short plain-text `reason`. A missing or invalid scorecard, or a winner whose total is lower, fails the attempt.
+5. Judge: fixed system prompt plus the topic, assigned positions, and generated openings. Invalid scores or explanations, or a winner whose total is lower, fail the attempt.
 6. `MATCH_RESULT`, Elo update, persist, close sockets.
 
 ### Failure outcomes

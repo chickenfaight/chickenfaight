@@ -9,6 +9,7 @@ from openai import AsyncOpenAI
 from app.config import settings
 from app.models import Topic
 from app.schemas import Verdict
+from app.schemas.verdict import JudgeResponse
 
 
 JUDGE_PROMPT = (
@@ -28,9 +29,13 @@ JUDGE_PROMPT = (
     "clarity_and_structure: Evaluate how clearly the position and main points fit together. "
     "Reward organization and precise wording. Length, polish, and confidence alone earn no extra credit.\n"
     "Sum the four equally weighted scores for each side and choose the side with the higher total. "
-    "On equal totals, choose a side and explicitly explain the deciding difference. "
-    "After scoring, write a brief overall verdict in plain text that explains the outcome "
-    "using specific details from the openings. Keep the explanation to three sentences or fewer."
+    "After scoring, highlight the one or two distinct categories that best explain the outcome. "
+    "For each, name the category and write one or two short plain-text sentences explaining why it received "
+    "those scores. Refer to a specific claim, example, comparison, or gap from the openings and explain "
+    "how it affected the score. Compare the sides where that helps explain the difference. "
+    "For example, 'Pro explained how free fares would help shift workers reach their jobs, while Con asserted "
+    "that ridership would rise without explaining why.' Leave all numbers from the scorecard out of the explanation. "
+    "On equal totals, choose a side and use the first highlight to explain the deciding difference."
 )
 
 
@@ -97,14 +102,14 @@ class OpenAIModelClient(ModelClient):
                     }, ensure_ascii=False),
                 },
             ],
-            response_format=Verdict,
+            response_format=JudgeResponse,
             # Route only to providers that enforce the response schema.
             extra_body={"provider": {"require_parameters": True}} if settings.inference_is_openrouter else None,
         )
 
         if not completion.choices or completion.choices[0].message.parsed is None:
             raise ValueError("No verdict is returned")
-        return completion.choices[0].message.parsed
+        return completion.choices[0].message.parsed.to_verdict()
 
 
 class DeviceTurnError(Exception):
