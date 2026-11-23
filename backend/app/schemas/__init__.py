@@ -18,8 +18,8 @@ from .schemas import (
     ChallengeToday,
     TipsTip,
     UserSearchPage,
-    Verdict,
 )
+from .verdict import Scorecard, Verdict
 from .topic import AdminTopic, AdminTopicsPage, TopicUpload, TopicUploadResult
 from .match import MatchHistoryPage, MatchRead, MatchSummary, ParticipantRead, TurnRead
 from .bilc import (
@@ -63,6 +63,7 @@ __all__ = [
     "ChallengeToday",
     "TipsTip",
     "UserSearchPage",
+    "Scorecard",
     "Verdict",
     "BilcDeviceRead",
     "BilcRegister",

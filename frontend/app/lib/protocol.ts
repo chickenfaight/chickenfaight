@@ -141,7 +141,7 @@ export function parseUserPage(data: unknown): UserPage {
 export type Rating = { ladder: string; elo: number; games_played: number; wins: number; losses: number };
 // A pending friend request between the caller and a player: "sent" by the caller, or "received" from them.
 export type FriendRequestState = "sent" | "received" | null;
-export type UserProfile = UserPublic & { ratings: Rating[]; read_blocked: boolean; is_blocked: boolean; is_friend: boolean; friend_request: FriendRequestState; points: number; streak: number; rank: number | null };
+export type UserProfile = UserPublic & { ratings: Rating[]; read_blocked: boolean; is_blocked: boolean; is_friend: boolean; friend_request: FriendRequestState; points: number; streak: number; rank: number | null; score_averages: ScoreAverages | null };
 
 function isFriendRequestState(value: unknown): value is FriendRequestState {
   return value === null || value === "sent" || value === "received";
@@ -187,7 +187,8 @@ export function parseUserProfile(data: unknown): UserProfile {
   }
   if (typeof data.read_blocked !== "boolean") throw new Error("Invalid profile");
   // When `read_blocked`, only `id`, `tag`, and `is_blocked` describe the player; the rest are blanks.
-  return { ...parseUserPublic(data), ratings: data.ratings.map(parseRating), read_blocked: data.read_blocked, is_friend: data.is_friend, friend_request: data.friend_request, points: data.points, streak: data.streak, rank: data.rank, is_blocked: data.is_blocked };
+  return { ...parseUserPublic(data), ratings: data.ratings.map(parseRating), read_blocked: data.read_blocked, is_friend: data.is_friend, friend_request: data.friend_request, points: data.points, streak: data.streak, rank: data.rank, is_blocked: data.is_blocked,
+    score_averages: data.read_blocked ? null : parseScoreAverages(data.score_averages) };
 }
 
 // The daily challenge's twist, as announced in MATCH_STATE and GET /v1/challenge/today.
@@ -222,6 +223,49 @@ export function parseChallengeToday(data: unknown): ChallengeToday {
 // Current arena wire format in PROTOCOL.md; full reconnect snapshots are planned.
 export type Side = "pro" | "con";
 export type ArenaTopic = { topic: string; pro_position: string; con_position: string };
+
+export const JUDGE_CATEGORIES = ["argument_quality", "support_for_claims", "weighing_and_persuasiveness", "clarity_and_structure"] as const;
+export const MAX_CATEGORY_SCORE = 5;
+export const MAX_TOTAL_SCORE = MAX_CATEGORY_SCORE * JUDGE_CATEGORIES.length;
+export type JudgeCategory = typeof JUDGE_CATEGORIES[number];
+type CategoryScore = Record<Side, number>;
+export type Scorecard = Record<JudgeCategory, CategoryScore>;
+export type ScoreAverages = { match_count: number; total: number; categories: Record<JudgeCategory, number> };
+
+function isScore(data: unknown, max: number): data is number {
+  return typeof data === "number" && Number.isFinite(data) && data >= 0 && data <= max;
+}
+
+function parseCategoryValues<T>(data: unknown, parse: (value: unknown) => T): Record<JudgeCategory, T> {
+  if (!isObject(data)) throw new Error("Invalid judging categories");
+  return Object.fromEntries(JUDGE_CATEGORIES.map(category => [category, parse(data[category])])) as Record<JudgeCategory, T>;
+}
+
+function parseScorecard(data: unknown): Scorecard | null {
+  if (data === null || data === undefined) return null;
+  return parseCategoryValues(data, value => {
+    if (!isObject(value) || !isScore(value.pro, MAX_CATEGORY_SCORE) || !Number.isInteger(value.pro)
+      || !isScore(value.con, MAX_CATEGORY_SCORE) || !Number.isInteger(value.con)) {
+      throw new Error("Invalid category score");
+    }
+    return { pro: value.pro, con: value.con };
+  });
+}
+
+function parseScoreAverages(data: unknown): ScoreAverages | null {
+  if (data === null || data === undefined) return null;
+  if (!isObject(data) || typeof data.match_count !== "number" || !Number.isSafeInteger(data.match_count) || data.match_count < 1
+    || !isScore(data.total, MAX_TOTAL_SCORE)) throw new Error("Invalid score averages");
+  return {
+    match_count: data.match_count,
+    total: data.total,
+    categories: parseCategoryValues(data.categories, value => {
+      if (!isScore(value, MAX_CATEGORY_SCORE)) throw new Error("Invalid category average");
+      return value;
+    }),
+  };
+}
+
 // A player's public profile and Elo on this ladder, before and after sides are assigned.
 export type ArenaParticipant = { user_id: string; user: UserPublic | null; elo: number | null };
 export type ArenaPlayer = ArenaParticipant & { side: Side };
@@ -230,6 +274,7 @@ export type ArenaRatingChange = { user_id: string; side: Side; elo_before: numbe
 export type ArenaResult = {
   winner: Side | null;
   reason: string;
+  scorecard: Scorecard | null;
   status: "completed" | "forfeited" | "voided";
   end_reason: "judged" | "no_show" | "no_prompt" | "resigned" | "model_failure" | "judge_failure";
   arguments: Record<Side, string>;
@@ -318,6 +363,7 @@ export function parseMatchMessage(raw: string): MatchMessage {
         return { type: data.type, payload: {
           winner: p.winner, reason: p.reason, status: p.status as ArenaResult["status"], end_reason: p.end_reason as ArenaResult["end_reason"],
           arguments: { pro: p.arguments.pro, con: p.arguments.con }, participants: parseRatingChanges(p.participants),
+          scorecard: p.status === "completed" && p.end_reason === "judged" ? parseScorecard(p.scorecard) : null,
         } };
       }
       break;
@@ -367,7 +413,7 @@ export type MatchSummary = {
   challenge_day: string | null; you: Side; outcome: MatchOutcome; model: string | null; participants: MatchParticipant[]; ended_at: string;
 };
 export type MatchTurn = { id: string; index: number; side: Side; phase: string; content: string; truncated: boolean };
-export type MatchDetail = MatchSummary & { pro_position: string | null; con_position: string | null; verdict_reasoning: string | null; turns: MatchTurn[] };
+export type MatchDetail = MatchSummary & { pro_position: string | null; con_position: string | null; verdict_reasoning: string | null; scorecard: Scorecard | null; turns: MatchTurn[] };
 
 function isSide(value: unknown): value is Side {
   return value === "pro" || value === "con";
@@ -409,6 +455,7 @@ export function parseMatchDetail(data: unknown): MatchDetail {
   }
   return {
     ...parseMatchSummary(data), pro_position: data.pro_position, con_position: data.con_position, verdict_reasoning: data.verdict_reasoning,
+    scorecard: data.status === "completed" && data.end_reason === "judged" ? parseScorecard(data.scorecard) : null,
     turns: data.turns.map((turn: unknown) => {
       if (!isObject(turn) || typeof turn.id !== "string" || typeof turn.index !== "number" || !isSide(turn.side)
         || typeof turn.phase !== "string" || typeof turn.content !== "string" || typeof turn.truncated !== "boolean") {

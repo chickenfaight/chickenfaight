@@ -11,9 +11,9 @@ from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import Match, MatchParticipant, Topic, User
-from app.models.match import MatchStatus
+from app.models.match import MatchStatus, ScoreCategory
 from app.repositories.match import MatchRepository
-from app.schemas import MatchHistoryPage, MatchRead, MatchSummary, ParticipantRead, TurnRead, UserPublic
+from app.schemas import MatchHistoryPage, MatchRead, MatchSummary, ParticipantRead, Scorecard, TurnRead, UserPublic
 from app.services.exceptions import MatchNotFoundError
 
 
@@ -45,11 +45,18 @@ class MatchHistoryService:
             raise MatchNotFoundError()
         match, you, topic = row
         participants = await self._participants([match.id])
+        scores = {}
+        if match.status == MatchStatus.COMPLETED and match.end_reason == "judged":
+            scores = {
+                score.category.value: {"pro": score.pro_score, "con": score.con_score}
+                for score in await self.matches.category_scores_of(match.id)
+            }
         return MatchRead(
             **self._summary(match, you, topic, participants[match.id]).model_dump(),
             pro_position=topic.pro_position if topic else None,
             con_position=topic.con_position if topic else None,
             verdict_reasoning=match.verdict_reasoning,
+            scorecard=Scorecard.model_validate(scores) if len(scores) == len(ScoreCategory) else None,
             turns=[
                 TurnRead(id=turn.id, index=turn.index, side=turn.side, phase=turn.phase,
                          content=turn.content, truncated=turn.truncated)

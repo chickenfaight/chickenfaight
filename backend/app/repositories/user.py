@@ -1,8 +1,9 @@
 from uuid import UUID
 
-from sqlalchemy import func, or_, select, update
+from sqlalchemy import case, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.match import Match, MatchCategoryScore, MatchParticipant, MatchStatus, ScoreCategory, Side
 from app.models.user import User
 
 
@@ -24,6 +25,32 @@ class UserRepository:
         statement = select(User).where(User.id == user_id)
         result = await self.session.execute(statement)
         return result.scalar_one_or_none()
+
+    async def score_averages(self, user_id: UUID) -> tuple[int, dict[ScoreCategory, float]]:
+        """Aggregate the player's side from complete scorecards across all arenas."""
+        scored = (
+            select(
+                MatchCategoryScore.category,
+                case((MatchParticipant.side == Side.PRO, MatchCategoryScore.pro_score),
+                     else_=MatchCategoryScore.con_score).label("score"),
+                func.count().over(partition_by=MatchCategoryScore.match_id).label("category_count"),
+            )
+            .select_from(MatchParticipant)
+            .join(Match, Match.id == MatchParticipant.match_id)
+            .join(MatchCategoryScore, MatchCategoryScore.match_id == Match.id)
+            .where(MatchParticipant.user_id == user_id, Match.status == MatchStatus.COMPLETED,
+                   Match.end_reason == "judged")
+            .subquery()
+        )
+        statement = (
+            select(scored.c.category, func.count().label("match_count"), func.avg(scored.c.score))
+            .where(scored.c.category_count == len(ScoreCategory))
+            .group_by(scored.c.category)
+        )
+        rows = (await self.session.execute(statement)).all()
+        if not rows:
+            return 0, {}
+        return rows[0].match_count, {category: float(average) for category, _, average in rows}
 
     async def search(self, query: str, limit: int, offset: int) -> list[User]:
         """Tagged users whose tag or username matches `query`, best first: exact tag, exact

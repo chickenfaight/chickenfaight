@@ -2,7 +2,7 @@ import uuid
 from datetime import date, datetime
 from enum import StrEnum
 
-from sqlalchemy import Boolean, Date, DateTime, Enum, ForeignKey, Integer, String, Text, UniqueConstraint, func, text
+from sqlalchemy import Boolean, CheckConstraint, Date, DateTime, Enum, ForeignKey, Integer, String, Text, UniqueConstraint, func, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -31,6 +31,13 @@ class Phase(StrEnum):
     CLOSING = "closing"
 
 
+class ScoreCategory(StrEnum):
+    ARGUMENT_QUALITY = "argument_quality"
+    SUPPORT_FOR_CLAIMS = "support_for_claims"
+    WEIGHING_AND_PERSUASIVENESS = "weighing_and_persuasiveness"
+    CLARITY_AND_STRUCTURE = "clarity_and_structure"
+
+
 class Match(Base):
     """A finished match's result, recorded once by the engine (`report_game`). Votes from the planned
     schema aren't stored yet. Player prompts never are: the arena promises they stay private."""
@@ -47,6 +54,22 @@ class Match(Base):
     # The UTC day of the daily challenge this match was played for; null for regular matches.
     challenge_day: Mapped[date | None] = mapped_column(Date, index=True)
     ended_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class MatchCategoryScore(Base):
+    """Both sides' scores for one category of a judged match."""
+    __tablename__ = "match_category_scores"
+    __table_args__ = (
+        CheckConstraint("pro_score BETWEEN 0 AND 5", name="pro_score_range"),
+        CheckConstraint("con_score BETWEEN 0 AND 5", name="con_score_range"),
+    )
+
+    match_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("matches.id", ondelete="CASCADE"), primary_key=True)
+    category: Mapped[ScoreCategory] = mapped_column(_enum(ScoreCategory, "score_category"), primary_key=True)
+    pro_score: Mapped[int]
+    con_score: Mapped[int]
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 

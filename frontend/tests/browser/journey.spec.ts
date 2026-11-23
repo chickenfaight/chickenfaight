@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { cleanupAccounts, account, accountTag, backend, chooseSide, failedModelId, join, password, submit, selectModel } from "./helpers";
+import { cleanupAccounts, account, accountTag, backend, chooseSide, failedModelId, join, password, submit, selectModel, verdictScores } from "./helpers";
 
 test.afterEach(cleanupAccounts);
 
@@ -75,12 +75,22 @@ test("two browsers complete a real match and immediately see saved results", asy
     await Promise.all([submit(page, "PRIVATE-FIRST"), submit(other, "PRIVATE-SECOND")]);
     await expect(page.getByRole("heading", { name: /why the judge/i })).toBeVisible();
     await expect(other.getByRole("heading", { name: /why the judge/i })).toBeVisible();
+    const scorecard = (player: typeof page) => player.getByRole("region", { name: "Judge’s scorecard" });
+    for (const player of [page, other]) {
+      await expect(scorecard(player)).toContainText(/16\s*\/\s*20/);
+      await expect(scorecard(player)).toContainText(/10\s*\/\s*20/);
+      const argumentQuality = scorecard(player).getByRole("row").filter({
+        has: player.getByRole("rowheader", { name: /^Argument quality/ }),
+      });
+      await expect(argumentQuality.getByRole("cell")).toHaveText(["4/5", "2/5"]);
+    }
     expect(await page.evaluate(() => "modelExecuted" in window)).toBe(false);
     expect(await other.evaluate(() => "modelExecuted" in window)).toBe(false);
     await expect(page.getByText('<img src=x onerror="window.modelExecuted=true"> Literal argument.', { exact: true })).toBeVisible();
     const history = await (await context.request.get(`${backend}/v1/users/${me.id}/matches`)).json();
     expect(history.items).toHaveLength(1);
     const detail = await (await context.request.get(`${backend}/v1/matches/${history.items[0].id}`)).json();
+    expect(detail.scorecard).toEqual(verdictScores);
     expect(JSON.stringify(detail)).not.toMatch(/PRIVATE-FIRST|PRIVATE-SECOND/);
     const stats = await (await context.request.get(`${backend}/v1/users/me/arena-stats`)).json();
     expect(stats.debates_played).toBe(1);
@@ -88,6 +98,17 @@ test("two browsers complete a real match and immediately see saved results", asy
     expect(ladder).toBeTruthy();
     await page.goto("/matches");
     await expect(page.getByText("Should transit be free?", { exact: true })).toBeVisible();
+    await page.goto(`/matches/${history.items[0].id}`);
+    await expect(scorecard(page)).toContainText(/16\s*\/\s*20/);
+    await expect(scorecard(page)).toContainText(/10\s*\/\s*20/);
+    await expect(page.getByText(detail.verdict_reasoning, { exact: true })).toBeVisible();
+    const profile = await context.newPage();
+    await profile.goto(`/profile/${me.tag}`);
+    const averages = profile.getByRole("region", { name: "Average judge scores" });
+    await expect(averages).toContainText(/10(?:\.0)?\s*\/\s*20/);
+    await expect(averages).toContainText("From 1 scored debate");
+    await expect(averages).toContainText("Argument quality");
+    await profile.close();
     // Load the rankings independently while keeping the history page open.
     const leaderboard = await context.newPage();
     await leaderboard.goto("/leaderboards");

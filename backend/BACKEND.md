@@ -59,7 +59,8 @@ The engine keeps one receiver and one heartbeat task per browser connection. Acc
 | `receive_messages(player, socket, activity)` | Validate `JOIN`, `CHOOSE_SIDE`, and `SUBMIT_PROMPT`. Store accepted prompts and signal generation while continuing to read heartbeat replies |
 | `generate_arguments(player)` | After sides are assigned, wait for this player's accepted prompt and immediately stream their opening argument. Both arguments must finish before judging |
 | `format_game(prompt)` | Build the fixed-template `messages` for a turn; player prompt goes only inside delimiters, with delimiter strings stripped from it |
-| `call_model(messages)` | Stream a turn from a `ModelClient`, forwarding `TURN_DELTA`s; also used for the judge |
+| `call_model(messages)` | Stream a turn from a `ModelClient`, forwarding `TURN_DELTA`s |
+| Judge adapter | Score both finished openings and validate the scores and verdict before recording the match |
 | `unlink_user(socket)` | Send `MATCH_RESULT` and close the socket |
 | `report_game()` | Journals the decided result to disk before sending `MATCH_RESULT`, then commits history, rewards, and Elo via `record_match()`; marks success only after commit. Database failures retain the journal for retry; disk failures prevent acknowledgement (implemented) |
 
@@ -73,7 +74,7 @@ Live state (matchmaking queues, running engines, connected BILC devices in `Bilc
 
 `app/services/result_outbox.py` writes decided `MatchReport`s with atomic rename,
 file/directory fsync, and private directory/file permissions (0700/0600). Only
-result metadata and generated arguments are journaled, never player prompts.
+result metadata, validated scorecards, and generated arguments are journaled, never player prompts.
 Entries remain until the idempotent database transaction commits; a crash between
 commit and removal is safely replayed. Startup launches a worker that retries
 every 5 seconds, with a 10-second timeout per database write. Backlogs drain in
@@ -155,6 +156,7 @@ Postgres. Constraint and index names come from the naming convention in `app/db/
 | `friend_requests` (implemented) | PK(`sender_id`, `receiver_id`), both FKs to `users` with `ON DELETE CASCADE`, CHECK `sender_id <> receiver_id` | Pending only: answering deletes the row. Its migration turned old one-way adds into requests |
 | `topics` (implemented) | `id` UUID, `category`, `topic`, `pro_position`, `con_position`, `is_active` | Text fields are limited to 255 characters; category defaults to `General`; active by default |
 | `matches` (results implemented) | `id` UUID (the engine's match ID), `model_id?` and `topic_id?` (`SET NULL`), `status`, `winner_side?`, `end_reason`, `verdict_reasoning?`, `challenge_day?` (UTC date, for daily-challenge matches), `ended_at` | Written once per decided match. `judge_metadata` and `started_at` remain PLANNED |
+| `match_category_scores` | PK(`match_id`, `category`), `match_id` FK (`CASCADE`), `pro_score`, `con_score` | Four rows per scored verdict, each with both sides’ integer scores from 0 to 5. Written in the result transaction and included in result recovery. Profile averages use the player’s assigned side. |
 | `match_participants` (implemented, without PLANNED columns) | PK(`match_id`, `side`), `user_id?` (unique with `match_id`; `SET NULL` when the account is deleted, so the opponent's history survives without user data) | Also `model_name?` (the model this player used; older rows may have none), `elo_before?`, `elo_after?` (set when the match changed ratings). `bilc_device_id?` remains PLANNED. Player prompts are deliberately not stored |
 | `challenge_completions` (implemented) | PK(`user_id`, `day`), `match_id?` | Its primary key is what limits the challenge bonus to once per day, even when matches finish at the same moment |
 | `turns` (implemented, without `usage`) | `id` UUID, `match_id` (`CASCADE`), `index` (unique with `match_id`), `side`, `phase`, `content`, `truncated` | Written with the match result, in play order. `usage` JSONB remains PLANNED |

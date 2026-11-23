@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 // @ts-expect-error Node executes the TypeScript source directly; Next disallows .ts imports.
-import { parseMatchMessage, parseQueueStatus, parseArenaStats } from "../../app/lib/protocol.ts";
+import { parseArenaStats, parseMatchDetail, parseMatchMessage, parseQueueStatus, parseUserProfile } from "../../app/lib/protocol.ts";
 
 const state = { type: "MATCH_STATE", payload: { model_display_name: "Test", topic: { category: "T", topic: "Topic", pro_position: "P", con_position: "C" }, you: "pro", deadline: "2026-11-15T12:00:00Z", challenge: null } };
 const selection = { type: "SIDE_SELECTION_OPEN", payload: {
@@ -79,4 +79,48 @@ test("arena participants are optional and carry players and Elo when sent", () =
     assert.throws(() => parseMatchMessage(JSON.stringify({ type: "MATCH_RESULT", payload: { ...result, participants } })));
   }
   assert.throws(() => parseMatchMessage(JSON.stringify({ ...state, payload: { ...state.payload, participants: [{ user_id: "u1", side: "pro", user: { id: 1 }, elo: 1 }] } })));
+});
+
+const scorecard = {
+  argument_quality: { pro: 5, con: 2 },
+  support_for_claims: { pro: 4, con: 0 },
+  weighing_and_persuasiveness: { pro: 4, con: 3 },
+  clarity_and_structure: { pro: 3, con: 3 },
+};
+
+test("live and saved verdicts validate both sides of every category", () => {
+  const payload = { winner: "pro", reason: "Clearer reasoning", status: "completed", end_reason: "judged", arguments: { pro: "P", con: "C" } };
+  const detail = {
+    id: "m1", topic: "A topic", status: "completed", winner_side: "pro", end_reason: "judged",
+    challenge_day: null, you: "pro", outcome: "win", model: "Arena", participants: [], ended_at: "2026-11-22T00:00:00Z",
+    pro_position: "P", con_position: "C", verdict_reasoning: "Clearer reasoning", turns: [],
+  };
+  const live = (fields = {}) => parseMatchMessage(JSON.stringify({ type: "MATCH_RESULT", payload: { ...payload, ...fields } }));
+  for (const value of [scorecard, null, undefined]) {
+    const result = live({ scorecard: value });
+    assert.equal(result.type, "MATCH_RESULT");
+    assert.deepEqual(result.payload.scorecard, value ?? null);
+    assert.deepEqual(parseMatchDetail({ ...detail, scorecard: value }).scorecard, value ?? null);
+  }
+  for (const invalid of [{ argument_quality: scorecard.argument_quality }, ...[false, 5.5, -1, "4"].map(pro => ({ ...scorecard, argument_quality: { pro, con: 2 } }))]) {
+    assert.throws(() => live({ scorecard: invalid }));
+    assert.throws(() => parseMatchDetail({ ...detail, scorecard: invalid }));
+  }
+});
+
+test("profile accepts fractional averages and hides them on a blocked profile", () => {
+  const profile = {
+    id: "u1", tag: "rooster", username: null, avatar_url: null, ratings: [], is_friend: false, friend_request: null,
+    is_blocked: false, read_blocked: false, points: 12, streak: 1, rank: 1,
+  };
+  const score_averages = {
+    match_count: 2, total: 14.5,
+    categories: { argument_quality: 4.5, support_for_claims: 4, weighing_and_persuasiveness: 4, clarity_and_structure: 2 },
+  };
+  assert.deepEqual(parseUserProfile({ ...profile, score_averages }).score_averages, score_averages);
+  assert.equal(parseUserProfile(profile).score_averages, null);
+  assert.equal(parseUserProfile({ ...profile, score_averages, read_blocked: true }).score_averages, null);
+  for (const invalid of [{ match_count: 0 }, { total: 21 }, { categories: { ...score_averages.categories, clarity_and_structure: NaN } }]) {
+    assert.throws(() => parseUserProfile({ ...profile, score_averages: { ...score_averages, ...invalid } }));
+  }
 });

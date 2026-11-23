@@ -31,6 +31,21 @@ test("homepage focuses on play with one sidebar entry per destination and the fu
   await expect(page.getByRole("main").getByRole("link", { name: /history/i })).toBeVisible();
 });
 
+test("How to play explains the four judging categories", async ({ page, context }) => {
+  await account(context);
+  await page.goto("/");
+  const help = page.getByRole("button", { name: "How to play", exact: true });
+  await help.press("Enter");
+  const dialog = page.getByRole("dialog", { name: "How to play" });
+  await expect(dialog.getByRole("heading", { name: "How the judge scores" })).toBeVisible();
+  for (const category of ["Argument quality", "Support for claims", "Weighing and persuasiveness", "Clarity and structure"]) {
+    await expect(dialog.getByText(category, { exact: true })).toBeVisible();
+  }
+  await page.keyboard.press("Escape");
+  await expect(dialog).toBeHidden();
+  await expect(help).toBeFocused();
+});
+
 test("model picker supports keyboard selection, dismissal and remembered selection", async ({ page, context }) => {
   await account(context);
   await page.goto("/");

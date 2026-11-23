@@ -5,6 +5,12 @@ export const modelId = "11111111-1111-4111-8111-111111111111";
 export const failedModelId = "22222222-2222-4222-8222-222222222222";
 export const byomId = "6f1c9a52-3d8e-4b7a-9e21-b10c0000b10c";
 export const password = "browser-test-password";
+export const verdictScores = {
+  argument_quality: { pro: 4, con: 2 },
+  support_for_claims: { pro: 5, con: 3 },
+  weighing_and_persuasiveness: { pro: 3, con: 1 },
+  clarity_and_structure: { pro: 4, con: 4 },
+};
 const ownedAccounts: APIRequestContext[] = [];
 
 export async function cleanupAccounts() {

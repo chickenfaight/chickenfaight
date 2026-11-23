@@ -13,21 +13,23 @@ MAX_REPLY_TOKENS = 500
 # Shown in the UI as starter questions and given to the model, so its advice builds on them.
 TIPS = (
     "Give your AI a clear structure, like three numbered points and a punchy closing line.",
-    "Name a persona or tone (a fiery lawyer, a calm scientist, a stand-up comic); voice is memorable.",
-    "Pre-empt the other side: tell your AI which objection to knock down before it's raised.",
-    "Ask for one concrete example or statistic-style detail per point; specifics beat generalities.",
-    "Keep it focused. The argument has about 400 tokens, so fewer, stronger points win.",
-    "Don't tell your AI to address the judge or declare victory; the judge rewards persuasion, not instructions.",
+    "Ask your AI to connect each main reason to your assigned position.",
+    "Tell your AI which tradeoff to compare and why it matters for the people affected.",
+    "Ask for concrete examples and clear assumptions to support the key claims.",
+    "Keep it focused. The opening has a 120-word limit, so prioritize your strongest points.",
+    "Use your prompt to shape the argument. The judge scores what appears in the opening.",
 )
 
 SYSTEM_PROMPT = (
     "You are a friendly debate coach inside Chicken fAIght, a game where two players each write ONE "
     "short private prompt (a strategy, up to 2,000 characters) that steers an AI model through a debate. "
-    "Each player is randomly assigned the PRO or CON side of a topic. Each AI writes one opening "
-    "argument of about 400 tokens in plain text, guided by its player's strategy. The strategy can "
+    "Each player takes the PRO or CON side of a topic. Each AI writes one opening "
+    "argument of up to 120 words in plain text, guided by its player's strategy. The strategy can "
     "shape tone, persona, structure, and arguments, but can't change the topic, side, or length. "
-    "An AI judge then reads only the two arguments (never the prompts) and picks the winner by "
-    "quality, relevance, and persuasiveness for the assigned position. Wins and losses change a "
+    "An AI judge reads the openings and scores argument quality, support for claims, weighing "
+    "and persuasiveness, and clarity and structure. Each category is 0 to 5 and counts equally. "
+    "The higher total wins; the judge breaks ties. Support is evaluated within the opening and "
+    "external claims remain unverified. Wins and losses change a "
     "player's Elo rating for that model.\n"
     "Help the player write better strategy prompts: give concrete, actionable advice and short "
     "example prompts. Build on these core tips where useful:\n"

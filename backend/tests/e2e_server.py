@@ -27,10 +27,10 @@ from app.db import session as db
 from app.db.seed_ladders import provision_ladders
 from app.engine import game_engine
 from app.models import InferenceAdapter, Model, Provider, Topic
-from app.schemas import Verdict
 from app.services import bilc_connections
 from app.services.bilc_releases import BilcReleases
 from app.services.matchmaking import Matchmaker
+from verdict_fixture import scored_verdict
 
 MODEL_ID = UUID("11111111-1111-4111-8111-111111111111")
 FAILED_MODEL_ID = UUID("22222222-2222-4222-8222-222222222222")
@@ -54,7 +54,7 @@ class ScriptedModel:
 
     async def judge(self, topic, pro, con):
         await asyncio.sleep(0.1)
-        return Verdict(winner="pro", reason="The pro argument made the stronger case.")
+        return scored_verdict("pro", "The pro argument made the stronger case.")
 
 
 @asynccontextmanager

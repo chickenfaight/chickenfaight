@@ -22,6 +22,7 @@ from app.schemas import (
     SignupData,
     Rating,
 )
+from app.schemas.profile import CategoryScoreAverages, ScoreAverages
 from app.services.exceptions import (
     UserNotFoundError,
     TagAlreadySetError,
@@ -140,6 +141,12 @@ class UserService:
                 losses=rat.losses
             ))
 
+        match_count, categories = await self.users.score_averages(user.id)
+        score_averages = ScoreAverages(
+            match_count=match_count, total=sum(categories.values()),
+            categories=CategoryScoreAverages.model_validate(categories),
+        ) if match_count else None
+
         return UserProfile.model_validate(user).model_copy(update={
             "is_friend": is_friend,
             "is_blocked": is_blocked,
@@ -147,6 +154,7 @@ class UserService:
             "streak": effective_streak(user, datetime.now(UTC)),
             "rank": await points_rank(self.session, user),
             "ratings": ratingsclean,
+            "score_averages": score_averages,
         })
 
     async def search(self, query: str, limit: int, offset: int) -> UserSearchPage:

@@ -7,6 +7,7 @@ from sqlalchemy import select
 
 from app.models import MatchParticipant, Model, Topic, Turn
 from app.services.rewards import MatchReport, record_match
+from verdict_fixture import SCORECARD
 
 NOON = datetime(2026, 10, 8, 12, 0, tzinfo=UTC)
 MATCH = "/v1/matches/"
@@ -17,7 +18,8 @@ def history(user) -> str:
 
 
 async def save(session, pro, con, *, status="completed", winner="pro", end_reason="judged", when=NOON, model_id=None,
-               topic=None, models=None, arguments=None, truncated=frozenset(), reason="Sharper.", challenge_day=None):
+               topic=None, models=None, arguments=None, truncated=frozenset(), reason="Sharper.", challenge_day=None,
+               scorecard=None):
     report = MatchReport(
         match_id=uuid4(), model_id=model_id, topic_id=topic.id if topic else None, challenge_day=challenge_day,
         sides={pro.id: "pro", con.id: "con"},
@@ -26,6 +28,8 @@ async def save(session, pro, con, *, status="completed", winner="pro", end_reaso
         ended_at=when, model_names=models if models is not None else {pro.id: "Test model", con.id: "Test model"},
         truncated=truncated,
     )
+    if scorecard is not None:
+        report.result["scorecard"] = scorecard
     await record_match(session, report)
     return report.match_id
 
@@ -178,7 +182,7 @@ async def test_another_players_history_is_not_found(client, log_in, db_session, 
 
 async def test_someone_elses_match_looks_the_same_as_a_missing_one(client, log_in, db_session, players, make_user):
     pro, con = players
-    match_id = await save(db_session, pro, con)
+    match_id = await save(db_session, pro, con, scorecard=SCORECARD)
     log_in(await make_user("intruder"))
     theirs = await client.get(f"{MATCH}{match_id}")
     missing = await client.get(f"{MATCH}{uuid4()}")
@@ -210,12 +214,14 @@ async def test_routes_are_rate_limited(client, log_in, make_user, kind):
 
 async def test_details_show_the_verdict_positions_and_both_arguments(client, log_in, db_session, players, topic):
     pro, con = players
-    match_id = await save(db_session, pro, con, topic=topic, reason="Sharper examples.")
+    match_id = await save(db_session, pro, con, topic=topic, reason="Sharper examples.", scorecard=SCORECARD)
     log_in(con)
     response = await client.get(f"{MATCH}{match_id}")
     assert response.status_code == 200
     body = response.json()
     assert body["verdict_reasoning"] == "Sharper examples."
+    assert body["scorecard"] == SCORECARD
+    assert "scorecard" not in (await items(client, con))[0]
     assert (body["pro_position"], body["con_position"]) == ("Transit should be free.", "It should not.")
     assert body["outcome"] == "loss"
     assert [(t["index"], t["side"], t["phase"], t["content"], t["truncated"]) for t in body["turns"]] == [
@@ -237,14 +243,18 @@ async def test_a_side_with_no_argument_has_no_turn(client, log_in, db_session, p
     match_id = await save(db_session, pro, con, status="forfeited", winner="pro", end_reason="no_prompt",
                           arguments={"pro": "I showed up.", "con": "   "})
     log_in(con)
-    assert [turn["side"] for turn in (await client.get(f"{MATCH}{match_id}")).json()["turns"]] == ["pro"]
+    body = (await client.get(f"{MATCH}{match_id}")).json()
+    assert body["scorecard"] is None
+    assert [turn["side"] for turn in body["turns"]] == ["pro"]
 
 
 async def test_matches_saved_without_arguments_still_load(client, log_in, db_session, players):
     pro, con = players
     match_id = await save(db_session, pro, con, arguments={})
     log_in(pro)
-    assert (await client.get(f"{MATCH}{match_id}")).json()["turns"] == []
+    body = (await client.get(f"{MATCH}{match_id}")).json()
+    assert body["turns"] == []
+    assert body["scorecard"] is None
 
 
 async def test_truncated_turns_are_marked(client, log_in, db_session, players):

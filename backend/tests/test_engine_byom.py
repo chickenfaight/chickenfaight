@@ -8,11 +8,11 @@ from uuid import uuid4
 import pytest
 
 from app.engine.game_engine import GameEngine
-from app.schemas.schemas import Verdict
 from app.services.arena import BYOM_ARENA_ID
 from app.services.bilc_connections import BilcConnections
 from fake_bilc import FakeBilc
 from test_engine_heartbeat import JOIN, Socket
+from verdict_fixture import scored_verdict
 
 TOPIC = SimpleNamespace(id=uuid4(), category="Cities", topic="Should transit be free?",
                         pro_position="Transit should be free.", con_position="Transit should not be free.")
@@ -40,7 +40,7 @@ class Match:
         self.devices = {user: FakeBilc(user) for user in self.users}
         self.browsers = {user: Player() for user in self.users}
         self.engine: GameEngine | None = None
-        self.judge = AsyncMock(return_value=Verdict(winner="pro", reason="Sharper."))
+        self.judge = AsyncMock(return_value=scored_verdict("pro", "Sharper."))
 
     async def start(self, scripts: dict[str, list]) -> dict[str, list[dict]]:
         """Connect both devices, set up the engine, and script each side's device replies."""

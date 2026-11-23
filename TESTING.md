@@ -34,7 +34,7 @@ Files are `test_<module>.py`, mirroring `app/`, with unique basenames across fol
 
 **Mocking models.** Engine tests use scripted clients (`RecordingClient`,
 `ScriptedClient`) and fake device sockets, patching the engine's client lookup.
-`test_judge_client.py` checks the real judge adapter's request and refusal handling.
+`test_judge_client.py` checks the real judge adapter's request, refusal handling, and scorecard validation, including the winner rule and ties.
 `test_inference_http.py` runs the real SDK against a loopback HTTP/SSE server for
 fragmentation, content-only streaming, HTTP failures, and cancellation.
 
@@ -136,7 +136,7 @@ Backend dependencies (`uv sync`) and Go (for the Go/Python contract test) are re
 - `journey.spec.ts`: signup/login/logout, authenticated reload (raw signed cookie
   forwarding), POST password forms, real two-player cloud match, the two-browser
   acknowledgment gate, chosen and timed-out side assignment, private prompts,
-  literal model output, immediate saved history/stats/leaderboards, cancellation
+  literal model output, live and saved scorecards, profile score averages, immediate history/stats/leaderboards, cancellation
   and rejoin, model-failure void, daily completion/re-entry rejection, admin denial.
   Auth transitions wait for the signed-in profile control or login form; logout
   uses the UI and awaits its redirect rather than starting a competing navigation.
@@ -145,7 +145,7 @@ Backend dependencies (`uv sync`) and Go (for the Go/Python contract test) are re
   and a fresh prompt timer, focus after assignment, submission and rejection, a copyable expired draft, mobile prompt
   controls and sticky judging status, early no-show results, heartbeat echo and cleanup,
   plain-text streaming, verdict retention, and the forfeit confirmation.
-- `homepage.spec.ts`: focused lobby hierarchy, complete challenge text and retry, single navigation entries, model-picker keyboard/dismissal/persistence, Quick Queue payload, daily model restrictions and account-menu Settings.
+- `homepage.spec.ts`: focused lobby hierarchy, complete challenge text and retry, single navigation entries, the How to play rubric, model-picker keyboard/dismissal/persistence, Quick Queue payload, daily model restrictions and account-menu Settings.
 - `daily-challenge.spec.ts`: UTC rollover on an open page and recovery when today's topic is unavailable.
 - `navigation.spec.ts`: labeled mobile navigation, dismissal and destination focus, and player search at 320 px.
 - `queue-persistence.spec.ts`: elapsed time after navigation and reload, the model and timer in the phone header without shifting content, reduced-motion behavior for the queue ring, direct cancellation and recovery after a failed status request, entry into the arena from Settings, and recovery from a disconnected arena.
@@ -223,7 +223,7 @@ follow-up drafts with no over-budget request. Homepage tests distinguish sidebar
 navigation from contextual history links and the account menu.
 
 `accessibility.spec.ts` runs WCAG A/AA axe checks on sign-in, Settings and its username
-dialog, lobby, the open model picker, and the mobile prompt editor and verdict in Chromium and
+dialog, lobby, the open model picker, and the mobile prompt editor and verdict, including open category help, in Chromium and
 WebKit. Firefox axe checks are explicitly skipped because its process repeatedly crashes during
 axe frame evaluation; existing Firefox keyboard/menu tests remain enabled. Axe supplements manual keyboard,
 focus, screen-reader and reduced-motion reviews; it does not certify accessibility.
