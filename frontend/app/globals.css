@@ -270,24 +270,45 @@ dialog::backdrop {
 .stage-lights {
   position: absolute;
   inset: 0 -10%;
-  background:
-    conic-gradient(from 157deg at 23% -13%, transparent, #ffd0b326 8deg, #ffc8ab2c 11deg, transparent 22deg),
-    conic-gradient(from 181deg at 86% -12%, transparent, #ff84992e 9deg, #ffc49746 12deg, transparent 24deg);
   animation: stage-light-drift 8s ease-in-out infinite alternate;
 }
 @keyframes stage-light-drift {
-  from { transform: translateX(-4%); }
-  to { transform: translateX(4%); }
+  from { transform: translateX(-2%); }
+  to { transform: translateX(2%); }
 }
 
+.stage-lights::before,
 .stage-lights::after {
   content: "";
   position: absolute;
+  inset: -13% 0 -10%;
+  transform-origin: var(--stage-light-source) 0;
+  animation: stage-light-pivot 8s ease-in-out infinite alternate;
+}
+.stage-lights::after {
+  --stage-light-source: 23%;
+  background: conic-gradient(from 157deg at var(--stage-light-source) 0%, transparent, #ffd0b326 8deg, #ffc8ab2c 11deg, transparent 22deg);
+}
+.stage-lights::before {
+  --stage-light-source: 86%;
+  top: -12%;
+  background: conic-gradient(from 181deg at var(--stage-light-source) 0%, transparent, #ff84992e 9deg, #ffc49746 12deg, transparent 24deg);
+  animation-duration: 11s;
+  animation-direction: alternate-reverse;
+}
+@keyframes stage-light-pivot {
+  from { transform: rotate(-6deg); }
+  to { transform: rotate(6deg); }
+}
+
+.stage-glow {
+  position: absolute;
   inset: 0 -16%;
+  z-index: 1;
   background: radial-gradient(ellipse at 70% 30%, #ffae5528, transparent 43%);
   animation: stage-color 10s ease-in-out infinite alternate;
 }
 @keyframes stage-color {
-  from { transform: translateX(-9%); opacity: .45; }
-  to { transform: translateX(9%); }
+  from { transform: translateX(-4%); opacity: .45; }
+  to { transform: translateX(4%); }
 }

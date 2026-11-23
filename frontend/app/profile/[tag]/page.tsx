@@ -145,16 +145,16 @@ function Stat({ label, value, tone = "", big = false }: { label: string; value: 
 }
 
 function AverageJudgeScores({ scores }: { scores: ScoreAverages | null }) {
-  return <section aria-labelledby="average-scores-title" className="panel p-panel">
-    <h2 id="average-scores-title" className="text-sm font-bold">Average judge scores</h2>
+  return <section aria-labelledby="average-scores-title" className="mt-6 border-t border-line pt-6">
+    <h3 id="average-scores-title" className="text-sm font-bold">Average judge scores</h3>
     {scores ? <>
       <p className="mt-1.5 text-sm text-ink-muted">From {scores.match_count.toLocaleString()} scored {scores.match_count === 1 ? "debate" : "debates"}</p>
-      <dl className="mt-4 grid grid-cols-2 gap-x-4 gap-y-4 text-sm xl:grid-cols-5">
-        <div className="col-span-2 border-b border-line pb-3 xl:col-span-1 xl:border-0 xl:pb-0">
+      <dl className="mt-4 grid grid-cols-2 gap-4 text-sm xl:grid-cols-[repeat(5,minmax(0,auto))]">
+        <div className="flex flex-col justify-between max-xl:col-span-2 max-xl:border-b max-xl:border-line max-xl:pb-3">
           <dt className="font-semibold">Total</dt>
           <dd className="stat mt-0.5 text-3xl">{scores.total.toFixed(1)}<span className="ml-0.5 text-base text-ink-muted">/{MAX_TOTAL_SCORE}</span></dd>
         </div>
-        {JUDGE_CATEGORIES.map(category => <div key={category} className="min-w-0">
+        {JUDGE_CATEGORIES.map(category => <div key={category} className="flex min-w-0 flex-col justify-between">
           <dt className="wrap-anywhere font-medium text-ink-muted">{JUDGE_RUBRIC[category].label}</dt>
           <dd className="stat mt-0.5 text-3xl">{scores.categories[category].toFixed(1)}<span className="ml-0.5 text-base text-ink-muted">/{MAX_CATEGORY_SCORE}</span></dd>
         </div>)}
@@ -212,8 +212,8 @@ function Profile({ profile, me, friends, incoming, outgoing, blocked }: ProfileP
             <Stat label="Losses" value={losses.toLocaleString()} />
           </dl>
         )}
+        <AverageJudgeScores scores={profile.score_averages} />
       </section>
-      <AverageJudgeScores scores={profile.score_averages} />
       {meId === profile.id && <Friends friends={friends} incoming={incoming} outgoing={outgoing} />}
       {meId === profile.id && <BlockedPlayers blocked={blocked} shown={FRIENDS_SHOWN} />}
     </div>
