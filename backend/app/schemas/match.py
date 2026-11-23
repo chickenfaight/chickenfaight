@@ -8,6 +8,7 @@ from pydantic import BaseModel
 
 from app.models.match import MatchStatus, Phase, Side
 from app.schemas.schemas import UserPublic
+from app.schemas.verdict import Scorecard
 
 
 class ParticipantRead(BaseModel):
@@ -49,4 +50,5 @@ class MatchRead(MatchSummary):
     pro_position: str | None
     con_position: str | None
     verdict_reasoning: str | None
+    scorecard: Scorecard | None = None
     turns: list[TurnRead]

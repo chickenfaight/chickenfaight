@@ -4,13 +4,16 @@ from uuid import uuid4
 
 from sqlalchemy import func, select
 from app.models import Match, Rating
+from app.services.match_history import MatchHistoryService
 from app.services.result_outbox import ResultOutbox
 from app.services.rewards import record_match
 from test_result_atomicity import rated_report
+from verdict_fixture import SCORECARD
 
 
 async def test_commit_before_unlink_replays_once(db_session, rated_report, tmp_path):
     value, first, second = rated_report
+    value.result["scorecard"] = SCORECARD
     box = ResultOutbox(tmp_path)
     async def write(report):
         await record_match(db_session, report)
@@ -23,6 +26,8 @@ async def test_commit_before_unlink_replays_once(db_session, rated_report, tmp_p
     await db_session.refresh(first)
     assert first.points == 70
     assert not list(tmp_path.glob('*.json'))
+    saved = await MatchHistoryService(db_session).get_match(first, value.match_id)
+    assert saved.scorecard.model_dump() == SCORECARD
 
 
 async def test_removed_catalog_does_not_poison_recovery(db_session, rated_report, tmp_path):

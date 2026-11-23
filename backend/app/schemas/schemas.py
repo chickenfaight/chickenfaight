@@ -5,6 +5,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, computed_field, model_validator
 
 from app.auth.admins import is_admin_tag
+from app.schemas.profile import ScoreAverages
 
 
 class UserRead(BaseModel):
@@ -69,6 +70,7 @@ class UserProfile(UserPublic):
     points: int = 0
     streak: int = 0
     rank: int | None = None  # by points among tagged players
+    score_averages: ScoreAverages | None = None
 
 
 class UserSearchPage(BaseModel):
@@ -132,11 +134,6 @@ class TopicRead(BaseModel):
 
 class PromptSubmission(BaseModel):
     prompt: str = Field(min_length=1, max_length=2000)
-
-
-class Verdict(BaseModel):
-    winner: Literal["pro", "con"]
-    reason: str
 
 
 class FriendsPage(BaseModel):

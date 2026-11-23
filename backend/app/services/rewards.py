@@ -8,9 +8,10 @@ from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import ChallengeCompletion, Ladder, Match, MatchParticipant, Model, Topic, Turn, User
+from app.models import ChallengeCompletion, Ladder, Match, MatchCategoryScore, MatchParticipant, Model, Topic, Turn, User
 from app.models.ladder_rating import DEFAULT_ELO
-from app.models.match import Phase
+from app.models.match import Phase, ScoreCategory
+from app.schemas import Scorecard
 from app.services.challenge import CHALLENGE_POINTS
 from app.services.rating import RatingService
 
@@ -33,6 +34,15 @@ class MatchReport:
     model_names: dict[UUID, str | None] = field(default_factory=dict)  # user_id -> the model they used
     truncated: frozenset[str] = frozenset()  # sides whose argument hit the length limit
     rating_ladder_slug: str | None = None
+
+    @property
+    def scorecard(self) -> Scorecard | None:
+        scores = self.result.get("scorecard")
+        if scores is None:
+            return None
+        if self.result.get("status") != "completed" or self.result.get("end_reason") != "judged":
+            raise ValueError("Only a completed judged match can have a scorecard")
+        return Scorecard.model_validate(scores)
 
 
 def _storable(text: str) -> str:
@@ -107,6 +117,16 @@ async def record_match(session: AsyncSession, report: MatchReport) -> RatingChan
         if inserted is None:
             # Retrying a committed report must not award anything twice.
             return await saved_rating_changes(session, report.match_id)
+        if scorecard := report.scorecard:
+            session.add_all([
+                MatchCategoryScore(
+                    match_id=report.match_id,
+                    category=ScoreCategory(category),
+                    pro_score=scores["pro"],
+                    con_score=scores["con"],
+                )
+                for category, scores in scorecard.model_dump().items()
+            ])
         # A player who deleted their account mid-match is saved as the deleted player they now are,
         # so the opponent keeps their result.
         existing = set(users)

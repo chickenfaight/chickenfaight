@@ -5,10 +5,11 @@ from uuid import uuid4
 import pytest
 from sqlalchemy import func, select
 
-from app.models import ChallengeCompletion, Ladder, Match, MatchParticipant, Rating, Turn
+from app.models import ChallengeCompletion, Ladder, Match, MatchCategoryScore, MatchParticipant, Rating, Turn
 from app.services.rating import RatingService
 from app.services.rewards import record_match
 from test_rewards import NOON, report
+from verdict_fixture import SCORECARD
 
 
 @pytest.fixture
@@ -27,6 +28,7 @@ async def rated_report(db_session, make_user, make_model):
 @pytest.mark.parametrize("fail_at", [1, 2])
 async def test_rating_failure_rolls_back_entire_result_and_can_retry(db_session, rated_report, fail_at):
     r, first, second = rated_report
+    r.result["scorecard"] = SCORECARD
     original = RatingService.calculate_and_update_elo
     calls = 0
 
@@ -42,13 +44,14 @@ async def test_rating_failure_rolls_back_entire_result_and_can_retry(db_session,
         with pytest.raises(RuntimeError, match="injected"):
             await record_match(db_session, r)
     assert await db_session.get(Match, r.match_id) is None
-    for model in (Rating, MatchParticipant, Turn, ChallengeCompletion):
+    for model in (Rating, MatchCategoryScore, MatchParticipant, Turn, ChallengeCompletion):
         assert await db_session.scalar(select(func.count()).select_from(model)) == 0
     await db_session.refresh(first)
     await db_session.refresh(second)
     assert (first.points, second.points) == (0, 0)
     await db_session.commit()
     await record_match(db_session, r)
+    assert await db_session.scalar(select(func.count()).select_from(MatchCategoryScore)) == len(SCORECARD)
     await db_session.refresh(first)
     assert first.points == 70
 

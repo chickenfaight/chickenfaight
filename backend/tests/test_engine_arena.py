@@ -7,10 +7,10 @@ from unittest.mock import AsyncMock, patch
 from uuid import uuid4
 
 from app.engine.game_engine import GameEngine, ModelFailure, PromptDeadlineExpired, ConnectionActivity
-from app.schemas.schemas import Verdict
 from app.services.exceptions import ArenaNotFoundError
 from test_engine_heartbeat import Socket
 from test_engine_prompt import RecordingClient
+from verdict_fixture import scored_verdict
 
 
 class ArenaEngineTests(unittest.IsolatedAsyncioTestCase):
@@ -52,7 +52,7 @@ class ArenaEngineTests(unittest.IsolatedAsyncioTestCase):
     async def test_result_shares_arguments_but_never_prompts(self):
         self.engine.arguments = {"pro": "Pro argument.", "con": "Con argument."}
         self.engine.prompts = {self.players[0]: "PRIVATE PRO", self.players[1]: "PRIVATE CON"}
-        self.engine.verdict = Verdict(winner="con", reason="More persuasive.")
+        self.engine.verdict = scored_verdict("con", "More persuasive.")
         for player in self.players:
             self.engine.connections[player] = SimpleNamespace(send_json=AsyncMock())
         await self.engine.broadcast_verdict()
@@ -60,6 +60,7 @@ class ArenaEngineTests(unittest.IsolatedAsyncioTestCase):
             result = socket.send_json.call_args.args[0]["payload"]
             self.assertEqual(result["arguments"], self.engine.arguments)
             self.assertEqual(result["winner"], "con")
+            self.assertEqual(result["scorecard"], self.engine.verdict.scorecard.model_dump())
             self.assertNotIn("PRIVATE", str(result))
 
     async def test_expired_prompt_does_not_start_inference(self):
@@ -131,7 +132,7 @@ class ArenaEngineTests(unittest.IsolatedAsyncioTestCase):
             self.engine.prompts[player] = "A private strategy"
             self.engine.prompt_received[player].set()
         self.engine.judge_clients = SimpleNamespace(
-            judge=AsyncMock(return_value=Verdict(winner="pro", reason="More persuasive.")),
+            judge=AsyncMock(return_value=scored_verdict("pro", "More persuasive.")),
             client=SimpleNamespace(close=AsyncMock()),
         )
         with (
@@ -368,7 +369,7 @@ class ModelFailureTests(unittest.IsolatedAsyncioTestCase):
         judge.assert_not_awaited()
 
     async def test_judge_is_retried_once(self):
-        verdict = Verdict(winner="pro", reason="Clearer.")
+        verdict = scored_verdict("pro", "Clearer.")
         diagnostic = "test-only judge diagnostic"
         judge = AsyncMock(side_effect=[ValueError(diagnostic), verdict])
         with (
@@ -382,6 +383,7 @@ class ModelFailureTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(judge.await_count, 2)
         payload = result.call_args.args[0]
         self.assertEqual((payload["winner"], payload["end_reason"]), ("pro", "judged"))
+        self.assertEqual(payload["scorecard"], verdict.scorecard.model_dump())
 
     async def test_judge_failing_twice_voids_match(self):
         judge = AsyncMock(side_effect=[TimeoutError(), ValueError()])
@@ -389,6 +391,7 @@ class ModelFailureTests(unittest.IsolatedAsyncioTestCase):
             result = await self.run_engine(judge)
         payload = result.call_args.args[0]
         self.assertEqual((payload["winner"], payload["status"], payload["end_reason"]), (None, "voided", "judge_failure"))
+        self.assertNotIn("scorecard", payload)
 
     async def test_empty_turn_is_retried(self):
         client = ScriptedClient([], ["Real ", "argument."])

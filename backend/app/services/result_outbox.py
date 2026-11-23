@@ -24,6 +24,8 @@ def encode(report: MatchReport) -> str:
                          ('status', 'winner', 'end_reason', 'reason', 'arguments') if key in report.result}
     if 'arguments' in report.result:
         payload['result']['arguments'] = {side: report.result['arguments'].get(side, '') for side in ('pro', 'con')}
+    if scorecard := report.scorecard:
+        payload['result']['scorecard'] = scorecard.model_dump(mode='json')
     payload['sides'] = {str(key): value for key, value in report.sides.items()}
     payload['model_names'] = {str(key): value for key, value in report.model_names.items()}
     return json.dumps(payload, default=lambda value: list(value) if isinstance(value, frozenset) else str(value))
@@ -38,7 +40,10 @@ def decode(raw: str) -> MatchReport:
     value['ended_at'] = datetime.fromisoformat(value['ended_at'])
     value['challenge_day'] = date.fromisoformat(value['challenge_day']) if value['challenge_day'] else None
     value['truncated'] = frozenset(value['truncated'])
-    return MatchReport(**value)
+    report = MatchReport(**value)
+    if scorecard := report.scorecard:
+        report.result['scorecard'] = scorecard.model_dump(mode='json')
+    return report
 
 
 class ResultOutbox:

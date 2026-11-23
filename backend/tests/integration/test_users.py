@@ -1,4 +1,5 @@
 import pytest
+from datetime import UTC, datetime
 from uuid import uuid4
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
@@ -7,8 +8,10 @@ from sqlalchemy.orm.attributes import set_committed_value
 from app.config import settings
 from app.main import app
 from app.models import Ladder, User
+from app.models.match import MatchCategoryScore, ScoreCategory
 from app.schemas import GoogleIdentity
 from app.services.exceptions import TagAlreadySetError
+from app.services.rewards import MatchReport, record_match
 from app.services.user import UserService
 
 SET_TAG = "/v1/users/me/tag"
@@ -235,8 +238,69 @@ async def test_profile_by_tag(client, log_in, make_user, db_session):
         "points": 0,
         "streak": 0,
         "rank": 1,
+        "score_averages": None,
     }
     assert "secret@example.com" not in response.text
+
+
+async def save_profile_match(session, pro, con, *, scorecard=None, model_id=None,
+                             status="completed", end_reason="judged"):
+    result = {
+        "status": status, "end_reason": end_reason, "reason": "The match ended.",
+        "winner": None if status == "voided" else "con",
+    }
+    if scorecard is not None:
+        result["scorecard"] = {
+            category.value: {"pro": pro_score, "con": con_score}
+            for category, (pro_score, con_score) in zip(ScoreCategory, scorecard, strict=True)
+        }
+    match_id = uuid4()
+    await record_match(session, MatchReport(
+        match_id=match_id, model_id=model_id, topic_id=None, challenge_day=None,
+        sides={pro.id: "pro", con.id: "con"}, result=result, ended_at=datetime.now(UTC),
+    ))
+    return match_id
+
+
+async def test_profile_averages_the_players_scores_across_matches(client, log_in, make_user,
+                                                                 make_model, db_session):
+    player = await make_user("score_player")
+    opponent = await make_user("score_opponent")
+    viewer = await make_user("score_viewer")
+    cloud_model = await make_model()
+    await save_profile_match(db_session, player, opponent, model_id=cloud_model.id,
+                             scorecard=[(5, 1), (1, 4), (0, 5), (3, 0)])
+    await save_profile_match(db_session, opponent, player,
+                             scorecard=[(0, 2), (1, 5), (4, 1), (2, 2)])
+    await save_profile_match(db_session, player, opponent, status="forfeited", end_reason="resigned")
+    await save_profile_match(db_session, player, opponent, status="voided", end_reason="judge_failure")
+    await save_profile_match(db_session, player, opponent)  # a legacy verdict
+    partial = await save_profile_match(db_session, player, opponent)
+    db_session.add(MatchCategoryScore(match_id=partial, category=ScoreCategory.ARGUMENT_QUALITY,
+                                     pro_score=5, con_score=5))
+    await db_session.commit()
+
+    log_in(viewer)
+    response = await client.get(PROFILE + player.tag)
+    assert response.status_code == 200
+    assert response.json()["score_averages"] == {
+        "match_count": 2,
+        "total": 9.5,
+        "categories": {
+            "argument_quality": 3.5,
+            "support_for_claims": 3.0,
+            "weighing_and_persuasiveness": 0.5,
+            "clarity_and_structure": 2.5,
+        },
+    }
+    assert (await client.get(PROFILE + viewer.tag)).json()["score_averages"] is None
+
+    log_in(player)
+    assert (await client.put(f"/v1/block/{viewer.id}")).status_code == 204
+    log_in(viewer)
+    blocked_profile = (await client.get(PROFILE + player.tag)).json()
+    assert blocked_profile["read_blocked"] is True
+    assert blocked_profile["score_averages"] is None
 
 
 async def test_profile_requires_auth(client, make_user):

@@ -11,6 +11,7 @@ import pytest
 
 from app.services.result_outbox import ResultOutbox, decode, encode
 from app.services.rewards import MatchReport, _advance_streak
+from verdict_fixture import SCORECARD
 
 
 def report():
@@ -21,6 +22,7 @@ def report():
 
 async def test_hard_exit_recovers_in_fresh_instance(tmp_path):
     value = report()
+    value.result["scorecard"] = SCORECARD
     subprocess.run([os.sys.executable, '-c',
                     'import os,sys; from app.services.result_outbox import ResultOutbox,decode; '
                     'ResultOutbox(sys.argv[1])._save(decode(sys.argv[2])); os._exit(0)',
@@ -31,6 +33,12 @@ async def test_hard_exit_recovers_in_fresh_instance(tmp_path):
     await ResultOutbox(tmp_path)._flush(writer)
     assert writer.await_args.args[0] == value
     assert writer.await_count == 1 and not list(tmp_path.glob('*.json'))
+
+
+def test_legacy_report_still_decodes_without_scores():
+    restored = decode(encode(report()))
+    assert restored.scorecard is None
+    assert "scorecard" not in restored.result
 
 
 async def test_outage_retains_ordered_backlog(tmp_path):

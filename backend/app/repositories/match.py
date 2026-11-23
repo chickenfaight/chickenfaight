@@ -3,7 +3,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import Match, MatchParticipant, Topic, Turn, User
+from app.models import Match, MatchCategoryScore, MatchParticipant, Topic, Turn, User
 
 
 class MatchRepository:
@@ -37,3 +37,8 @@ class MatchRepository:
 
     async def turns_of(self, match_id: UUID) -> list[Turn]:
         return list(await self.session.scalars(select(Turn).where(Turn.match_id == match_id).order_by(Turn.index)))
+
+    async def category_scores_of(self, match_id: UUID) -> list[MatchCategoryScore]:
+        return list(await self.session.scalars(
+            select(MatchCategoryScore).where(MatchCategoryScore.match_id == match_id)
+        ))

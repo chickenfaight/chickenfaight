@@ -65,7 +65,10 @@ async def test_coach_knows_the_game_and_tips_and_keeps_player_text_out_of_system
     assert messages[0] == {"role": "system", "content": SYSTEM_PROMPT}
     assert messages[1:] == conversation
     assert len(TIPS) >= 4 and all(tip in SYSTEM_PROMPT for tip in TIPS)
-    assert "judge" in SYSTEM_PROMPT and "400 tokens" in SYSTEM_PROMPT
+    assert "up to 120 words" in SYSTEM_PROMPT
+    assert all(category in SYSTEM_PROMPT for category in (
+        "argument quality", "support for claims", "weighing and persuasiveness", "clarity and structure",
+    ))
     assert max_tokens == 500
 
 

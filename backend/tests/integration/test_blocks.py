@@ -31,7 +31,7 @@ async def test_blocked_player_cant_see_the_profile(client, log_in, make_user):
     assert profile == {
         "id": str(blocker.id), "tag": "blocker", "username": None, "avatar_url": None,
         "ratings": [], "read_blocked": True, "is_friend": False, "friend_request": None,
-        "is_blocked": False, "points": 0, "streak": 0, "rank": None,
+        "is_blocked": False, "points": 0, "streak": 0, "rank": None, "score_averages": None,
     }
 
 
