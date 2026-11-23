@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { account, cleanupAccounts, modelId, selectModel } from "./helpers";
+import { account, cleanupAccounts, modelId, selectModel, verdictScores } from "./helpers";
 
 test.afterEach(cleanupAccounts);
 
@@ -38,8 +38,9 @@ test("prompt editor and verdict", async ({ page, context }) => {
   await expect(page).toHaveScreenshot("prompt-editor.png", { fullPage: true });
   socket!.send(JSON.stringify({ type: "MATCH_RESULT", payload: {
     winner: "pro", reason: "The argument supported its claims with concrete evidence.", status: "completed", end_reason: "judged",
-    arguments: { pro: "Free transit improves access to work.", con: "Transit requires sustainable funding." },
+    arguments: { pro: "Free transit improves access to work.", con: "Transit requires sustainable funding." }, scorecard: verdictScores,
   } }));
+  await expect(page.getByRole("heading", { name: "Judge’s scorecard" })).toBeVisible();
   await expect(page.getByText("The argument supported its claims with concrete evidence.", { exact: true })).toBeVisible();
   await expect(page).toHaveScreenshot("verdict.png", { fullPage: true });
 });

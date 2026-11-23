@@ -8,6 +8,7 @@ import { displayName, parseMatchDetail, type MatchDetail as Match, type Side } f
 import EmptyState from "./empty-state";
 import ErrorState from "./error-state";
 import FaceOff, { type FaceOffPlayer } from "./face-off";
+import JudgeScorecard from "./judge-scorecard";
 import Skeleton from "./skeleton";
 
 const HEADING = { win: "You won.", loss: "You lost.", void: "Debate voided." };
@@ -85,6 +86,7 @@ export default function MatchDetail({ matchId }: { matchId: string }) {
         <div className="min-w-0"><dt className="eyebrow">Played</dt><dd className="mt-1"><time dateTime={match.ended_at}>{new Date(match.ended_at).toLocaleString()}</time></dd></div>
         <div className="min-w-0"><dt className="eyebrow">Ended</dt><dd className="mt-1">{endReasonLabel(match)}</dd></div>
       </dl>
+      {match.scorecard && <JudgeScorecard scorecard={match.scorecard} you={match.you} />}
       {match.verdict_reasoning && <div className="mt-6 border-t border-line pt-5">
         <h2 className="text-sm font-bold">{match.end_reason === "judged" ? "The judge’s verdict" : "Why it ended"}</h2>
         <p className="mt-1.5 whitespace-pre-wrap break-words text-sm leading-relaxed text-ink-muted">{match.verdict_reasoning}</p>

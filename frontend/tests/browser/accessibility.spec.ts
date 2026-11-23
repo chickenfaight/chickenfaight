@@ -1,6 +1,6 @@
 import AxeBuilder from "@axe-core/playwright";
 import { test, expect } from "@playwright/test";
-import { account, cleanupAccounts, modelId, selectModel } from "./helpers";
+import { account, cleanupAccounts, modelId, selectModel, verdictScores } from "./helpers";
 
 // Audit settled UI rather than intermediate opacity during entrance animations.
 test.use({ reducedMotion: "reduce" });
@@ -79,8 +79,20 @@ test("the mobile side chooser, matchup reveal, match editor, and verdict pass au
   await audit(page);
   socket!.send(JSON.stringify({ type: "MATCH_RESULT", payload: {
     winner: "pro", reason: "The judge preferred the argument for free public transit.", status: "completed", end_reason: "judged",
-    arguments: { pro: "Free transit improves access to work.", con: "Transit requires sustainable funding." },
+    arguments: { pro: "Free transit improves access to work.", con: "Transit requires sustainable funding." }, scorecard: verdictScores,
   } }));
   await expect(page.getByRole("heading", { name: "You won." })).toBeFocused();
+  const categoryHelp = page.getByRole("button", { name: "How the judge scores Argument quality" });
+  const description = page.getByText("Checks whether each main reason supports the position and whether the reasoning has gaps or contradictions.", { exact: true });
+  await categoryHelp.press("Enter");
+  await expect(description).toBeVisible();
+  await audit(page);
+  await categoryHelp.press("Escape");
+  await expect(description).toBeHidden();
+  await categoryHelp.click();
+  await expect(description).toBeVisible();
+  await categoryHelp.click();
+  await expect(description).toBeHidden();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(390);
   await audit(page);
 });

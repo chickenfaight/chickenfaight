@@ -8,6 +8,7 @@ import { displayName, type ArenaResult, type ArenaTopic, type Side } from "../li
 import Button, { buttonClass } from "./button";
 import CountUp from "./count-up";
 import FaceOff, { type FaceOffPlayer } from "./face-off";
+import JudgeScorecard from "./judge-scorecard";
 import Modal from "./modal";
 import PageTransition from "./page-transition";
 import { useMatch } from "./providers/match-provider";
@@ -15,7 +16,7 @@ import { useSession } from "./providers/session-provider";
 import Skeleton from "./skeleton";
 import { Wordmark } from "./site-header";
 
-// Ratings follow the result with a short animation. The verdict and its reason are visible at once.
+// Ratings follow the verdict with a short animation.
 const at = (ms: number): CSSProperties => ({ animationDelay: `${ms}ms` });
 
 const PHASE_LABEL = {
@@ -239,7 +240,8 @@ export default function MatchArena() {
           <VerdictHeading ref={verdictTitle} tabIndex={-1} id="verdict-title" className={`headline scroll-mt-28 rounded-control text-6xl focus-ring ${result.winner === null ? "text-ink-muted" : won ? "text-gold" : "text-ink"}`}>
             {result.winner === null ? "Debate voided." : won ? "You won." : ownSide ? "You lost." : "Debate ended."}
           </VerdictHeading>
-          <div className="mt-4">
+          {result.scorecard && <JudgeScorecard scorecard={result.scorecard} you={ownSide} heading={ReasonHeading} />}
+          <div className={result.scorecard ? "mt-6 border-t border-line pt-5" : "mt-4"}>
             <ReasonHeading className="text-lg font-semibold">{result.end_reason !== "judged" ? "Why the debate ended" : won ? "Why the judge chose you" : "Why the judge chose your opponent"}</ReasonHeading>
             <p className="mx-auto mt-1.5 max-w-[72ch] whitespace-pre-wrap wrap-anywhere text-base leading-relaxed text-ink-muted">{result.reason}</p>
           </div>

@@ -12,7 +12,8 @@ import ErrorState from "../../components/error-state";
 import AppShell from "../../components/app-shell";
 import SiteHeader from "../../components/site-header";
 import { backendUrl } from "../../lib/auth";
-import { displayName, parseUser, parseUserPage, parseUserProfile, tagFormatError, type User, type UserPage, type UserProfile } from "../../lib/protocol";
+import { JUDGE_RUBRIC } from "../../lib/judge-rubric";
+import { displayName, JUDGE_CATEGORIES, MAX_CATEGORY_SCORE, MAX_TOTAL_SCORE, parseUser, parseUserPage, parseUserProfile, tagFormatError, type ScoreAverages, type User, type UserPage, type UserProfile } from "../../lib/protocol";
 import { profileHref } from "../../lib/routes";
 import { forwardedCookie } from "../../lib/server-session";
 
@@ -143,6 +144,25 @@ function Stat({ label, value, tone = "", big = false }: { label: string; value: 
   return <div><dt className="eyebrow">{label}</dt><dd className={`stat mt-2 ${big ? "text-6xl" : "text-4xl"} ${tone}`}>{value}</dd></div>;
 }
 
+function AverageJudgeScores({ scores }: { scores: ScoreAverages | null }) {
+  return <section aria-labelledby="average-scores-title" className="panel p-panel">
+    <h2 id="average-scores-title" className="text-sm font-bold">Average judge scores</h2>
+    {scores ? <>
+      <p className="mt-1.5 text-sm text-ink-muted">From {scores.match_count.toLocaleString()} scored {scores.match_count === 1 ? "debate" : "debates"}</p>
+      <dl className="mt-4 grid grid-cols-2 gap-x-4 gap-y-4 text-sm xl:grid-cols-5">
+        <div className="col-span-2 border-b border-line pb-3 xl:col-span-1 xl:border-0 xl:pb-0">
+          <dt className="font-semibold">Total</dt>
+          <dd className="stat mt-0.5 text-3xl">{scores.total.toFixed(1)}<span className="ml-0.5 text-base text-ink-muted">/{MAX_TOTAL_SCORE}</span></dd>
+        </div>
+        {JUDGE_CATEGORIES.map(category => <div key={category} className="min-w-0">
+          <dt className="wrap-anywhere font-medium text-ink-muted">{JUDGE_RUBRIC[category].label}</dt>
+          <dd className="stat mt-0.5 text-3xl">{scores.categories[category].toFixed(1)}<span className="ml-0.5 text-base text-ink-muted">/{MAX_CATEGORY_SCORE}</span></dd>
+        </div>)}
+      </dl>
+    </> : <p className="mt-2 text-sm text-ink-muted">No scored debates yet.</p>}
+  </section>;
+}
+
 const RANK_TONE = ["text-gold", "text-silver", "text-bronze"];
 
 type ProfileProps = { profile: UserProfile; me: User | null; friends: UserPage | null; incoming: UserPage | null; outgoing: UserPage | null; blocked: UserPage | null };
@@ -193,6 +213,7 @@ function Profile({ profile, me, friends, incoming, outgoing, blocked }: ProfileP
           </dl>
         )}
       </section>
+      <AverageJudgeScores scores={profile.score_averages} />
       {meId === profile.id && <Friends friends={friends} incoming={incoming} outgoing={outgoing} />}
       {meId === profile.id && <BlockedPlayers blocked={blocked} shown={FRIENDS_SHOWN} />}
     </div>
